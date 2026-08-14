@@ -1,8 +1,13 @@
-import type { AttendanceRecord, AttendanceStatus } from '@/types'
+import type {
+  AttendanceRecord,
+  AttendanceStatus,
+  PresentationRecord,
+} from '@/types'
 
 const ATTENDANCE_KEY = 'tesla-control-attendance-v2'
 const LEGACY_KEY = 'tesla-control-attendance-v1'
 const LIMIT_KEY = 'tesla-control-entry-limit-v1'
+const PRESENTATION_KEY = 'tesla-control-presentation-v1'
 const DEFAULT_LIMIT = '07:45'
 
 export function getTodayKey() {
@@ -11,6 +16,14 @@ export function getTodayKey() {
   const month = String(now.getMonth() + 1).padStart(2, '0')
   const day = String(now.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
+}
+
+export function getCurrentTime() {
+  return new Date().toLocaleTimeString('es-PE', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
 }
 
 export function getEntryLimit() {
@@ -27,7 +40,6 @@ export function getAttendance(): AttendanceRecord[] {
     const saved = JSON.parse(localStorage.getItem(ATTENDANCE_KEY) ?? '[]') as AttendanceRecord[]
     if (saved.length) return saved
 
-    // Migra registros de la Fase 1 si existen.
     const legacy = JSON.parse(localStorage.getItem(LEGACY_KEY) ?? '[]') as Array<Omit<AttendanceRecord, 'status'>>
     if (!legacy.length) return []
     const limit = getEntryLimit()
@@ -48,12 +60,7 @@ export function registerAttendance(studentId: string, entryLimit: string): Atten
   const date = getTodayKey()
   if (current.some((item) => item.studentId === studentId && item.date === date)) return current
 
-  const time = new Date().toLocaleTimeString('es-PE', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-
+  const time = getCurrentTime()
   const record: AttendanceRecord = {
     studentId,
     date,
@@ -82,4 +89,68 @@ export function clearTodayAttendance() {
   const filtered = getAttendance().filter((item) => item.date !== today)
   localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(filtered))
   return filtered
+}
+
+export function getPresentationRecords(): PresentationRecord[] {
+  try {
+    return JSON.parse(localStorage.getItem(PRESENTATION_KEY) ?? '[]') as PresentationRecord[]
+  } catch {
+    return []
+  }
+}
+
+export function savePresentationRecord(record: PresentationRecord): PresentationRecord[] {
+  const current = getPresentationRecords()
+  const withoutSameDayStudent = current.filter(
+    (item) => !(item.studentId === record.studentId && item.date === record.date),
+  )
+  const next = [...withoutSameDayStudent, record]
+  localStorage.setItem(PRESENTATION_KEY, JSON.stringify(next))
+  return next
+}
+
+export function clearTodayPresentation() {
+  const today = getTodayKey()
+  const filtered = getPresentationRecords().filter((item) => item.date !== today)
+  localStorage.setItem(PRESENTATION_KEY, JSON.stringify(filtered))
+  return filtered
+}
+
+export type ThemePreference = 'light' | 'dark' | 'system'
+export type InterfaceSize = 'normal' | 'large'
+
+export type UserPreferences = {
+  theme: ThemePreference
+  interfaceSize: InterfaceSize
+  soundEnabled: boolean
+  rememberClassroom: boolean
+  lastClassroomId: string | null
+}
+
+const PREFERENCES_KEY = 'tesla-control-preferences-v1'
+
+const DEFAULT_PREFERENCES: UserPreferences = {
+  theme: 'system',
+  interfaceSize: 'normal',
+  soundEnabled: true,
+  rememberClassroom: true,
+  lastClassroomId: null,
+}
+
+export function getPreferences(): UserPreferences {
+  try {
+    return { ...DEFAULT_PREFERENCES, ...JSON.parse(localStorage.getItem(PREFERENCES_KEY) ?? '{}') }
+  } catch {
+    return DEFAULT_PREFERENCES
+  }
+}
+
+export function savePreferences(preferences: UserPreferences) {
+  localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences))
+  return preferences
+}
+
+export function resetPreferences() {
+  localStorage.setItem(PREFERENCES_KEY, JSON.stringify(DEFAULT_PREFERENCES))
+  return DEFAULT_PREFERENCES
 }

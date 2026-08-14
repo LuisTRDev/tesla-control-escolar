@@ -3,6 +3,7 @@ export type Classroom = {
   grade: string
   section: string
   level: 'Primaria' | 'Secundaria'
+  tutorName: string
 }
 
 export type Student = {
@@ -11,6 +12,7 @@ export type Student = {
   lastName: string
   classroomId: string
   guardianName: string
+  guardianDni: string
   guardianPhone: string
 }
 
@@ -24,3 +26,19 @@ export type AttendanceRecord = {
 }
 
 export type AttendanceFilter = 'ALL' | 'ON_TIME' | 'LATE' | 'PENDING'
+
+export type PresentationStatus = 'COMPLIANT' | 'NON_COMPLIANT'
+
+export type PresentationRecord = {
+  studentId: string
+  date: string
+  status: PresentationStatus
+  hairstyleViolation: boolean
+  uniformUsageViolation: boolean
+  nonInstitutionalGarment: boolean
+  otherViolation: boolean
+  otherDescription: string
+  checkedAt: string
+}
+
+export type PresentationFilter = 'ALL' | 'COMPLIANT' | 'NON_COMPLIANT' | 'PENDING'
