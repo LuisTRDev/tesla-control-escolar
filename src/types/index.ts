@@ -30,6 +30,7 @@ export type AttendanceFilter = 'ALL' | 'ON_TIME' | 'LATE' | 'PENDING'
 export type PresentationStatus = 'COMPLIANT' | 'NON_COMPLIANT'
 
 export type PresentationRecord = {
+  id?: string
   studentId: string
   date: string
   status: PresentationStatus
@@ -42,3 +43,5 @@ export type PresentationRecord = {
 }
 
 export type PresentationFilter = 'ALL' | 'COMPLIANT' | 'NON_COMPLIANT' | 'PENDING'
+
+export type UserRole = 'AUXILIARY' | 'ADMIN' | 'MANAGEMENT' | string
