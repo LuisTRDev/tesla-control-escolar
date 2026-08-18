@@ -33,7 +33,7 @@ export default function Login({ onLogin, externalError = '' }: Props) {
         <div className="mb-8 text-center text-white">
           <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-2xl bg-white/10"><GraduationCap size={34} /></div>
           <h1 className="text-3xl font-black tracking-tight">Tesla Control Escolar</h1>
-          <p className="mt-2 text-sm text-slate-300">Fase 4 · Sistema conectado a PostgreSQL</p>
+          <p className="mt-2 text-sm text-slate-300">v1.0</p>
         </div>
         <Card className="p-6 sm:p-8">
           <div className="space-y-4">

@@ -66,7 +66,7 @@ export default function App() {
   }
 
   if (booting) {
-    return <main className="grid min-h-screen place-items-center bg-slate-950 text-white"><div className="text-center"><p className="text-sm font-bold uppercase tracking-widest text-slate-400">Tesla</p><h1 className="mt-2 text-2xl font-black">Conectando con Supabase...</h1></div></main>
+    return <main className="grid min-h-screen place-items-center bg-slate-950 text-white"><div className="text-center"><p className="text-sm font-bold uppercase tracking-widest text-slate-400">Tesla</p><h1 className="mt-2 text-2xl font-black">Conectando...</h1></div></main>
   }
 
   if (!userName || !classroom) {
