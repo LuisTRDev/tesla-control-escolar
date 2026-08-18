@@ -4,6 +4,8 @@ export type WhatsAppMessageType =
   | 'INAPPROPRIATE_CONDUCT'
   | 'RECURRENCE_2'
   | 'RECURRENCE_3'
+  | 'ABSENCE'
+  | 'FREQUENT_LATE'
 
 export type WhatsAppPayload = {
   phone: string
@@ -56,6 +58,8 @@ export function getWhatsAppTypeLabel(type: WhatsAppMessageType): string {
     case 'INAPPROPRIATE_CONDUCT': return 'Conducta inapropiada'
     case 'RECURRENCE_2': return 'Segunda notificación'
     case 'RECURRENCE_3': return 'Tercera notificación / citación'
+    case 'ABSENCE': return 'Ausencia registrada'
+    case 'FREQUENT_LATE': return 'Tardanzas frecuentes'
   }
 }
 
@@ -95,6 +99,22 @@ export function buildWhatsAppMessage(payload: WhatsAppPayload): string {
         '', 'Se solicita revisar la notificación y brindar el acompañamiento necesario.', '', 'Atentamente,', 'IEPr Nikola Tesla',
       ].join('\n')
     }
+
+    case 'ABSENCE':
+      return [
+        '*IEPr Nikola Tesla*', '', guardianGreeting, '',
+        `Se informa que *${payload.studentName}* no registra ingreso a la institución${dateText}.`,
+        '', 'La asistencia del aula ha sido cerrada y se solicita confirmar o justificar la ausencia por los canales correspondientes.', '',
+        'Atentamente,', 'IEPr Nikola Tesla',
+      ].join('\n')
+
+    case 'FREQUENT_LATE':
+      return [
+        '*IEPr Nikola Tesla*', '', guardianGreeting, '',
+        `Se informa que *${payload.studentName}* registra *tardanzas frecuentes* durante las últimas semanas.`,
+        '', 'Solicitamos su apoyo para reforzar la puntualidad y evitar nuevas incidencias.', '',
+        'Atentamente,', 'IEPr Nikola Tesla',
+      ].join('\n')
 
     case 'RECURRENCE_2':
       return [

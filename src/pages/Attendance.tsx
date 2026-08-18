@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Check, ChevronDown, BarChart3, CalendarDays, ClipboardCheck, Clock3, Download, Edit3, FileText,
-  Menu, Monitor, Moon, RotateCcw, Search, Settings2, Shirt, Sun, TriangleAlert, Volume2, X, BookOpen, MessageCircle, Send,
+  Menu, Monitor, Moon, RotateCcw, Search, Settings2, Shirt, Sun, TriangleAlert, Volume2, X, BookOpen, MessageCircle, Send, Bell, CalendarCheck2, FolderOpen,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import Dashboard from '@/components/Dashboard'
 import Sidebar from '@/components/Sidebar'
 import AdvancedReports from '@/components/AdvancedReports'
+import AlertCenter from '@/components/AlertCenter'
+import DailySummary from '@/components/DailySummary'
+import StudentCaseFile from '@/components/StudentCaseFile'
+import AuditLog from '@/components/AuditLog'
 import { Input } from '@/components/ui/Input'
 import {
   MAX_NOTIFICATIONS_PER_PAGE,
@@ -82,6 +86,10 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [dashboardOpen, setDashboardOpen] = useState(false)
   const [reportsOpen, setReportsOpen] = useState(false)
+  const [alertsOpen, setAlertsOpen] = useState(false)
+  const [dailySummaryOpen, setDailySummaryOpen] = useState(false)
+  const [auditOpen, setAuditOpen] = useState(false)
+  const [caseFileStudent, setCaseFileStudent] = useState<Student | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [now, setNow] = useState(() => new Date())
   const [presentationStudent, setPresentationStudent] = useState<Student | null>(null)
@@ -422,10 +430,10 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     })
   }
 
-  function openWhatsAppModal(student: Student) {
+  function openWhatsAppModal(student: Student, forcedType?: WhatsAppMessageType) {
     const options = getWhatsAppOptions(student)
-    if (!options.length) return
-    const initialType = options[0].type
+    if (!forcedType && !options.length) return
+    const initialType = forcedType ?? options[0].type
     setWhatsAppStudent(student)
     setWhatsAppType(initialType)
     setWhatsAppMessage(buildStudentWhatsAppMessage(student, initialType))
@@ -465,11 +473,14 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         userName={userName}
         userRole={userRole}
         formattedDate={formattedDate}
-        active={reportsOpen ? 'reports' : dashboardOpen ? 'dashboard' : 'home'}
-        onHome={() => { setDashboardOpen(false); setReportsOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
-        onDashboard={() => setDashboardOpen(true)}
-        onReports={() => setReportsOpen(true)}
+        active={auditOpen ? 'audit' : dailySummaryOpen ? 'summary' : alertsOpen ? 'alerts' : reportsOpen ? 'reports' : dashboardOpen ? 'dashboard' : 'home'}
+        onHome={() => { setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+        onDashboard={() => { setDashboardOpen(true); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false) }}
+        onReports={() => { setReportsOpen(true); setDashboardOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false) }}
         onNotifications={() => void openMultiNotification()}
+        onAlerts={() => { setAlertsOpen(true); setDashboardOpen(false); setReportsOpen(false); setDailySummaryOpen(false); setAuditOpen(false) }}
+        onDailySummary={() => { setDailySummaryOpen(true); setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setAuditOpen(false) }}
+        onAudit={() => { setAuditOpen(true); setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false) }}
         onSettings={() => setSettingsOpen(true)}
         onResetToday={() => void resetToday()}
         onLogout={onLogout}
@@ -566,8 +577,16 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
             <p className="text-xs font-bold uppercase tracking-wider text-slate-400">{classroom.level}</p>
             <h3 className="text-2xl font-black">{classroom.grade} {classroom.section}</h3>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 transition-colors dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-            Hora límite: <span className="font-black text-slate-950 dark:text-slate-100">{entryLimit}</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 transition-colors dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+              Hora límite: <span className="font-black text-slate-950 dark:text-slate-100">{entryLimit}</span>
+            </div>
+            <Button variant="outline" onClick={() => setDailySummaryOpen(true)}>
+              <CalendarCheck2 className="mr-2" size={17} /> Resumen / cierre
+            </Button>
+            <Button variant="outline" onClick={() => setAlertsOpen(true)}>
+              <Bell className="mr-2" size={17} /> Alertas
+            </Button>
           </div>
         </div>
 
@@ -707,6 +726,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                     </div>
 
                     <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                      <Button variant="ghost" className="w-full sm:w-auto" onClick={() => setCaseFileStudent(student)}>
+                        <FolderOpen className="mr-2" size={17} /> Expediente
+                      </Button>
                       <Button variant="ghost" className="w-full sm:w-auto" onClick={() => setHistoryStudent(student)}>
                         <BookOpen className="mr-2" size={17} /> Historial
                       </Button>
@@ -1120,6 +1142,38 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
           </div>
         )
       })()}
+
+      <AlertCenter
+        open={alertsOpen}
+        onClose={() => setAlertsOpen(false)}
+        classrooms={classrooms}
+        currentClassroom={classroom}
+        students={students}
+        onOpenCaseFile={(student) => { setAlertsOpen(false); setCaseFileStudent(student) }}
+        onOpenWhatsApp={(student, alertType) => {
+          setAlertsOpen(false)
+          const type: WhatsAppMessageType = alertType === 'ABSENCE' ? 'ABSENCE' : alertType === 'FREQUENT_LATE' ? 'FREQUENT_LATE' : alertType === 'THIRD_NOTIFICATION' ? 'RECURRENCE_3' : 'RECURRENCE_2'
+          openWhatsAppModal(student, type)
+        }}
+      />
+
+      <DailySummary
+        open={dailySummaryOpen}
+        onClose={() => setDailySummaryOpen(false)}
+        classrooms={classrooms}
+        currentClassroom={classroom}
+        today={today}
+        onOpenAlerts={() => { setDailySummaryOpen(false); setAlertsOpen(true) }}
+      />
+
+      <StudentCaseFile
+        student={caseFileStudent}
+        classroom={caseFileStudent ? classrooms.find((item) => item.id === caseFileStudent.classroomId) : undefined}
+        onClose={() => setCaseFileStudent(null)}
+        onOpenWhatsApp={(student) => { setCaseFileStudent(null); openWhatsAppModal(student) }}
+      />
+
+      <AuditLog open={auditOpen} onClose={() => setAuditOpen(false)} />
 
       <AdvancedReports
         open={reportsOpen}
