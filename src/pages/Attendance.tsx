@@ -20,7 +20,15 @@ import {
   deleteAttendanceForDate, deletePresentationForDate, getAttendanceRange, getEntryLimit, getPresentationRange, getStudents,
   recalculateAttendanceForDate, registerAttendance, saveEntryLimit, savePresentation as savePresentationRemote,
 } from '@/services/schoolService'
-import type { AttendanceFilter, AttendanceRecord, Classroom, PresentationFilter, PresentationRecord, PresentationStatus, Student } from '@/types'
+import {
+  ensureNotificationForPresentation,
+  getNotificationLabel,
+  getNotifications,
+} from '@/services/notificationService'
+import type {
+  AttendanceFilter, AttendanceRecord, Classroom, NotificationRecord, PresentationFilter,
+  PresentationRecord, PresentationStatus, Student,
+} from '@/types'
 
 type Props = {
   userName: string
@@ -57,6 +65,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [students, setStudents] = useState<Student[]>([])
   const [records, setRecords] = useState<AttendanceRecord[]>([])
   const [presentationRecords, setPresentationRecords] = useState<PresentationRecord[]>([])
+  const [notifications, setNotifications] = useState<NotificationRecord[]>([])
   const [entryLimit, setEntryLimit] = useState('07:45')
   const [loadingData, setLoadingData] = useState(true)
   const [dataError, setDataError] = useState('')
@@ -80,10 +89,18 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     setLoadingData(true); setDataError('')
     try {
       const range = monthRange()
-      const [studentData, attendanceData, presentationData, limit] = await Promise.all([
-        getStudents(), getAttendanceRange(range.from, range.to), getPresentationRange(range.from, range.to), getEntryLimit(),
+      const [studentData, attendanceData, presentationData, notificationData, limit] = await Promise.all([
+        getStudents(),
+        getAttendanceRange(range.from, range.to),
+        getPresentationRange(range.from, range.to),
+        getNotifications(),
+        getEntryLimit(),
       ])
-      setStudents(studentData); setRecords(attendanceData); setPresentationRecords(presentationData); setEntryLimit(limit)
+      setStudents(studentData)
+      setRecords(attendanceData)
+      setPresentationRecords(presentationData)
+      setNotifications(notificationData)
+      setEntryLimit(limit)
     } catch (error) {
       console.error(error); setDataError(error instanceof Error ? error.message : 'No se pudieron cargar los datos de Supabase.')
     } finally { setLoadingData(false) }
@@ -128,7 +145,12 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   }
   async function resetToday() {
     if(!confirm('¿Borrar los registros de ingreso y presentación de hoy?')) return
-    try { await Promise.all([deleteAttendanceForDate(today),deletePresentationForDate(today)]); setRecords((r)=>r.filter((x)=>x.date!==today)); setPresentationRecords((r)=>r.filter((x)=>x.date!==today)) }
+    try {
+      await Promise.all([deleteAttendanceForDate(today), deletePresentationForDate(today)])
+      setRecords((r) => r.filter((x) => x.date !== today))
+      setPresentationRecords((r) => r.filter((x) => x.date !== today))
+      setNotifications((items) => items.filter((item) => item.date !== today))
+    }
     catch(error){ console.error(error); setDataError(error instanceof Error?error.message:'No se pudo reiniciar el día.') }
   }
   function changeClassroom(classroomId:string){ const selected=classrooms.find((i)=>i.id===classroomId); if(!selected)return; setQuery('');setFilter('ALL');setPresentationFilter('ALL');onClassroomChange(selected); if(preferences.rememberClassroom)updatePreferences({...preferences,lastClassroomId:selected.id}) }
@@ -142,18 +164,47 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   async function savePresentation(){
     if(!presentationStudent||!presentationDraft.status)return
     if(presentationDraft.status==='NON_COMPLIANT'){ const has=presentationDraft.hairstyleViolation||presentationDraft.uniformUsageViolation||presentationDraft.nonInstitutionalGarment||presentationDraft.otherViolation; if(!has)return; if(presentationDraft.otherViolation&&!presentationDraft.otherDescription.trim())return }
-    const record:PresentationRecord={studentId:presentationStudent.id,date:today,status:presentationDraft.status,hairstyleViolation:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.hairstyleViolation,uniformUsageViolation:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.uniformUsageViolation,nonInstitutionalGarment:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.nonInstitutionalGarment,otherViolation:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.otherViolation,otherDescription:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.otherViolation?presentationDraft.otherDescription.trim():'',checkedAt:getCurrentTime()}
-    try { const saved=await savePresentationRemote(record); setPresentationRecords((curr)=>[...curr.filter((r)=>!(r.studentId===record.studentId&&r.date===record.date)),saved]); setPresentationStudent(null);setPresentationDraft(emptyPresentationDraft);if(saved.status==='NON_COMPLIANT')setNotificationStudent(presentationStudent);playConfirmation() }
+    const currentStudent = presentationStudent
+    const record:PresentationRecord={studentId:currentStudent.id,date:today,status:presentationDraft.status,hairstyleViolation:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.hairstyleViolation,uniformUsageViolation:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.uniformUsageViolation,nonInstitutionalGarment:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.nonInstitutionalGarment,otherViolation:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.otherViolation,otherDescription:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.otherViolation?presentationDraft.otherDescription.trim():'',checkedAt:getCurrentTime()}
+
+    try {
+      const saved = await savePresentationRemote(record)
+      setPresentationRecords((curr) => [
+        ...curr.filter((r) => !(r.studentId === record.studentId && r.date === record.date)),
+        saved,
+      ])
+      setPresentationStudent(null)
+      setPresentationDraft(emptyPresentationDraft)
+      playConfirmation()
+
+      if (saved.status === 'NON_COMPLIANT') {
+        try {
+          const notification = await ensureNotificationForPresentation(saved)
+          setNotifications((curr) => [notification, ...curr.filter((item) => item.id !== notification.id)])
+          setNotificationStudent(currentStudent)
+        } catch (notificationError) {
+          console.error(notificationError)
+          setDataError(notificationError instanceof Error
+            ? `La presentación se guardó, pero no se pudo registrar la reincidencia: ${notificationError.message}`
+            : 'La presentación se guardó, pero no se pudo registrar la reincidencia.')
+        }
+      }
+    }
     catch(error){console.error(error);setDataError(error instanceof Error?error.message:'No se pudo guardar la presentación.')}
   }
   const hasSelectedViolation=presentationDraft.hairstyleViolation||presentationDraft.uniformUsageViolation||presentationDraft.nonInstitutionalGarment||presentationDraft.otherViolation
   const presentationSaveDisabled=!presentationDraft.status||(presentationDraft.status==='NON_COMPLIANT'&&!hasSelectedViolation)||(presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.otherViolation&&!presentationDraft.otherDescription.trim())
 
-  function getNotificationNumber(studentId: string, date: string): 1 | 2 | 3 {
-    const total = presentationRecords.filter((record) =>
-      record.studentId === studentId && record.status === 'NON_COMPLIANT' && record.date <= date,
-    ).length
-    return Math.min(3, Math.max(1, total)) as 1 | 2 | 3
+  function getNotificationNumber(studentId: string, date: string, presentationId?: string): 1 | 2 | 3 {
+    if (presentationId) {
+      const exact = notifications.find((item) => item.presentationControlId === presentationId)
+      if (exact) return exact.notificationNumber
+    }
+
+    // Fallback para controles antiguos todavía no migrados a notifications.
+    const prior = notifications.filter((item) => item.studentId === studentId && item.date <= date)
+    if (prior.length) return prior.sort((a, b) => b.date.localeCompare(a.date))[0].notificationNumber
+    return 1
   }
 
   function buildNotificationData(student: Student, record: PresentationRecord): NotificationPrintData | null {
@@ -163,8 +214,37 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       student,
       classroom: studentClassroom,
       record,
-      notificationNumber: getNotificationNumber(student.id, record.date),
+      notificationNumber: getNotificationNumber(student.id, record.date, record.id),
     }
+  }
+
+  function studentNotificationStats(studentId: string) {
+    const history = notifications
+      .filter((item) => item.studentId === studentId)
+      .sort((a, b) => b.date.localeCompare(a.date) || b.generatedAt.localeCompare(a.generatedAt))
+    return {
+      total: history.length,
+      latest: history[0],
+      history,
+    }
+  }
+
+  async function openNotification(student: Student) {
+    const record = todayPresentationRecords.find((item) => item.studentId === student.id && item.status === 'NON_COMPLIANT')
+    if (!record) return
+
+    if (record.id && !notifications.some((item) => item.presentationControlId === record.id)) {
+      try {
+        const notification = await ensureNotificationForPresentation(record)
+        setNotifications((curr) => [notification, ...curr.filter((item) => item.id !== notification.id)])
+      } catch (error) {
+        console.error(error)
+        setDataError(error instanceof Error ? error.message : 'No se pudo registrar la reincidencia.')
+        return
+      }
+    }
+
+    setNotificationStudent(student)
   }
 
   const notificationCandidates = students.filter((student) => {
@@ -191,10 +271,30 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     })
   }
 
-  function openMultiNotification() {
+  async function openMultiNotification() {
     setSelectedNotificationIds([])
     setNotificationSearch('')
-    setMultiNotificationOpen(true)
+
+    try {
+      const missing = todayPresentationRecords.filter((record) =>
+        record.status === 'NON_COMPLIANT' &&
+        record.id &&
+        !notifications.some((item) => item.presentationControlId === record.id),
+      )
+
+      if (missing.length) {
+        const created = await Promise.all(missing.map((record) => ensureNotificationForPresentation(record)))
+        setNotifications((current) => {
+          const createdIds = new Set(created.map((item) => item.id))
+          return [...created, ...current.filter((item) => !createdIds.has(item.id))]
+        })
+      }
+
+      setMultiNotificationOpen(true)
+    } catch (error) {
+      console.error(error)
+      setDataError(error instanceof Error ? error.message : 'No se pudieron preparar las notificaciones.')
+    }
   }
 
   return (
@@ -216,7 +316,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 <BarChart3 className="mr-2" size={18} />
                 Dashboard
               </Button>
-              <Button variant="outline" onClick={openMultiNotification} aria-label="Multinotificación">
+              <Button variant="outline" onClick={() => void openMultiNotification()} aria-label="Multinotificación">
                 <FileText className="mr-2" size={18} />
                 Notificaciones
               </Button>
@@ -378,6 +478,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
             const record = todayRecords.find((item) => item.studentId === student.id)
             const presentation = todayPresentationRecords.find((item) => item.studentId === student.id)
             const violations = getViolationCount(presentation)
+            const recurrence = studentNotificationStats(student.id)
 
             return (
               <Card key={student.id} className="p-4 sm:p-5">
@@ -411,26 +512,34 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                   </div>
 
                   <div className="flex flex-col gap-3 border-t border-slate-100 pt-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
-                    {presentation?.status === 'COMPLIANT' ? (
-                      <div className="flex items-center gap-2 text-sm font-bold text-emerald-700 dark:text-emerald-300">
-                        <ClipboardCheck size={18} /> Presentación: Conforme · {presentation.checkedAt}
-                      </div>
-                    ) : presentation?.status === 'NON_COMPLIANT' ? (
-                      <div className="flex items-center gap-2 text-sm font-bold text-amber-700 dark:text-amber-300">
-                        <TriangleAlert size={18} /> Presentación: {violations} {violations === 1 ? 'incidencia' : 'incidencias'} · {presentation.checkedAt}
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
-                        <Shirt size={18} /> Presentación: Sin revisar
-                      </div>
-                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {presentation?.status === 'COMPLIANT' ? (
+                        <div className="flex items-center gap-2 text-sm font-bold text-emerald-700 dark:text-emerald-300">
+                          <ClipboardCheck size={18} /> Presentación: Conforme · {presentation.checkedAt}
+                        </div>
+                      ) : presentation?.status === 'NON_COMPLIANT' ? (
+                        <div className="flex items-center gap-2 text-sm font-bold text-amber-700 dark:text-amber-300">
+                          <TriangleAlert size={18} /> Presentación: {violations} {violations === 1 ? 'incidencia' : 'incidencias'} · {presentation.checkedAt}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                          <Shirt size={18} /> Presentación: Sin revisar
+                        </div>
+                      )}
+
+                      {recurrence.total > 0 && recurrence.latest && (
+                        <span className="rounded-lg bg-amber-100 px-2.5 py-1 text-xs font-black text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                          Reincidencias: {recurrence.total} · {getNotificationLabel(recurrence.latest.notificationNumber)}
+                        </span>
+                      )}
+                    </div>
 
                     <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                       <Button variant="ghost" className="w-full sm:w-auto" onClick={() => setHistoryStudent(student)}>
                         <BookOpen className="mr-2" size={17} /> Historial
                       </Button>
                       {presentation?.status === 'NON_COMPLIANT' && (
-                        <Button variant="outline" className="w-full sm:w-auto" onClick={() => setNotificationStudent(student)}>
+                        <Button variant="outline" className="w-full sm:w-auto" onClick={() => void openNotification(student)}>
                           <FileText className="mr-2" size={17} /> Notificación
                         </Button>
                       )}
@@ -566,7 +675,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                   <p><span className="font-black">Tutor(a):</span> {notificationData.classroom.tutorName}</p>
                   <p><span className="font-black">Apoderado:</span> {notificationStudent.guardianName}</p>
                   <p><span className="font-black">DNI:</span> {notificationStudent.guardianDni || 'Sin DNI registrado'}</p>
-                  <p><span className="font-black">N.º:</span> {notificationData.notificationNumber}.ª notificación</p>
+                  <p><span className="font-black">Nivel:</span> {getNotificationLabel(notificationData.notificationNumber)}</p>
                 </div>
                 <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-700">
                   <p className="font-black">Incumplimientos marcados</p>
@@ -631,7 +740,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                         <p className="font-black">{student.firstName} {student.lastName}</p>
                         <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{studentClassroom ? `${studentClassroom.grade} ${studentClassroom.section} · ${studentClassroom.level}` : 'Aula no encontrada'} · Apoderado: {student.guardianName}</p>
                       </div>
-                      <span className="text-xs font-bold text-amber-700 dark:text-amber-300">{getNotificationNumber(student.id, today)}.ª</span>
+                      <span className="text-xs font-bold text-amber-700 dark:text-amber-300">{getNotificationNumber(student.id, today, todayPresentationRecords.find((item) => item.studentId === student.id)?.id)}.ª</span>
                     </label>
                   )
                 })}
@@ -660,6 +769,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       {historyStudent && (() => {
         const attendanceHistory = records.filter((r) => r.studentId === historyStudent.id).sort((a,b) => b.date.localeCompare(a.date))
         const presentationHistory = presentationRecords.filter((r) => r.studentId === historyStudent.id).sort((a,b) => b.date.localeCompare(a.date))
+        const notificationHistory = notifications
+          .filter((item) => item.studentId === historyStudent.id)
+          .sort((a,b) => b.date.localeCompare(a.date) || b.generatedAt.localeCompare(a.generatedAt))
         const lateTotal = attendanceHistory.filter((r) => r.status === 'LATE').length
         const incidentTotal = presentationHistory.filter((r) => r.status === 'NON_COMPLIANT').length
         const dates = Array.from(new Set([...attendanceHistory.map(r => r.date), ...presentationHistory.map(r => r.date)])).sort((a,b) => b.localeCompare(a))
@@ -670,10 +782,11 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 <div><p className="text-xs font-bold uppercase tracking-widest text-slate-400">Historial mensual</p><h2 className="mt-1 text-xl font-black">{historyStudent.firstName} {historyStudent.lastName}</h2><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Datos persistentes almacenados en PostgreSQL.</p></div>
                 <Button variant="ghost" onClick={() => setHistoryStudent(null)}><X size={20}/></Button>
               </div>
-              <div className="mt-5 grid grid-cols-3 gap-3">
+              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <Card className="p-4"><p className="text-xs text-slate-500">Ingresos</p><p className="mt-1 text-2xl font-black">{attendanceHistory.length}</p></Card>
                 <Card className="p-4"><p className="text-xs text-slate-500">Tardanzas</p><p className="mt-1 text-2xl font-black text-amber-600">{lateTotal}</p></Card>
                 <Card className="p-4"><p className="text-xs text-slate-500">Incidencias</p><p className="mt-1 text-2xl font-black text-amber-600">{incidentTotal}</p></Card>
+                <Card className="p-4"><p className="text-xs text-slate-500">Reincidencias</p><p className="mt-1 text-2xl font-black text-rose-600">{notificationHistory.length}</p></Card>
               </div>
               <div className="mt-5 space-y-3">
                 {dates.length === 0 ? <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700">Aún no hay historial este mes.</div> : dates.map((date) => {
@@ -687,6 +800,38 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                     </div>
                   </div>
                 })}
+              </div>
+
+              <div className="mt-7 border-t border-slate-200 pt-5 dark:border-slate-800">
+                <div className="flex items-end justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Reincidencias</p>
+                    <h3 className="mt-1 font-black">Historial de notificaciones</h3>
+                  </div>
+                  {notificationHistory[0] && (
+                    <span className="rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-black text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                      Nivel actual: {getNotificationLabel(notificationHistory[0].notificationNumber)}
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  {notificationHistory.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-slate-300 p-5 text-center text-sm text-slate-500 dark:border-slate-700">
+                      El alumno aún no tiene notificaciones registradas.
+                    </div>
+                  ) : notificationHistory.map((item) => (
+                    <div key={item.id} className="flex flex-col gap-1 rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="font-black">{getNotificationLabel(item.notificationNumber)}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Registro #{item.id}</p>
+                      </div>
+                      <p className="text-sm font-bold text-slate-600 dark:text-slate-300">
+                        {new Date(item.date + 'T12:00:00').toLocaleDateString('es-PE', { day:'2-digit', month:'long', year:'numeric' })}
+                      </p>
+                    </div>
+                  ))}
+                </div>
               </div>
             </section>
           </div>

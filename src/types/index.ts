@@ -42,6 +42,16 @@ export type PresentationRecord = {
   checkedAt: string
 }
 
+
+export type NotificationRecord = {
+  id: string
+  studentId: string
+  presentationControlId: string
+  notificationNumber: 1 | 2 | 3
+  date: string
+  generatedAt: string
+}
+
 export type PresentationFilter = 'ALL' | 'COMPLIANT' | 'NON_COMPLIANT' | 'PENDING'
 
 export type UserRole = 'AUXILIARY' | 'ADMIN' | 'MANAGEMENT' | string
