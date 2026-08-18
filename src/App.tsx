@@ -27,13 +27,22 @@ export default function App() {
         return
       }
 
-      const [{ data: profile, error: profileError }, classroomData] = await Promise.all([
-        supabase.from('profiles').select('full_name, role').eq('id', session.user.id).single(),
-        getClassrooms(),
-      ])
-      if (profileError) throw profileError
-      if (!classroomData.length) throw new Error('No hay aulas disponibles en Supabase.')
+      const classroomData = await getClassrooms()
+      if (!classroomData.length) throw new Error('No hay aulas disponibles en Supabase ni en la caché local.')
 
+      let profile: { full_name: string; role: string } | null = null
+      try {
+        const result = await supabase.from('profiles').select('full_name, role').eq('id', session.user.id).single()
+        if (result.error) throw result.error
+        profile = result.data
+        localStorage.setItem('tesla_cached_profile', JSON.stringify(profile))
+      } catch (profileError) {
+        const cached = localStorage.getItem('tesla_cached_profile')
+        if (cached) profile = JSON.parse(cached) as { full_name: string; role: string }
+        else throw profileError
+      }
+
+      if (!profile) throw new Error('No se pudo recuperar el perfil del usuario.')
       setUserName(profile.full_name)
       setUserRole(profile.role)
       setClassrooms(classroomData)
@@ -66,11 +75,11 @@ export default function App() {
   }
 
   if (booting) {
-    return <main className="grid min-h-screen place-items-center bg-slate-950 text-white"><div className="text-center"><p className="text-sm font-bold uppercase tracking-widest text-slate-400">Tesla</p><h1 className="mt-2 text-2xl font-black">Conectando...</h1></div></main>
+    return <main className="grid min-h-screen place-items-center bg-slate-950 text-white"><div className="text-center"><p className="text-sm font-bold uppercase tracking-widest text-slate-400">Tesla</p><h1 className="mt-2 text-2xl font-black">Conectando con Supabase...</h1></div></main>
   }
 
   if (!userName || !classroom) {
-    return <Login onLogin={() => void loadSession()} />
+    return <Login onLogin={() => void loadSession()} externalError={appError} />
   }
 
   return (

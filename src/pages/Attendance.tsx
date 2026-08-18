@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Check, ChevronDown, BarChart3, CalendarDays, ClipboardCheck, Clock3, Download, Edit3, FileText,
   Menu, Monitor, Moon, RotateCcw, Search, Settings2, Shirt, Sun, TriangleAlert, Volume2, X, BookOpen, MessageCircle, Send, Bell, CalendarCheck2, FolderOpen,
@@ -12,6 +12,11 @@ import AlertCenter from '@/components/AlertCenter'
 import DailySummary from '@/components/DailySummary'
 import StudentCaseFile from '@/components/StudentCaseFile'
 import AuditLog from '@/components/AuditLog'
+import QuickMode from '@/components/QuickMode'
+import BackupCenter from '@/components/BackupCenter'
+import SyncStatus from '@/components/SyncStatus'
+import { useNetworkSync } from '@/hooks/useNetworkSync'
+import { usePwaInstall } from '@/hooks/usePwaInstall'
 import { Input } from '@/components/ui/Input'
 import {
   MAX_NOTIFICATIONS_PER_PAGE,
@@ -89,6 +94,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [dailySummaryOpen, setDailySummaryOpen] = useState(false)
   const [auditOpen, setAuditOpen] = useState(false)
+  const [quickModeOpen, setQuickModeOpen] = useState(false)
+  const [backupOpen, setBackupOpen] = useState(false)
   const [caseFileStudent, setCaseFileStudent] = useState<Student | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [now, setNow] = useState(() => new Date())
@@ -110,7 +117,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const darkMode = preferences.theme === 'dark' || (preferences.theme === 'system' && systemDark)
   const sizeClass = preferences.interfaceSize === 'large' ? 'text-[17px]' : ''
 
-  async function reloadData() {
+  const reloadData = useCallback(async () => {
     setLoadingData(true); setDataError('')
     try {
       const range = monthRange()
@@ -127,11 +134,14 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       setNotifications(notificationData)
       setEntryLimit(limit)
     } catch (error) {
-      console.error(error); setDataError(error instanceof Error ? error.message : 'No se pudieron cargar los datos de Supabase.')
+      console.error(error); setDataError(error instanceof Error ? error.message : 'No se pudieron cargar los datos locales/remotos.')
     } finally { setLoadingData(false) }
-  }
+  }, [])
 
-  useEffect(() => { void reloadData() }, [])
+  const syncState = useNetworkSync(reloadData)
+  const { installAvailable, install } = usePwaInstall()
+
+  useEffect(() => { void reloadData() }, [reloadData])
   useEffect(() => { document.documentElement.classList.toggle('dark', darkMode); return () => document.documentElement.classList.remove('dark') }, [darkMode])
   useEffect(() => { const media=window.matchMedia('(prefers-color-scheme: dark)'); const update=(e:MediaQueryListEvent)=>setSystemDark(e.matches); media.addEventListener('change',update); return()=>media.removeEventListener('change',update) }, [])
   useEffect(() => { const timer=window.setInterval(()=>setNow(new Date()),1000); return()=>window.clearInterval(timer) }, [])
@@ -233,7 +243,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       setPresentationDraft(emptyPresentationDraft)
       playConfirmation()
 
-      if (saved.status === 'NON_COMPLIANT') {
+      if (saved.status === 'NON_COMPLIANT' && !saved.id?.startsWith('offline-')) {
         try {
           const notification = await ensureNotificationForPresentation(saved)
           setNotifications((curr) => [notification, ...curr.filter((item) => item.id !== notification.id)])
@@ -473,7 +483,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         userName={userName}
         userRole={userRole}
         formattedDate={formattedDate}
-        active={auditOpen ? 'audit' : dailySummaryOpen ? 'summary' : alertsOpen ? 'alerts' : reportsOpen ? 'reports' : dashboardOpen ? 'dashboard' : 'home'}
+        active={backupOpen ? 'backup' : quickModeOpen ? 'quick' : auditOpen ? 'audit' : dailySummaryOpen ? 'summary' : alertsOpen ? 'alerts' : reportsOpen ? 'reports' : dashboardOpen ? 'dashboard' : 'home'}
         onHome={() => { setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
         onDashboard={() => { setDashboardOpen(true); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false) }}
         onReports={() => { setReportsOpen(true); setDashboardOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false) }}
@@ -481,6 +491,10 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         onAlerts={() => { setAlertsOpen(true); setDashboardOpen(false); setReportsOpen(false); setDailySummaryOpen(false); setAuditOpen(false) }}
         onDailySummary={() => { setDailySummaryOpen(true); setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setAuditOpen(false) }}
         onAudit={() => { setAuditOpen(true); setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false) }}
+        onQuickMode={() => setQuickModeOpen(true)}
+        onBackups={() => setBackupOpen(true)}
+        online={syncState.online}
+        pendingSync={syncState.pending}
         onSettings={() => setSettingsOpen(true)}
         onResetToday={() => void resetToday()}
         onLogout={onLogout}
@@ -505,12 +519,21 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="hidden text-right sm:block">
+              <SyncStatus
+                online={syncState.online}
+                syncing={syncState.syncing}
+                pending={syncState.pending}
+                lastSync={syncState.lastSync}
+                onSync={() => void syncState.syncNow()}
+                installAvailable={installAvailable}
+                onInstall={() => void install()}
+              />
+              <div className="hidden text-right xl:block">
                 <p className="text-sm font-black tabular-nums">{formattedClock}</p>
                 <p className="text-[11px] capitalize text-slate-500 dark:text-slate-400">{formattedDate}</p>
               </div>
-              <div className="hidden h-9 w-px bg-slate-200 dark:bg-slate-800 md:block" />
-              <div className="hidden max-w-[180px] text-right md:block">
+              <div className="hidden h-9 w-px bg-slate-200 dark:bg-slate-800 xl:block" />
+              <div className="hidden max-w-[180px] text-right 2xl:block">
                 <p className="truncate text-xs font-bold">{userName}</p>
                 <p className="truncate text-[10px] uppercase tracking-wider text-slate-400">{userRole}</p>
               </div>
@@ -521,6 +544,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         <section className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
         {dataError && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">{dataError}</div>}
         {loadingData && <div className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">Sincronizando datos con Supabase...</div>}
+        {!syncState.online && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">Modo offline activo. Puedes seguir marcando entradas y controles; {syncState.pending} cambio{syncState.pending===1?'':'s'} pendiente{syncState.pending===1?'':'s'} se enviarán al recuperar Internet.</div>}
         <div className="rounded-2xl border border-slate-200 bg-white p-5 text-slate-950 shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
@@ -581,6 +605,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 transition-colors dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
               Hora límite: <span className="font-black text-slate-950 dark:text-slate-100">{entryLimit}</span>
             </div>
+            <Button onClick={() => setQuickModeOpen(true)}>
+              <Clock3 className="mr-2" size={17} /> Modo rápido
+            </Button>
             <Button variant="outline" onClick={() => setDailySummaryOpen(true)}>
               <CalendarCheck2 className="mr-2" size={17} /> Resumen / cierre
             </Button>
@@ -765,6 +792,18 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         </div>
         </section>
       </div>
+
+      <QuickMode
+        open={quickModeOpen}
+        onClose={() => setQuickModeOpen(false)}
+        classroom={classroom}
+        students={classroomStudents}
+        records={todayRecords}
+        onMark={mark}
+        online={syncState.online}
+      />
+
+      <BackupCenter open={backupOpen} onClose={() => setBackupOpen(false)} online={syncState.online} />
 
       {presentationStudent && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-[1px] dark:bg-black/65" onMouseDown={() => setPresentationStudent(null)}>

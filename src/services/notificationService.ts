@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { getSnapshot, setSnapshot } from '@/lib/offlineDb'
 import type { AttendanceRecord, NotificationRecord, NotificationType, PresentationRecord } from '@/types'
 
 type DbNotification = {
@@ -30,14 +31,21 @@ function mapNotification(row: DbNotification): NotificationRecord {
 }
 
 export async function getNotifications(): Promise<NotificationRecord[]> {
-  const { data, error } = await supabase
-    .from('notifications')
-    .select(SELECT_FIELDS)
-    .order('date', { ascending: false })
-    .order('generated_at', { ascending: false })
-
-  if (error) throw error
-  return ((data ?? []) as DbNotification[]).map(mapNotification)
+  try {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select(SELECT_FIELDS)
+      .order('date', { ascending: false })
+      .order('generated_at', { ascending: false })
+    if (error) throw error
+    const mapped = ((data ?? []) as DbNotification[]).map(mapNotification)
+    await setSnapshot('notifications', mapped)
+    return mapped
+  } catch (error) {
+    const cached = await getSnapshot<NotificationRecord[]>('notifications')
+    if (cached) return cached
+    throw error
+  }
 }
 
 export async function getStudentNotifications(studentId: string): Promise<NotificationRecord[]> {
