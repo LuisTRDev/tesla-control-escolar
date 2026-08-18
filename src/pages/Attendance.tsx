@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Check, ChevronDown, BarChart3, CalendarDays, ClipboardCheck, Clock3, Download, Edit3, FileText,
-  LogOut, Monitor, Moon, RotateCcw, Search, Settings, Settings2, Shirt, Sun, TriangleAlert, Volume2, X, BookOpen,
+  Menu, Monitor, Moon, RotateCcw, Search, Settings2, Shirt, Sun, TriangleAlert, Volume2, X, BookOpen, MessageCircle, Send,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import Dashboard from '@/components/Dashboard'
+import Sidebar from '@/components/Sidebar'
+import AdvancedReports from '@/components/AdvancedReports'
 import { Input } from '@/components/ui/Input'
 import {
   MAX_NOTIFICATIONS_PER_PAGE,
@@ -21,10 +23,18 @@ import {
   recalculateAttendanceForDate, registerAttendance, saveEntryLimit, savePresentation as savePresentationRemote,
 } from '@/services/schoolService'
 import {
+  ensureNotificationForLateAttendance,
   ensureNotificationForPresentation,
   getNotificationLabel,
   getNotifications,
 } from '@/services/notificationService'
+import {
+  buildWhatsAppMessage,
+  getWhatsAppTypeLabel,
+  isValidPeruWhatsApp,
+  sendWhatsApp,
+  type WhatsAppMessageType,
+} from '@/services/communicationService'
 import type {
   AttendanceFilter, AttendanceRecord, Classroom, NotificationRecord, PresentationFilter,
   PresentationRecord, PresentationStatus, Student,
@@ -46,11 +56,11 @@ const presentationFilters: Array<{ id: PresentationFilter; label: string }> = [
   { id: 'ALL', label: 'Todos' }, { id: 'COMPLIANT', label: 'Conforme' }, { id: 'NON_COMPLIANT', label: 'Con incumplimiento' }, { id: 'PENDING', label: 'Sin revisar' },
 ]
 
-type PresentationDraft = { status: PresentationStatus | null; hairstyleViolation: boolean; uniformUsageViolation: boolean; nonInstitutionalGarment: boolean; otherViolation: boolean; otherDescription: string }
-const emptyPresentationDraft: PresentationDraft = { status: null, hairstyleViolation: false, uniformUsageViolation: false, nonInstitutionalGarment: false, otherViolation: false, otherDescription: '' }
+type PresentationDraft = { status: PresentationStatus | null; hairstyleViolation: boolean; uniformUsageViolation: boolean; nonInstitutionalGarment: boolean; lateEntryViolation: boolean; inappropriateConductViolation: boolean; observation: string }
+const emptyPresentationDraft: PresentationDraft = { status: null, hairstyleViolation: false, uniformUsageViolation: false, nonInstitutionalGarment: false, lateEntryViolation: false, inappropriateConductViolation: false, observation: '' }
 function getViolationCount(record?: PresentationRecord) {
   if (!record || record.status !== 'NON_COMPLIANT') return 0
-  return [record.hairstyleViolation, record.uniformUsageViolation, record.nonInstitutionalGarment, record.otherViolation].filter(Boolean).length
+  return [record.hairstyleViolation, record.uniformUsageViolation, record.nonInstitutionalGarment, record.lateEntryViolation, record.inappropriateConductViolation].filter(Boolean).length
 }
 function monthRange() {
   const now = new Date(); const y = now.getFullYear(); const m = now.getMonth();
@@ -71,6 +81,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [dataError, setDataError] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [dashboardOpen, setDashboardOpen] = useState(false)
+  const [reportsOpen, setReportsOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [now, setNow] = useState(() => new Date())
   const [presentationStudent, setPresentationStudent] = useState<Student | null>(null)
   const [notificationStudent, setNotificationStudent] = useState<Student | null>(null)
@@ -78,6 +90,11 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [selectedNotificationIds, setSelectedNotificationIds] = useState<string[]>([])
   const [notificationSearch, setNotificationSearch] = useState('')
   const [historyStudent, setHistoryStudent] = useState<Student | null>(null)
+  const [whatsAppStudent, setWhatsAppStudent] = useState<Student | null>(null)
+  const [whatsAppType, setWhatsAppType] = useState<WhatsAppMessageType>('LATE')
+  const [whatsAppMessage, setWhatsAppMessage] = useState('')
+  const [whatsAppError, setWhatsAppError] = useState('')
+  const [openingWhatsApp, setOpeningWhatsApp] = useState(false)
   const [presentationDraft, setPresentationDraft] = useState<PresentationDraft>(emptyPresentationDraft)
   const [preferences, setPreferences] = useState<UserPreferences>(() => getPreferences())
   const today = getTodayKey()
@@ -159,13 +176,44 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     try { await saveEntryLimit(value); await recalculateAttendanceForDate(today,value); const range=monthRange(); setRecords(await getAttendanceRange(range.from,range.to)) }
     catch(error){ console.error(error); setDataError(error instanceof Error?error.message:'No se pudo actualizar la hora límite.') }
   }
-  function openPresentation(student:Student){ const existing=todayPresentationRecords.find((i)=>i.studentId===student.id); setPresentationStudent(student); setPresentationDraft(existing?{status:existing.status,hairstyleViolation:existing.hairstyleViolation,uniformUsageViolation:existing.uniformUsageViolation,nonInstitutionalGarment:existing.nonInstitutionalGarment,otherViolation:existing.otherViolation,otherDescription:existing.otherDescription}:emptyPresentationDraft) }
+  function openPresentation(student:Student){
+    const existing=todayPresentationRecords.find((i)=>i.studentId===student.id)
+    const attendance=todayRecords.find((i)=>i.studentId===student.id)
+    setPresentationStudent(student)
+    setPresentationDraft(existing ? {
+      status: existing.status,
+      hairstyleViolation: existing.hairstyleViolation,
+      uniformUsageViolation: existing.uniformUsageViolation,
+      nonInstitutionalGarment: existing.nonInstitutionalGarment,
+      lateEntryViolation: existing.lateEntryViolation,
+      inappropriateConductViolation: existing.inappropriateConductViolation,
+      observation: existing.observation,
+    } : {
+      ...emptyPresentationDraft,
+      status: attendance?.status === 'LATE' ? 'NON_COMPLIANT' : null,
+      lateEntryViolation: attendance?.status === 'LATE',
+    })
+  }
   function setPresentationMode(status:PresentationStatus){ if(status==='COMPLIANT'){setPresentationDraft({...emptyPresentationDraft,status:'COMPLIANT'});return} setPresentationDraft((c)=>({...c,status:'NON_COMPLIANT'})) }
   async function savePresentation(){
     if(!presentationStudent||!presentationDraft.status)return
-    if(presentationDraft.status==='NON_COMPLIANT'){ const has=presentationDraft.hairstyleViolation||presentationDraft.uniformUsageViolation||presentationDraft.nonInstitutionalGarment||presentationDraft.otherViolation; if(!has)return; if(presentationDraft.otherViolation&&!presentationDraft.otherDescription.trim())return }
+    if(presentationDraft.status==='NON_COMPLIANT'){
+      const has=presentationDraft.hairstyleViolation||presentationDraft.uniformUsageViolation||presentationDraft.nonInstitutionalGarment||presentationDraft.lateEntryViolation||presentationDraft.inappropriateConductViolation
+      if(!has)return
+    }
     const currentStudent = presentationStudent
-    const record:PresentationRecord={studentId:currentStudent.id,date:today,status:presentationDraft.status,hairstyleViolation:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.hairstyleViolation,uniformUsageViolation:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.uniformUsageViolation,nonInstitutionalGarment:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.nonInstitutionalGarment,otherViolation:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.otherViolation,otherDescription:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.otherViolation?presentationDraft.otherDescription.trim():'',checkedAt:getCurrentTime()}
+    const record:PresentationRecord={
+      studentId:currentStudent.id,
+      date:today,
+      status:presentationDraft.status,
+      hairstyleViolation:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.hairstyleViolation,
+      uniformUsageViolation:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.uniformUsageViolation,
+      nonInstitutionalGarment:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.nonInstitutionalGarment,
+      lateEntryViolation:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.lateEntryViolation,
+      inappropriateConductViolation:presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.inappropriateConductViolation,
+      observation:presentationDraft.status==='NON_COMPLIANT'?presentationDraft.observation.trim():'',
+      checkedAt:getCurrentTime(),
+    }
 
     try {
       const saved = await savePresentationRemote(record)
@@ -192,64 +240,86 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     }
     catch(error){console.error(error);setDataError(error instanceof Error?error.message:'No se pudo guardar la presentación.')}
   }
-  const hasSelectedViolation=presentationDraft.hairstyleViolation||presentationDraft.uniformUsageViolation||presentationDraft.nonInstitutionalGarment||presentationDraft.otherViolation
-  const presentationSaveDisabled=!presentationDraft.status||(presentationDraft.status==='NON_COMPLIANT'&&!hasSelectedViolation)||(presentationDraft.status==='NON_COMPLIANT'&&presentationDraft.otherViolation&&!presentationDraft.otherDescription.trim())
+  const hasSelectedViolation=presentationDraft.hairstyleViolation||presentationDraft.uniformUsageViolation||presentationDraft.nonInstitutionalGarment||presentationDraft.lateEntryViolation||presentationDraft.inappropriateConductViolation
+  const presentationSaveDisabled=!presentationDraft.status||(presentationDraft.status==='NON_COMPLIANT'&&!hasSelectedViolation)
 
-  function getNotificationNumber(studentId: string, date: string, presentationId?: string): 1 | 2 | 3 {
+  function getNotificationNumber(studentId: string, date: string, presentationId?: string, attendanceId?: string): number {
     if (presentationId) {
       const exact = notifications.find((item) => item.presentationControlId === presentationId)
       if (exact) return exact.notificationNumber
     }
+    if (attendanceId) {
+      const exact = notifications.find((item) => item.attendanceId === attendanceId)
+      if (exact) return exact.notificationNumber
+    }
 
-    // Fallback para controles antiguos todavía no migrados a notifications.
-    const prior = notifications.filter((item) => item.studentId === studentId && item.date <= date)
-    if (prior.length) return prior.sort((a, b) => b.date.localeCompare(a.date))[0].notificationNumber
-    return 1
+    const prior = notifications
+      .filter((item) => item.studentId === studentId && item.date <= date)
+      .sort((a, b) => b.notificationNumber - a.notificationNumber || b.generatedAt.localeCompare(a.generatedAt))
+    return prior[0]?.notificationNumber ?? 1
   }
 
-  function buildNotificationData(student: Student, record: PresentationRecord): NotificationPrintData | null {
+  function buildNotificationData(student: Student): NotificationPrintData | null {
     const studentClassroom = classrooms.find((item) => item.id === student.classroomId)
     if (!studentClassroom) return null
+    const presentation = todayPresentationRecords.find((item) => item.studentId === student.id && item.status === 'NON_COMPLIANT')
+    const attendance = todayRecords.find((item) => item.studentId === student.id && item.status === 'LATE')
+    if (!presentation && !attendance) return null
+
+    const exactNotification = presentation?.id
+      ? notifications.find((item) => item.presentationControlId === presentation.id)
+      : attendance?.id
+        ? notifications.find((item) => item.attendanceId === attendance.id)
+        : undefined
+
     return {
       student,
       classroom: studentClassroom,
-      record,
-      notificationNumber: getNotificationNumber(student.id, record.date, record.id),
+      presentation,
+      attendance,
+      notificationNumber: exactNotification?.notificationNumber ?? getNotificationNumber(student.id, today, presentation?.id, attendance?.id),
     }
   }
 
   function studentNotificationStats(studentId: string) {
     const history = notifications
       .filter((item) => item.studentId === studentId)
-      .sort((a, b) => b.date.localeCompare(a.date) || b.generatedAt.localeCompare(a.generatedAt))
-    return {
-      total: history.length,
-      latest: history[0],
-      history,
+      .sort((a, b) => b.notificationNumber - a.notificationNumber || b.generatedAt.localeCompare(a.generatedAt))
+    return { total: history.length, latest: history[0], history }
+  }
+
+  async function ensureTodayNotification(student: Student): Promise<NotificationRecord | null> {
+    const presentation = todayPresentationRecords.find((item) => item.studentId === student.id && item.status === 'NON_COMPLIANT')
+    const attendance = todayRecords.find((item) => item.studentId === student.id && item.status === 'LATE')
+
+    if (presentation) {
+      const notification = await ensureNotificationForPresentation(presentation)
+      setNotifications((curr) => [notification, ...curr.filter((item) => item.id !== notification.id)])
+      return notification
     }
+    if (attendance) {
+      const notification = await ensureNotificationForLateAttendance(attendance)
+      setNotifications((curr) => [notification, ...curr.filter((item) => item.id !== notification.id)])
+      return notification
+    }
+    return null
   }
 
   async function openNotification(student: Student) {
-    const record = todayPresentationRecords.find((item) => item.studentId === student.id && item.status === 'NON_COMPLIANT')
-    if (!record) return
-
-    if (record.id && !notifications.some((item) => item.presentationControlId === record.id)) {
-      try {
-        const notification = await ensureNotificationForPresentation(record)
-        setNotifications((curr) => [notification, ...curr.filter((item) => item.id !== notification.id)])
-      } catch (error) {
-        console.error(error)
-        setDataError(error instanceof Error ? error.message : 'No se pudo registrar la reincidencia.')
-        return
-      }
+    try {
+      const notification = await ensureTodayNotification(student)
+      if (!notification) return
+      setNotificationStudent(student)
+    } catch (error) {
+      console.error(error)
+      setDataError(error instanceof Error ? error.message : 'No se pudo registrar la notificación.')
     }
-
-    setNotificationStudent(student)
   }
 
   const notificationCandidates = students.filter((student) => {
-    const record = todayPresentationRecords.find((item) => item.studentId === student.id && item.status === 'NON_COMPLIANT')
-    if (!record) return false
+    const presentation = todayPresentationRecords.find((item) => item.studentId === student.id && item.status === 'NON_COMPLIANT')
+    const attendance = todayRecords.find((item) => item.studentId === student.id && item.status === 'LATE')
+    if (!presentation && !attendance) return false
     const classroomInfo = classrooms.find((item) => item.id === student.classroomId)
     const haystack = `${student.firstName} ${student.lastName} ${classroomInfo?.grade ?? ''} ${classroomInfo?.section ?? ''} ${classroomInfo?.level ?? ''}`.toLowerCase()
     return haystack.includes(notificationSearch.toLowerCase())
@@ -258,8 +328,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const selectedNotificationData = selectedNotificationIds
     .map((studentId) => {
       const student = students.find((item) => item.id === studentId)
-      const record = todayPresentationRecords.find((item) => item.studentId === studentId && item.status === 'NON_COMPLIANT')
-      return student && record ? buildNotificationData(student, record) : null
+      return student ? buildNotificationData(student) : null
     })
     .filter((item): item is NotificationPrintData => Boolean(item))
 
@@ -274,22 +343,23 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   async function openMultiNotification() {
     setSelectedNotificationIds([])
     setNotificationSearch('')
-
     try {
-      const missing = todayPresentationRecords.filter((record) =>
-        record.status === 'NON_COMPLIANT' &&
-        record.id &&
-        !notifications.some((item) => item.presentationControlId === record.id),
-      )
-
-      if (missing.length) {
-        const created = await Promise.all(missing.map((record) => ensureNotificationForPresentation(record)))
+      const candidates = students.filter((student) => {
+        const presentation = todayPresentationRecords.some((item) => item.studentId === student.id && item.status === 'NON_COMPLIANT')
+        const late = todayRecords.some((item) => item.studentId === student.id && item.status === 'LATE')
+        return presentation || late
+      })
+      const created: NotificationRecord[] = []
+      for (const student of candidates) {
+        const item = await ensureTodayNotification(student)
+        if (item) created.push(item)
+      }
+      if (created.length) {
         setNotifications((current) => {
           const createdIds = new Set(created.map((item) => item.id))
           return [...created, ...current.filter((item) => !createdIds.has(item.id))]
         })
       }
-
       setMultiNotificationOpen(true)
     } catch (error) {
       console.error(error)
@@ -297,47 +367,147 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     }
   }
 
+
+  function getPresentationViolationLabels(record?: PresentationRecord): string[] {
+    if (!record || record.status !== 'NON_COMPLIANT') return []
+    return [
+      record.hairstyleViolation ? 'Peinado no acorde con las disposiciones institucionales.' : '',
+      record.uniformUsageViolation ? 'Uso inadecuado o incompleto del uniforme.' : '',
+      record.nonInstitutionalGarment ? 'Prenda no correspondiente al uniforme institucional.' : '',
+      record.lateEntryViolation ? 'Tardanza en el ingreso.' : '',
+      record.inappropriateConductViolation ? 'Conducta inapropiada.' : '',
+    ].filter(Boolean)
+  }
+
+  function getWhatsAppOptions(student: Student): Array<{ type: WhatsAppMessageType; label: string }> {
+    const attendance = todayRecords.find((item) => item.studentId === student.id)
+    const presentation = todayPresentationRecords.find((item) => item.studentId === student.id)
+    const recurrence = studentNotificationStats(student.id)
+    const options: Array<{ type: WhatsAppMessageType; label: string }> = []
+
+    if (attendance?.status === 'LATE' && !presentation?.lateEntryViolation) {
+      options.push({ type: 'LATE', label: 'Tardanza en el ingreso' })
+    }
+
+    if (presentation?.status === 'NON_COMPLIANT') {
+      if ((recurrence.latest?.notificationNumber ?? 0) >= 3) {
+        options.push({ type: 'RECURRENCE_3', label: 'Tercera notificación / seguimiento' })
+      } else if (recurrence.latest?.notificationNumber === 2) {
+        options.push({ type: 'RECURRENCE_2', label: 'Segunda notificación' })
+      } else if (presentation.inappropriateConductViolation && getPresentationViolationLabels(presentation).length === 1) {
+        options.push({ type: 'INAPPROPRIATE_CONDUCT', label: 'Conducta inapropiada' })
+      } else {
+        options.push({ type: 'REGULATION', label: 'Incumplimiento de reglamento interno' })
+      }
+    }
+
+    return options
+  }
+
+  function buildStudentWhatsAppMessage(student: Student, type: WhatsAppMessageType): string {
+    const attendance = todayRecords.find((item) => item.studentId === student.id)
+    const presentation = todayPresentationRecords.find((item) => item.studentId === student.id)
+    const recurrence = studentNotificationStats(student.id)
+
+    return buildWhatsAppMessage({
+      phone: student.guardianPhone,
+      guardianName: student.guardianName,
+      studentName: `${student.firstName} ${student.lastName}`,
+      type,
+      notificationNumber: recurrence.latest?.notificationNumber,
+      date: today,
+      time: attendance?.time,
+      observation: presentation?.observation,
+      violations: getPresentationViolationLabels(presentation),
+    })
+  }
+
+  function openWhatsAppModal(student: Student) {
+    const options = getWhatsAppOptions(student)
+    if (!options.length) return
+    const initialType = options[0].type
+    setWhatsAppStudent(student)
+    setWhatsAppType(initialType)
+    setWhatsAppMessage(buildStudentWhatsAppMessage(student, initialType))
+    setWhatsAppError('')
+  }
+
+  function changeWhatsAppType(type: WhatsAppMessageType) {
+    if (!whatsAppStudent) return
+    setWhatsAppType(type)
+    setWhatsAppMessage(buildStudentWhatsAppMessage(whatsAppStudent, type))
+    setWhatsAppError('')
+  }
+
+  async function handleOpenWhatsApp() {
+    if (!whatsAppStudent || !whatsAppMessage.trim()) return
+    setOpeningWhatsApp(true)
+    setWhatsAppError('')
+    try {
+      await sendWhatsApp({
+        phone: whatsAppStudent.guardianPhone,
+        message: whatsAppMessage.trim(),
+      })
+      setWhatsAppStudent(null)
+    } catch (error) {
+      console.error(error)
+      setWhatsAppError(error instanceof Error ? error.message : 'No se pudo abrir WhatsApp.')
+    } finally {
+      setOpeningWhatsApp(false)
+    }
+  }
+
   return (
     <main className={`${sizeClass} min-h-screen bg-slate-50 text-slate-950 transition-colors duration-200 dark:bg-slate-950 dark:text-slate-100`}>
-      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
-        <div className="mx-auto max-w-5xl px-5 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Tesla</p>
-              <h1 className="text-lg font-black">Control Escolar</h1>
-              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{userName} · {userRole}</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="hidden min-w-[190px] rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-right leading-tight dark:border-slate-800 dark:bg-slate-900 md:block">
-                <p className="flex items-center justify-end gap-1.5 text-sm font-black tabular-nums"><Clock3 size={15} /> {formattedClock}</p>
-                <p className="mt-0.5 flex items-center justify-end gap-1 text-[11px] capitalize text-slate-500 dark:text-slate-400"><CalendarDays size={12} /> {formattedDate}</p>
+      <Sidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        userName={userName}
+        userRole={userRole}
+        formattedDate={formattedDate}
+        active={reportsOpen ? 'reports' : dashboardOpen ? 'dashboard' : 'home'}
+        onHome={() => { setDashboardOpen(false); setReportsOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+        onDashboard={() => setDashboardOpen(true)}
+        onReports={() => setReportsOpen(true)}
+        onNotifications={() => void openMultiNotification()}
+        onSettings={() => setSettingsOpen(true)}
+        onResetToday={() => void resetToday()}
+        onLogout={onLogout}
+      />
+
+      <div className="min-h-screen lg:pl-[260px]">
+        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
+          <div className="flex min-h-16 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+            <div className="flex min-w-0 items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 lg:hidden"
+                aria-label="Abrir menú"
+              >
+                <Menu size={20} />
+              </button>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Control diario</p>
+                <p className="truncate text-sm font-black sm:text-base">{classroom.grade} {classroom.section} · {classroom.level}</p>
               </div>
-              <Button variant="outline" onClick={() => setDashboardOpen(true)} aria-label="Dashboard">
-                <BarChart3 className="mr-2" size={18} />
-                Dashboard
-              </Button>
-              <Button variant="outline" onClick={() => void openMultiNotification()} aria-label="Multinotificación">
-                <FileText className="mr-2" size={18} />
-                Notificaciones
-              </Button>
-              <Button variant="outline" onClick={() => setSettingsOpen(true)} aria-label="Configuración">
-                <Settings className="mr-2" size={18} />
-                Configuración
-              </Button>
-              <Button variant="outline" onClick={resetToday}>
-                <RotateCcw className="mr-2" size={17} />
-                Reiniciar hoy
-              </Button>
-              <Button variant="ghost" onClick={onLogout}>
-                <LogOut className="mr-2" size={18} />
-                Salir
-              </Button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="hidden text-right sm:block">
+                <p className="text-sm font-black tabular-nums">{formattedClock}</p>
+                <p className="text-[11px] capitalize text-slate-500 dark:text-slate-400">{formattedDate}</p>
+              </div>
+              <div className="hidden h-9 w-px bg-slate-200 dark:bg-slate-800 md:block" />
+              <div className="hidden max-w-[180px] text-right md:block">
+                <p className="truncate text-xs font-bold">{userName}</p>
+                <p className="truncate text-[10px] uppercase tracking-wider text-slate-400">{userRole}</p>
+              </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <section className="mx-auto max-w-5xl px-5 py-6">
+        <section className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
         {dataError && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">{dataError}</div>}
         {loadingData && <div className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">Sincronizando datos con Supabase...</div>}
         <div className="rounded-2xl border border-slate-200 bg-white p-5 text-slate-950 shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100">
@@ -479,6 +649,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
             const presentation = todayPresentationRecords.find((item) => item.studentId === student.id)
             const violations = getViolationCount(presentation)
             const recurrence = studentNotificationStats(student.id)
+            const whatsAppOptions = getWhatsAppOptions(student)
+            const canOpenWhatsApp = whatsAppOptions.length > 0 && isValidPeruWhatsApp(student.guardianPhone)
 
             return (
               <Card key={student.id} className="p-4 sm:p-5">
@@ -538,14 +710,25 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                       <Button variant="ghost" className="w-full sm:w-auto" onClick={() => setHistoryStudent(student)}>
                         <BookOpen className="mr-2" size={17} /> Historial
                       </Button>
-                      {presentation?.status === 'NON_COMPLIANT' && (
+                      {whatsAppOptions.length > 0 && (
+                        <Button
+                          variant="outline"
+                          className="w-full border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/70 dark:text-emerald-300 dark:hover:bg-emerald-950/40 sm:w-auto"
+                          onClick={() => openWhatsAppModal(student)}
+                          disabled={!canOpenWhatsApp}
+                          title={canOpenWhatsApp ? 'Preparar mensaje para el apoderado' : 'El alumno no tiene un celular peruano válido registrado'}
+                        >
+                          <MessageCircle className="mr-2" size={17} /> WhatsApp
+                        </Button>
+                      )}
+                      {(presentation?.status === 'NON_COMPLIANT' || record?.status === 'LATE') && (
                         <Button variant="outline" className="w-full sm:w-auto" onClick={() => void openNotification(student)}>
                           <FileText className="mr-2" size={17} /> Notificación
                         </Button>
                       )}
                       <Button variant="outline" className="w-full sm:w-auto" onClick={() => openPresentation(student)}>
                         {presentation ? <Edit3 className="mr-2" size={17} /> : <ClipboardCheck className="mr-2" size={17} />}
-                        {presentation ? 'Editar control' : 'Revisar presentación'}
+                        {presentation ? 'Editar control' : 'Revisar normas'}
                       </Button>
                     </div>
                   </div>
@@ -558,7 +741,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
             <div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">No hay alumnos que coincidan con estos filtros.</div>
           )}
         </div>
-      </section>
+        </section>
+      </div>
 
       {presentationStudent && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-[1px] dark:bg-black/65" onMouseDown={() => setPresentationStudent(null)}>
@@ -568,7 +752,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Control de presentación</p>
+                <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Control de reglamento interno</p>
                 <h2 className="mt-1 text-xl font-black">{presentationStudent.firstName} {presentationStudent.lastName}</h2>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{classroom.grade} {classroom.section} · {classroom.level}</p>
               </div>
@@ -603,41 +787,33 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
               <div className="mt-6 space-y-3">
                 <p className="text-sm font-black">Incumplimientos institucionales</p>
                 {[
-                  ['hairstyleViolation', 'Peinado no acorde con las disposiciones institucionales.'],
-                  ['uniformUsageViolation', 'Uso inadecuado o incompleto del uniforme.'],
-                  ['nonInstitutionalGarment', 'Prenda no correspondiente al uniforme institucional.'],
-                  ['otherViolation', 'Otro.'],
+                  ['hairstyleViolation', '1. Peinado no acorde con las disposiciones institucionales.'],
+                  ['uniformUsageViolation', '2. Uso inadecuado o incompleto del uniforme.'],
+                  ['nonInstitutionalGarment', '3. Prenda no correspondiente al uniforme institucional.'],
+                  ['lateEntryViolation', '4. Tardanza en el ingreso.'],
+                  ['inappropriateConductViolation', '5. Conducta inapropiada.'],
                 ].map(([key, label]) => (
                   <label key={key} className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 transition-colors hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950/60 dark:hover:border-slate-600">
                     <input
                       type="checkbox"
                       className="mt-0.5 h-5 w-5 shrink-0 accent-slate-950 dark:accent-slate-100"
                       checked={Boolean(presentationDraft[key as keyof PresentationDraft])}
-                      onChange={(event) => setPresentationDraft((current) => ({
-                        ...current,
-                        [key]: event.target.checked,
-                        ...(key === 'otherViolation' && !event.target.checked ? { otherDescription: '' } : {}),
-                      }))}
+                      onChange={(event) => setPresentationDraft((current) => ({ ...current, [key]: event.target.checked }))}
                     />
                     <span className="text-sm font-semibold leading-6">{label}</span>
                   </label>
                 ))}
 
-                {presentationDraft.otherViolation && (
-                  <label className="block rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/50">
-                    <span className="text-sm font-black">Especifique el incumplimiento</span>
-                    <textarea
-                      value={presentationDraft.otherDescription}
-                      onChange={(event) => setPresentationDraft((current) => ({ ...current, otherDescription: event.target.value }))}
-                      placeholder="Escriba qué disposición se incumplió..."
-                      rows={3}
-                      className="mt-2 w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-slate-500 focus:ring-2 focus:ring-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-slate-800"
-                    />
-                    {!presentationDraft.otherDescription.trim() && (
-                      <span className="mt-1 block text-xs font-semibold text-amber-700 dark:text-amber-300">Este campo es obligatorio al seleccionar “Otro”.</span>
-                    )}
-                  </label>
-                )}
+                <label className="block rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/50">
+                  <span className="text-sm font-black">Descripción de la observación</span>
+                  <textarea
+                    value={presentationDraft.observation}
+                    onChange={(event) => setPresentationDraft((current) => ({ ...current, observation: event.target.value }))}
+                    placeholder="Detalle adicional de la situación observada..."
+                    rows={3}
+                    className="mt-2 w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-slate-500 focus:ring-2 focus:ring-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-slate-800"
+                  />
+                </label>
               </div>
             )}
 
@@ -652,18 +828,18 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       )}
 
       {notificationStudent && (() => {
-        const notificationRecord = todayPresentationRecords.find((item) => item.studentId === notificationStudent.id && item.status === 'NON_COMPLIANT')
-        if (!notificationRecord) return null
-        const notificationData = buildNotificationData(notificationStudent, notificationRecord)
+        const notificationData = buildNotificationData(notificationStudent)
         if (!notificationData) return null
+        const labels = getPresentationViolationLabels(notificationData.presentation)
+        if (notificationData.attendance?.status === 'LATE' && !labels.some((item) => item.startsWith('Tardanza'))) labels.push('Tardanza en el ingreso.')
         return (
           <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-[1px] dark:bg-black/65" onMouseDown={() => setNotificationStudent(null)}>
             <section className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-5 text-slate-950 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 sm:p-6" onMouseDown={(event) => event.stopPropagation()}>
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Ficha individual · 1/3 A4</p>
-                  <h2 className="mt-1 text-xl font-black">Notificación a padres de familia</h2>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">PDF y Word en formato físico de 210 × 99 mm.</p>
+                  <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Ficha oficial · 1/3 A4</p>
+                  <h2 className="mt-1 text-xl font-black">Notificación sobre incumplimiento de reglamento interno</h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">PDF y Word con el nuevo formato institucional.</p>
                 </div>
                 <Button variant="ghost" onClick={() => setNotificationStudent(null)} aria-label="Cerrar"><X size={20} /></Button>
               </div>
@@ -671,28 +847,28 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
               <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-700 dark:bg-slate-950/60">
                 <div className="grid gap-2 sm:grid-cols-2">
                   <p><span className="font-black">Estudiante:</span> {notificationStudent.firstName} {notificationStudent.lastName}</p>
-                  <p><span className="font-black">Grado:</span> {notificationData.classroom.grade} {notificationData.classroom.section} · {notificationData.classroom.level}</p>
-                  <p><span className="font-black">Tutor(a):</span> {notificationData.classroom.tutorName}</p>
+                  <p><span className="font-black">Año y sección:</span> {notificationData.classroom.grade} {notificationData.classroom.section}</p>
                   <p><span className="font-black">Apoderado:</span> {notificationStudent.guardianName}</p>
                   <p><span className="font-black">DNI:</span> {notificationStudent.guardianDni || 'Sin DNI registrado'}</p>
-                  <p><span className="font-black">Nivel:</span> {getNotificationLabel(notificationData.notificationNumber)}</p>
+                  <p><span className="font-black">N° de notificación:</span> {notificationData.notificationNumber}</p>
+                  <p><span className="font-black">Seguimiento:</span> {getNotificationLabel(notificationData.notificationNumber)}</p>
                 </div>
                 <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-700">
                   <p className="font-black">Incumplimientos marcados</p>
                   <ul className="mt-2 space-y-1 text-slate-600 dark:text-slate-300">
-                    {notificationRecord.hairstyleViolation && <li>• Peinado no acorde con las disposiciones institucionales.</li>}
-                    {notificationRecord.uniformUsageViolation && <li>• Uso inadecuado o incompleto del uniforme.</li>}
-                    {notificationRecord.nonInstitutionalGarment && <li>• Prenda no correspondiente al uniforme institucional.</li>}
-                    {notificationRecord.otherViolation && <li>• Otro: {notificationRecord.otherDescription}</li>}
+                    {labels.map((label) => <li key={label}>• {label}</li>)}
                   </ul>
+                  {notificationData.presentation?.observation && (
+                    <p className="mt-3"><span className="font-black">Descripción:</span> {notificationData.presentation.observation}</p>
+                  )}
                 </div>
               </div>
 
               <div className="mt-6 grid gap-2 sm:grid-cols-2">
-                <Button onClick={() => downloadNotificationPdf(notificationStudent, notificationData.classroom, notificationRecord, notificationData.notificationNumber)}>
+                <Button onClick={() => downloadNotificationPdf(notificationData)}>
                   <Download className="mr-2" size={18} /> Descargar PDF
                 </Button>
-                <Button variant="outline" onClick={() => void downloadNotificationWord(notificationStudent, notificationData.classroom, notificationRecord, notificationData.notificationNumber)}>
+                <Button variant="outline" onClick={() => void downloadNotificationWord(notificationData)}>
                   <FileText className="mr-2" size={18} /> Descargar Word
                 </Button>
               </div>
@@ -724,7 +900,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 </div>
               </div>
 
-              <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">Solo aparecen estudiantes que tienen un incumplimiento registrado hoy. Puedes combinar alumnos de distintas aulas.</p>
+              <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">Aparecen estudiantes con incumplimiento del reglamento o tardanza registrada hoy. Puedes combinar alumnos de distintas aulas.</p>
 
               <div className="mt-4 space-y-2">
                 {notificationCandidates.length === 0 ? (
@@ -740,7 +916,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                         <p className="font-black">{student.firstName} {student.lastName}</p>
                         <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{studentClassroom ? `${studentClassroom.grade} ${studentClassroom.section} · ${studentClassroom.level}` : 'Aula no encontrada'} · Apoderado: {student.guardianName}</p>
                       </div>
-                      <span className="text-xs font-bold text-amber-700 dark:text-amber-300">{getNotificationNumber(student.id, today, todayPresentationRecords.find((item) => item.studentId === student.id)?.id)}.ª</span>
+                      <span className="text-xs font-bold text-amber-700 dark:text-amber-300">N° {getNotificationNumber(student.id, today, todayPresentationRecords.find((item) => item.studentId === student.id)?.id, todayRecords.find((item) => item.studentId === student.id && item.status === 'LATE')?.id)}</span>
                     </label>
                   )
                 })}
@@ -837,6 +1013,119 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
           </div>
         )
       })()}
+
+
+      {whatsAppStudent && (() => {
+        const options = getWhatsAppOptions(whatsAppStudent)
+        const normalizedOk = isValidPeruWhatsApp(whatsAppStudent.guardianPhone)
+        return (
+          <div
+            className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-4 backdrop-blur-[1px] dark:bg-black/70"
+            onMouseDown={() => setWhatsAppStudent(null)}
+          >
+            <section
+              className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 text-slate-950 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 sm:p-6"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">WhatsApp · Fase 5.2</p>
+                  <h2 className="mt-1 text-xl font-black">Comunicar al apoderado</h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    El mensaje se abrirá listo en WhatsApp. La auxiliar solo tendrá que revisar y pulsar Enviar.
+                  </p>
+                </div>
+                <Button variant="ghost" onClick={() => setWhatsAppStudent(null)} aria-label="Cerrar"><X size={20} /></Button>
+              </div>
+
+              <div className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-700 dark:bg-slate-950/60 sm:grid-cols-2">
+                <p><span className="font-black">Estudiante:</span> {whatsAppStudent.firstName} {whatsAppStudent.lastName}</p>
+                <p><span className="font-black">Apoderado:</span> {whatsAppStudent.guardianName}</p>
+                <p className="sm:col-span-2">
+                  <span className="font-black">WhatsApp:</span>{' '}
+                  <span className={normalizedOk ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-600 dark:text-red-300'}>
+                    {whatsAppStudent.guardianPhone || 'Sin número registrado'}
+                  </span>
+                </p>
+              </div>
+
+              {options.length > 1 && (
+                <label className="mt-5 block">
+                  <span className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Motivo de comunicación</span>
+                  <div className="relative">
+                    <select
+                      value={whatsAppType}
+                      onChange={(event) => changeWhatsAppType(event.target.value as WhatsAppMessageType)}
+                      className="h-12 w-full appearance-none rounded-xl border border-slate-300 bg-white px-4 pr-10 text-sm font-semibold text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                    >
+                      {options.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-3.5 text-slate-400" size={20} />
+                  </div>
+                </label>
+              )}
+
+              {options.length === 1 && (
+                <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-300">
+                  Motivo: {getWhatsAppTypeLabel(options[0].type)}
+                </div>
+              )}
+
+              <label className="mt-5 block">
+                <span className="mb-2 flex items-center justify-between gap-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <span>Mensaje</span>
+                  <button
+                    type="button"
+                    onClick={() => setWhatsAppMessage(buildStudentWhatsAppMessage(whatsAppStudent, whatsAppType))}
+                    className="normal-case tracking-normal text-blue-600 hover:underline dark:text-blue-400"
+                  >
+                    Restaurar texto automático
+                  </button>
+                </span>
+                <textarea
+                  value={whatsAppMessage}
+                  onChange={(event) => setWhatsAppMessage(event.target.value)}
+                  rows={11}
+                  className="w-full resize-y rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm leading-6 text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:ring-slate-800"
+                />
+              </label>
+
+              {!normalizedOk && (
+                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-300">
+                  El teléfono registrado no parece un celular peruano válido. Guarda en Supabase un número como 987654321 o +51987654321.
+                </div>
+              )}
+
+              {whatsAppError && (
+                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-300">
+                  {whatsAppError}
+                </div>
+              )}
+
+              <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-400">
+                <b>Modo actual:</b> wa.me (sin costo de API). Este botón no confirma que el mensaje fue enviado; abre WhatsApp con el destinatario y texto preparados. El servicio está aislado para poder cambiarlo luego por WhatsApp Cloud API sin rediseñar esta pantalla.
+              </div>
+
+              <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button variant="outline" onClick={() => setWhatsAppStudent(null)}>Cancelar</Button>
+                <Button
+                  onClick={() => void handleOpenWhatsApp()}
+                  disabled={!normalizedOk || !whatsAppMessage.trim() || openingWhatsApp}
+                  className="bg-emerald-600 text-white hover:bg-emerald-500 dark:bg-emerald-500 dark:text-white dark:hover:bg-emerald-400"
+                >
+                  <Send className="mr-2" size={18} /> {openingWhatsApp ? 'Abriendo...' : 'Abrir WhatsApp'}
+                </Button>
+              </div>
+            </section>
+          </div>
+        )
+      })()}
+
+      <AdvancedReports
+        open={reportsOpen}
+        onClose={() => setReportsOpen(false)}
+        classrooms={classrooms}
+      />
 
       <Dashboard
         open={dashboardOpen}

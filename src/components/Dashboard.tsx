@@ -119,7 +119,8 @@ export default function Dashboard({
     { name: 'Peinado', value: todayPresentation.filter((record) => record.hairstyleViolation).length },
     { name: 'Uniforme', value: todayPresentation.filter((record) => record.uniformUsageViolation).length },
     { name: 'Prenda', value: todayPresentation.filter((record) => record.nonInstitutionalGarment).length },
-    { name: 'Otro', value: todayPresentation.filter((record) => record.otherViolation).length },
+    { name: 'Tardanza', value: todayPresentation.filter((record) => record.lateEntryViolation).length },
+    { name: 'Conducta', value: todayPresentation.filter((record) => record.inappropriateConductViolation).length },
   ]
   const maxViolation = Math.max(1, ...violationData.map((item) => item.value))
 
@@ -221,7 +222,8 @@ export default function Dashboard({
                         record?.hairstyleViolation && 'Peinado',
                         record?.uniformUsageViolation && 'Uniforme',
                         record?.nonInstitutionalGarment && 'Prenda',
-                        record?.otherViolation && 'Otro',
+                        record?.lateEntryViolation && 'Tardanza',
+                        record?.inappropriateConductViolation && 'Conducta',
                       ].filter(Boolean).join(' · ')}
                     </p>
                   </div>

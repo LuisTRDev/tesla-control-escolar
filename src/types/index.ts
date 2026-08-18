@@ -19,6 +19,7 @@ export type Student = {
 export type AttendanceStatus = 'ON_TIME' | 'LATE'
 
 export type AttendanceRecord = {
+  id?: string
   studentId: string
   date: string
   time: string
@@ -29,6 +30,11 @@ export type AttendanceFilter = 'ALL' | 'ON_TIME' | 'LATE' | 'PENDING'
 
 export type PresentationStatus = 'COMPLIANT' | 'NON_COMPLIANT'
 
+/**
+ * Conservamos el nombre PresentationRecord por compatibilidad con Fase 4,
+ * pero desde Fase 5.1.1 representa el control de incumplimientos del
+ * reglamento interno que alimenta la nueva notificación oficial.
+ */
 export type PresentationRecord = {
   id?: string
   studentId: string
@@ -37,17 +43,22 @@ export type PresentationRecord = {
   hairstyleViolation: boolean
   uniformUsageViolation: boolean
   nonInstitutionalGarment: boolean
-  otherViolation: boolean
-  otherDescription: string
+  lateEntryViolation: boolean
+  inappropriateConductViolation: boolean
+  observation: string
   checkedAt: string
 }
 
+export type NotificationType = 'PRESENTATION' | 'LATE_ENTRY' | 'INAPPROPRIATE_CONDUCT'
 
 export type NotificationRecord = {
   id: string
   studentId: string
-  presentationControlId: string
-  notificationNumber: 1 | 2 | 3
+  presentationControlId: string | null
+  attendanceId: string | null
+  notificationNumber: number
+  notificationType: NotificationType
+  observation: string
   date: string
   generatedAt: string
 }
