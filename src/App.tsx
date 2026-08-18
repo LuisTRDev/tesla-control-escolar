@@ -70,7 +70,7 @@ export default function App() {
   }
 
   if (!userName || !classroom) {
-    return <Login onLogin={() => void loadSession()} externalError={appError} />
+    return <Login onLogin={() => void loadSession()} />
   }
 
   return (

@@ -7,9 +7,13 @@ import { supabase } from '@/lib/supabase'
 
 type Props = {
   onLogin: (name: string) => void
+  externalError?: string
 }
 
-export default function Login({ onLogin }: Props) {
+export default function Login({
+  onLogin,
+  externalError = '',
+}: Props) {
   const [email, setEmail] = useState('auxiliar@tesla.test')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -29,6 +33,7 @@ export default function Login({ onLogin }: Props) {
       })
 
       if (error) {
+        console.error('Error de autenticación:', error)
         setErrorMessage('Correo o contraseña incorrectos.')
         return
       }
@@ -45,27 +50,37 @@ export default function Login({ onLogin }: Props) {
         .single()
 
       if (profileError) {
-        console.error(profileError)
+        console.error('Error cargando perfil:', profileError)
+
         setErrorMessage(
           'Se inició sesión, pero no se pudo cargar el perfil.'
         )
+
+        return
+      }
+
+      if (!profile?.full_name) {
+        setErrorMessage('El usuario no tiene un perfil configurado.')
         return
       }
 
       onLogin(profile.full_name)
     } catch (error) {
-      console.error(error)
+      console.error('Error inesperado:', error)
       setErrorMessage('Ocurrió un error al iniciar sesión.')
     } finally {
       setLoading(false)
     }
   }
 
+  const displayedError = errorMessage || externalError
+
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#020817] px-5 py-8 text-slate-950">
       {/* Fondo decorativo */}
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute -left-24 -top-20 h-80 w-80 rounded-full bg-blue-800/20 blur-3xl" />
+
         <div className="absolute -bottom-24 -right-20 h-96 w-96 rounded-full bg-blue-700/20 blur-3xl" />
 
         <div className="absolute left-[-120px] top-16 h-[2px] w-[520px] rotate-[-20deg] bg-gradient-to-r from-transparent via-amber-400 to-transparent opacity-80" />
@@ -96,9 +111,11 @@ export default function Login({ onLogin }: Props) {
 
           <div className="mt-4 flex items-center justify-center gap-4">
             <div className="h-px w-20 bg-gradient-to-r from-transparent to-blue-500" />
+
             <span className="text-xs font-semibold text-slate-500">
               v1.0
             </span>
+
             <div className="h-px w-20 bg-gradient-to-l from-transparent to-blue-500" />
           </div>
         </div>
@@ -106,6 +123,7 @@ export default function Login({ onLogin }: Props) {
         {/* Card */}
         <Card className="rounded-[28px] border border-white/10 bg-white p-6 shadow-[0_30px_80px_rgba(0,0,0,0.35)] sm:p-8">
           <div className="space-y-5">
+            {/* Correo */}
             <div>
               <label className="mb-2 block text-sm font-bold text-slate-900">
                 Correo
@@ -121,13 +139,17 @@ export default function Login({ onLogin }: Props) {
                   className="h-14 rounded-2xl border-slate-200 bg-white pl-12 text-[15px]"
                   type="email"
                   value={email}
-                  onChange={(event) => setEmail(event.target.value)}
+                  onChange={(event) => {
+                    setEmail(event.target.value)
+                    setErrorMessage('')
+                  }}
                   placeholder="correo@nikolatesla.edu.pe"
                   autoComplete="email"
                 />
               </div>
             </div>
 
+            {/* Contraseña */}
             <div>
               <label className="mb-2 block text-sm font-bold text-slate-900">
                 Contraseña
@@ -143,7 +165,10 @@ export default function Login({ onLogin }: Props) {
                   className="h-14 rounded-2xl border-slate-200 bg-white pl-12 pr-12 text-[15px]"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
+                  onChange={(event) => {
+                    setPassword(event.target.value)
+                    setErrorMessage('')
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') {
                       handleLogin()
@@ -154,7 +179,9 @@ export default function Login({ onLogin }: Props) {
 
                 <button
                   type="button"
-                  onClick={() => setShowPassword((value) => !value)}
+                  onClick={() =>
+                    setShowPassword((current) => !current)
+                  }
                   className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
                   aria-label={
                     showPassword
@@ -171,14 +198,16 @@ export default function Login({ onLogin }: Props) {
               </div>
             </div>
 
-            {errorMessage && (
+            {/* Error */}
+            {displayedError && (
               <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-                {errorMessage}
+                {displayedError}
               </div>
             )}
 
+            {/* Botón */}
             <Button
-              className="h-14 w-full rounded-2xl bg-gradient-to-r from-blue-700 to-blue-600 text-base font-bold text-white shadow-lg shadow-blue-900/20 transition hover:from-blue-600 hover:to-blue-500 disabled:opacity-50"
+              className="h-14 w-full rounded-2xl bg-gradient-to-r from-blue-700 to-blue-600 text-base font-bold text-white shadow-lg shadow-blue-900/20 transition hover:from-blue-600 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!email || !password || loading}
               onClick={handleLogin}
             >
