@@ -14,6 +14,7 @@ import StudentCaseFile from '@/components/StudentCaseFile'
 import AuditLog from '@/components/AuditLog'
 import QuickMode from '@/components/QuickMode'
 import BackupCenter from '@/components/BackupCenter'
+import HistoricalImport from '@/components/HistoricalImport'
 import SyncStatus from '@/components/SyncStatus'
 import { useNetworkSync } from '@/hooks/useNetworkSync'
 import { usePwaInstall } from '@/hooks/usePwaInstall'
@@ -98,6 +99,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [auditOpen, setAuditOpen] = useState(false)
   const [quickModeOpen, setQuickModeOpen] = useState(false)
   const [backupOpen, setBackupOpen] = useState(false)
+  const [historicalImportOpen, setHistoricalImportOpen] = useState(false)
   const [caseFileStudent, setCaseFileStudent] = useState<Student | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [now, setNow] = useState(() => new Date())
@@ -467,7 +469,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         userName={userName}
         userRole={userRole}
         formattedDate={formattedDate}
-        active={backupOpen ? 'backup' : quickModeOpen ? 'quick' : auditOpen ? 'audit' : dailySummaryOpen ? 'summary' : alertsOpen ? 'alerts' : reportsOpen ? 'reports' : dashboardOpen ? 'dashboard' : 'home'}
+        active={historicalImportOpen ? 'historical' : backupOpen ? 'backup' : quickModeOpen ? 'quick' : auditOpen ? 'audit' : dailySummaryOpen ? 'summary' : alertsOpen ? 'alerts' : reportsOpen ? 'reports' : dashboardOpen ? 'dashboard' : 'home'}
         onHome={() => { setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
         onDashboard={() => { setDashboardOpen(true); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false) }}
         onReports={() => { setReportsOpen(true); setDashboardOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false) }}
@@ -477,6 +479,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         onAudit={() => { setAuditOpen(true); setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false) }}
         onQuickMode={() => setQuickModeOpen(true)}
         onBackups={() => setBackupOpen(true)}
+        onHistoricalImport={() => setHistoricalImportOpen(true)}
         online={syncState.online}
         pendingSync={syncState.pending}
         onSettings={() => setSettingsOpen(true)}
@@ -1200,6 +1203,13 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         classroom={caseFileStudent ? classrooms.find((item) => item.id === caseFileStudent.classroomId) : undefined}
         onClose={() => setCaseFileStudent(null)}
         onOpenWhatsApp={(student) => { setCaseFileStudent(null); openWhatsAppModal(student) }}
+      />
+
+      <HistoricalImport
+        open={historicalImportOpen}
+        onClose={() => setHistoricalImportOpen(false)}
+        students={students}
+        classrooms={classrooms}
       />
 
       <AuditLog open={auditOpen} onClose={() => setAuditOpen(false)} />
