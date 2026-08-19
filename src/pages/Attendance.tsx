@@ -251,7 +251,6 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         try {
           const notification = await ensureNotificationForPresentation(saved)
           setNotifications((curr) => [notification, ...curr.filter((item) => item.id !== notification.id)])
-          setNotificationStudent(currentStudent)
         } catch (notificationError) {
           console.error(notificationError)
           setDataError(notificationError instanceof Error
@@ -362,31 +361,12 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     })
   }
 
-  async function openMultiNotification() {
+  function openMultiNotification() {
+    // Abrir este módulo es solo una acción de navegación.
+    // No debe crear/consultar una notificación por cada alumno ni bloquear la operación diaria.
     setSelectedNotificationIds([])
     setNotificationSearch('')
-    try {
-      const candidates = students.filter((student) => {
-        const presentation = todayPresentationRecords.some((item) => item.studentId === student.id && item.status === 'NON_COMPLIANT')
-        const late = todayRecords.some((item) => item.studentId === student.id && item.status === 'LATE')
-        return presentation || late
-      })
-      const created: NotificationRecord[] = []
-      for (const student of candidates) {
-        const item = await ensureTodayNotification(student)
-        if (item) created.push(item)
-      }
-      if (created.length) {
-        setNotifications((current) => {
-          const createdIds = new Set(created.map((item) => item.id))
-          return [...created, ...current.filter((item) => !createdIds.has(item.id))]
-        })
-      }
-      setMultiNotificationOpen(true)
-    } catch (error) {
-      console.error(error)
-      setDataError(error instanceof Error ? error.message : 'No se pudieron preparar las notificaciones.')
-    }
+    setMultiNotificationOpen(true)
   }
 
 
@@ -491,7 +471,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         onHome={() => { setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
         onDashboard={() => { setDashboardOpen(true); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false) }}
         onReports={() => { setReportsOpen(true); setDashboardOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false) }}
-        onNotifications={() => void openMultiNotification()}
+        onNotifications={openMultiNotification}
         onAlerts={() => { setAlertsOpen(true); setDashboardOpen(false); setReportsOpen(false); setDailySummaryOpen(false); setAuditOpen(false) }}
         onDailySummary={() => { setDailySummaryOpen(true); setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setAuditOpen(false) }}
         onAudit={() => { setAuditOpen(true); setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false) }}
