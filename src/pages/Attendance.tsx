@@ -22,8 +22,10 @@ import {
   MAX_NOTIFICATIONS_PER_PAGE,
   downloadMultiNotificationPdf,
   downloadMultiNotificationWord,
+  downloadMultiNotificationImage,
   downloadNotificationPdf,
   downloadNotificationWord,
+  downloadNotificationImage,
   type NotificationPrintData,
 } from '@/lib/notification'
 import { getCurrentTime, getPreferences, getTodayKey, resetPreferences, savePreferences, type UserPreferences } from '@/lib/storage'
@@ -117,8 +119,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const darkMode = preferences.theme === 'dark' || (preferences.theme === 'system' && systemDark)
   const sizeClass = preferences.interfaceSize === 'large' ? 'text-[17px]' : ''
 
-  const reloadData = useCallback(async () => {
-    setLoadingData(true); setDataError('')
+  const reloadData = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoadingData(true); setDataError('')
     try {
       const range = monthRange()
       const [studentData, attendanceData, presentationData, notificationData, limit] = await Promise.all([
@@ -135,13 +137,15 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       setEntryLimit(limit)
     } catch (error) {
       console.error(error); setDataError(error instanceof Error ? error.message : 'No se pudieron cargar los datos locales/remotos.')
-    } finally { setLoadingData(false) }
+    } finally { if (showLoading) setLoadingData(false) }
   }, [])
 
-  const syncState = useNetworkSync(reloadData)
+  // Las sincronizaciones de fondo actualizan los datos sin desmontar ni bloquear la pantalla.
+  const pullInBackground = useCallback(async () => { await reloadData(false) }, [reloadData])
+  const syncState = useNetworkSync(pullInBackground)
   const { installAvailable, install } = usePwaInstall()
 
-  useEffect(() => { void reloadData() }, [reloadData])
+  useEffect(() => { void reloadData(true) }, [reloadData])
   useEffect(() => { document.documentElement.classList.toggle('dark', darkMode); return () => document.documentElement.classList.remove('dark') }, [darkMode])
   useEffect(() => { const media=window.matchMedia('(prefers-color-scheme: dark)'); const update=(e:MediaQueryListEvent)=>setSystemDark(e.matches); media.addEventListener('change',update); return()=>media.removeEventListener('change',update) }, [])
   useEffect(() => { const timer=window.setInterval(()=>setNow(new Date()),1000); return()=>window.clearInterval(timer) }, [])
@@ -796,8 +800,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       <QuickMode
         open={quickModeOpen}
         onClose={() => setQuickModeOpen(false)}
-        classroom={classroom}
-        students={classroomStudents}
+        classrooms={classrooms}
+        students={students}
         records={todayRecords}
         onMark={mark}
         online={syncState.online}
@@ -932,6 +936,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 <Button variant="outline" onClick={() => void downloadNotificationWord(notificationData)}>
                   <FileText className="mr-2" size={18} /> Descargar Word
                 </Button>
+                <Button variant="outline" onClick={() => void downloadNotificationImage(notificationData)}>
+                  <Download className="mr-2" size={18} /> Descargar imagen PNG
+                </Button>
               </div>
             </section>
           </div>
@@ -995,6 +1002,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 </Button>
                 <Button variant="outline" disabled={selectedNotificationData.length === 0} onClick={() => void downloadMultiNotificationWord(selectedNotificationData)}>
                   <FileText className="mr-2" size={18} /> Generar Word A4
+                </Button>
+                <Button variant="outline" disabled={selectedNotificationData.length === 0} onClick={() => void downloadMultiNotificationImage(selectedNotificationData)}>
+                  <Download className="mr-2" size={18} /> Generar imagen PNG
                 </Button>
               </div>
               <p className="mt-3 text-center text-xs text-slate-500 dark:text-slate-400">Si eliges 1 o 2 alumnos, los espacios restantes quedan vacíos para conservar el formato de corte.</p>

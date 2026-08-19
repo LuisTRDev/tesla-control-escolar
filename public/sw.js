@@ -1,5 +1,4 @@
-const CACHE_NAME = 'tesla-control-v0.7.1'
-
+const CACHE_NAME = 'tesla-control-v0.7.2'
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -10,12 +9,17 @@ const APP_SHELL = [
 ]
 
 self.addEventListener('install', (event) => {
+  // Importante: NO hacemos skipWaiting automáticamente.
+  // La versión nueva queda esperando hasta que el usuario pulse "Actualizar ahora".
   event.waitUntil(
-    caches
-      .open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
   )
+})
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting()
+  }
 })
 
 self.addEventListener('activate', (event) => {
@@ -39,81 +43,50 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return
 
   const url = new URL(request.url)
-
-  // Solo cacheamos recursos de nuestro propio dominio.
   if (url.origin !== self.location.origin) return
 
-  // Navegaciones: network-first con fallback al index.
+  // Navegación: red primero; si no hay conexión, usamos el shell cacheado.
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          if (!response || !response.ok) {
-            return response
+          if (response?.ok) {
+            const copy = response.clone()
+            event.waitUntil(
+              caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy))
+            )
           }
-
-          const responseToCache = response.clone()
-
-          event.waitUntil(
-            caches
-              .open(CACHE_NAME)
-              .then((cache) =>
-                cache.put('/index.html', responseToCache)
-              )
-          )
-
           return response
         })
         .catch(async () => {
           const cached = await caches.match('/index.html')
-
-          return (
-            cached ||
-            new Response('Sin conexión', {
-              status: 503,
-              headers: {
-                'Content-Type': 'text/plain; charset=utf-8',
-              },
-            })
-          )
+          return cached || new Response('Sin conexión', {
+            status: 503,
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          })
         })
     )
-
     return
   }
 
-  // Recursos estáticos: cache-first.
+  // Recursos estáticos: caché primero y red como respaldo.
   event.respondWith(
-    caches.match(request).then(async (cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse
-      }
+    caches.match(request).then(async (cached) => {
+      if (cached) return cached
 
       try {
-        const networkResponse = await fetch(request)
+        const response = await fetch(request)
 
-        if (
-          networkResponse &&
-          networkResponse.ok &&
-          networkResponse.type === 'basic'
-        ) {
-          const responseToCache = networkResponse.clone()
-
+        if (response?.ok && response.type === 'basic') {
+          const copy = response.clone()
           event.waitUntil(
-            caches
-              .open(CACHE_NAME)
-              .then((cache) =>
-                cache.put(request, responseToCache)
-              )
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy))
           )
         }
 
-        return networkResponse
+        return response
       } catch {
-        return new Response('', {
-          status: 503,
-          statusText: 'Offline',
-        })
+        return new Response('', { status: 503, statusText: 'Offline' })
       }
     })
   )

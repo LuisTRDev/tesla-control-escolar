@@ -271,3 +271,89 @@ export async function downloadMultiNotificationWord(items: NotificationPrintData
   const blob = renderWordTemplate(template, data)
   downloadBlob(blob, multiFilename('docx'))
 }
+
+// Exportación PNG pensada para compartir por WhatsApp/correo sin depender de un visor PDF.
+function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
+  const words = text.split(/\s+/)
+  const lines: string[] = []
+  let line = ''
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word
+    if (ctx.measureText(test).width > maxWidth && line) { lines.push(line); line = word } else line = test
+  }
+  if (line) lines.push(line)
+  return lines
+}
+
+function drawCanvasLines(ctx: CanvasRenderingContext2D, lines: string[], x: number, y: number, lineHeight: number, maxLines = lines.length) {
+  lines.slice(0, maxLines).forEach((line, index) => ctx.fillText(line, x, y + index * lineHeight))
+}
+
+function drawNotificationCanvas(ctx: CanvasRenderingContext2D, data: NotificationPrintData, top: number, width: number, height: number) {
+  const scale = width / 210
+  const mm = (value: number) => value * scale
+  const { student, classroom, notificationNumber } = data
+  const state = reasons(data)
+  const dp = dateParts(sourceDate(data))
+  const left = mm(6), right = width - mm(6)
+
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, top, width, height)
+  ctx.strokeStyle = '#555'; ctx.lineWidth = Math.max(1, mm(.18)); ctx.strokeRect(mm(3), top + mm(2), width - mm(6), height - mm(4))
+  ctx.fillStyle = '#111'; ctx.textBaseline = 'alphabetic'
+
+  const font = (size: number, bold = false) => { ctx.font = `${bold ? 700 : 400} ${Math.round(mm(size))}px Arial, sans-serif` }
+  font(3.7, true); ctx.fillText('INSTITUCIÓN EDUCATIVA PRIVADA “NIKOLA TESLA”', left, top + mm(7))
+  font(3.25, true); ctx.fillText('NOTIFICACIÓN SOBRE INCUMPLIMIENTO DE REGLAMENTO INTERNO DE LA INSTITUCIÓN', left, top + mm(11))
+  ctx.textAlign = 'right'; ctx.fillText(`FECHA: ${dp.d} / ${dp.m} / ${dp.y}`, right, top + mm(7)); ctx.fillText(`N° ${notificationNumber}`, right, top + mm(11)); ctx.textAlign = 'left'
+
+  font(3.25, true); ctx.fillText(`ESTUDIANTE: ${student.firstName} ${student.lastName}`, left, top + mm(15.5))
+  ctx.textAlign = 'right'; ctx.fillText(`AÑO Y SECCIÓN: ${classroom.grade} ${classroom.section}`, right, top + mm(15.5)); ctx.textAlign = 'left'
+  font(2.75); drawCanvasLines(ctx, wrapCanvasText(ctx, 'Por medio de la presente, se comunica al apoderado que el estudiante ha incurrido en un incumplimiento de las disposiciones institucionales, específicamente:', right-left), left, top+mm(19), mm(3.2), 2)
+
+  const tableY = top + mm(25), leftW = mm(96), tableH = mm(29), rowH = tableH / 5, rightX = left + leftW + mm(3), rightW = right-rightX
+  ctx.strokeRect(left, tableY, leftW, tableH); ctx.strokeRect(rightX, tableY, rightW, tableH)
+  for (let i=1;i<5;i++) { ctx.beginPath(); ctx.moveTo(left, tableY+i*rowH); ctx.lineTo(left+leftW, tableY+i*rowH); ctx.stroke() }
+  rules.forEach(([key,label], index) => {
+    const y=tableY+rowH*index+mm(4.1); const box=mm(3)
+    ctx.strokeRect(left+mm(2), y-box+mm(.5), box, box)
+    if (state[key]) { font(2.9,true); ctx.fillText('X',left+mm(2.55),y) }
+    font(2.75,state[key]); ctx.fillText(`${index+1}. ${label}`,left+mm(7),y)
+  })
+  font(2.9,true); ctx.fillText('DESCRIPCIÓN DE LA OBSERVACIÓN:',rightX+mm(2),tableY+mm(4.2))
+  font(2.7); drawCanvasLines(ctx,wrapCanvasText(ctx,observation(data)||' ',rightW-mm(4)),rightX+mm(2),tableY+mm(9),mm(3.3),5)
+
+  font(2.55); drawCanvasLines(ctx,wrapCanvasText(ctx,'Recordamos que el adecuado cumplimiento de las normas institucionales contribuye al orden, la disciplina y la formación integral de nuestros estudiantes. Por ello, solicitamos a la familia brindar el acompañamiento necesario para garantizar el cumplimiento de estas disposiciones.',right-left),left,top+mm(58),mm(3),2)
+  font(2.9,true); ctx.fillText('COMPROMISO Y SEGUIMIENTO',left,top+mm(66))
+  font(2.4); drawCanvasLines(ctx,wrapCanvasText(ctx,'La presente notificación deberá ser firmada por el padre, madre o apoderado y devuelta por el estudiante al día siguiente de su entrega, como constancia de haber tomado conocimiento de la situación comunicada. Se dispone que ante la reiteración de la situación (tercera notificación realizada) se realizará un llamado formal al padre, madre o apoderado para una reunión en la Dirección de la institución.',right-left),left,top+mm(69),mm(2.8),4)
+  font(2.9,true); ctx.fillText('CONSTANCIA DE RECEPCIÓN',left,top+mm(81))
+  font(2.4); drawCanvasLines(ctx,wrapCanvasText(ctx,`Yo, ${student.guardianName || '________________________________'}, padre, madre o apoderado(a) del estudiante, declaro haber tomado conocimiento de la presente notificación y me comprometo a brindar el acompañamiento necesario para el cumplimiento de las disposiciones institucionales.`,right-left),left,top+mm(84),mm(2.8),2)
+  font(2.5,true); ctx.fillText('FIRMA DEL PADRE/MADRE/APODERADO: ____________________________',left,top+mm(91)); ctx.textAlign='right'; ctx.fillText(`DNI: ${student.guardianDni || '________________'}   FECHA: ____ / ____ / ______`,right,top+mm(91)); ctx.textAlign='left'
+  ctx.fillText('FIRMA DEL AUXILIAR/TUTOR/DOCENTE A CARGO: __________________________________________',mm(40),top+mm(96))
+}
+
+function canvasToPng(canvas: HTMLCanvasElement, filename: string) {
+  return new Promise<void>((resolve, reject) => canvas.toBlob((blob) => {
+    if (!blob) { reject(new Error('No se pudo generar la imagen.')); return }
+    downloadBlob(blob, filename); resolve()
+  }, 'image/png', 1))
+}
+
+export async function downloadNotificationImage(data: NotificationPrintData) {
+  const width = 1680
+  const height = Math.round(width * CARD_HEIGHT_MM / A4_WIDTH_MM)
+  const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height
+  const ctx = canvas.getContext('2d'); if (!ctx) throw new Error('El navegador no permite generar la imagen.')
+  drawNotificationCanvas(ctx, data, 0, width, height)
+  await canvasToPng(canvas, individualFilename(data.student, 'png'))
+}
+
+export async function downloadMultiNotificationImage(items: NotificationPrintData[]) {
+  const selected = items.slice(0, MAX_NOTIFICATIONS_PER_PAGE)
+  const width = 1680
+  const cardHeight = Math.round(width * CARD_HEIGHT_MM / A4_WIDTH_MM)
+  const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = cardHeight * MAX_NOTIFICATIONS_PER_PAGE
+  const ctx = canvas.getContext('2d'); if (!ctx) throw new Error('El navegador no permite generar la imagen.')
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,canvas.width,canvas.height)
+  selected.forEach((item,index)=>drawNotificationCanvas(ctx,item,index*cardHeight,width,cardHeight))
+  await canvasToPng(canvas, multiFilename('png'))
+}

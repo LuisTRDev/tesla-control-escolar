@@ -61,8 +61,19 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    // La carga completa se hace UNA sola vez. Supabase puede emitir SIGNED_IN/TOKEN_REFRESHED
+    // al volver a enfocar la pestaña; no debemos desmontar Attendance por esos eventos.
     void loadSession()
-    const { data: listener } = supabase.auth.onAuthStateChange(() => { void loadSession() })
+
+    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        setUserName('')
+        setUserRole('')
+        setClassrooms([])
+        setClassroom(null)
+      }
+    })
+
     return () => listener.subscription.unsubscribe()
   }, [loadSession])
 
