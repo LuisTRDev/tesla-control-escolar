@@ -34,7 +34,7 @@ import {
 import { getCurrentTime, getPreferences, getTodayKey, resetPreferences, savePreferences, type UserPreferences } from '@/lib/storage'
 import {
   deleteAttendanceForDate, deletePresentationForDate, getAttendanceRange, getEntryLimit, getPresentationRange, getStudents,
-  recalculateAttendanceForDate, registerAttendance, saveEntryLimit, savePresentation as savePresentationRemote,
+  recalculateAttendanceForDate, registerAttendance,registerExitAttendance, saveEntryLimit, savePresentation as savePresentationRemote,
 } from '@/services/schoolService'
 import {
   ensureNotificationForLateAttendance,
@@ -188,6 +188,20 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     try { const rec=await registerAttendance(studentId,entryLimit,today,getCurrentTime()); setRecords((curr)=>[...curr.filter((r)=>!(r.studentId===studentId&&r.date===today)),rec]); playConfirmation() }
     catch(error){ console.error(error); setDataError(error instanceof Error?error.message:'No se pudo registrar la entrada.') }
   }
+
+  async function markExit(studentId: string) {
+  const record = todayRecords.find((r) => r.studentId === studentId)
+  if (!record) { setDataError('El alumno no tiene entrada registrada hoy, no se puede marcar salida.'); return }
+  try {
+    const updated = await registerExitAttendance(record, getCurrentTime())
+    setRecords((curr) => [...curr.filter((r) => !(r.studentId === studentId && r.date === today)), updated])
+    playConfirmation()
+    } catch (error) {
+      console.error(error)
+      setDataError(error instanceof Error ? error.message : 'No se pudo registrar la salida.')
+    }
+  }
+
   async function resetToday() {
     if(!confirm('¿Borrar los registros de ingreso y presentación de hoy?')) return
     try {
@@ -795,6 +809,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         students={students}
         records={todayRecords}
         onMark={mark}
+        onExit={markExit}
         online={syncState.online}
       />
 
