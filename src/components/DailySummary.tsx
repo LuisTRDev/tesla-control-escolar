@@ -13,13 +13,14 @@ type Props = {
   currentClassroom: Classroom
   today: string
   onOpenAlerts: () => void
+  refreshKey?: number
 }
 
 function metric(label: string, value: number, icon: ReactNode, className = '') {
   return <Card className="p-4"><div className="flex items-center justify-between"><p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>{icon}</div><p className={`mt-2 text-2xl font-black ${className}`}>{value}</p></Card>
 }
 
-export default function DailySummary({ open, onClose, classrooms, currentClassroom, today, onOpenAlerts }: Props) {
+export default function DailySummary({ open, onClose, classrooms, currentClassroom, today, onOpenAlerts, refreshKey = 0 }: Props) {
   const [classroomId, setClassroomId] = useState<string | 'ALL'>(currentClassroom.id)
   const [summary, setSummary] = useState<Summary | null>(null)
   const [insights, setInsights] = useState<SmartInsight[]>([])
@@ -28,8 +29,8 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
   const [closing, setClosing] = useState(false)
   const [error, setError] = useState('')
 
-  async function load() {
-    setLoading(true); setError('')
+  async function load(silent = false) {
+    if (!silent) setLoading(true); setError('')
     try {
       const selected = classroomId === 'ALL' ? null : classroomId
       const [summaryData, insightData, closure] = await Promise.all([
@@ -40,10 +41,11 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
       setSummary(summaryData); setInsights(insightData); setClosed(closure)
     } catch (err) {
       console.error(err); setError(err instanceof Error ? err.message : 'No se pudo generar el resumen diario.')
-    } finally { setLoading(false) }
+    } finally { if (!silent) setLoading(false) }
   }
 
   useEffect(() => { if (open) void load() }, [open, classroomId, today])
+  useEffect(() => { if (open && refreshKey > 0) void load(true) }, [refreshKey])
   if (!open) return null
 
   async function closeAttendance() {

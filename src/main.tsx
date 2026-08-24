@@ -3,6 +3,9 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import PwaUpdateNotice from '@/components/PwaUpdateNotice'
 import './index.css'
+import { installProductionConsoleGuards, reportError } from '@/lib/security'
+
+installProductionConsoleGuards()
 
 const UPDATE_EVENT = 'tesla-pwa-update-available'
 
@@ -44,7 +47,7 @@ if ('serviceWorker' in navigator) {
       // comprobaciones periódicas del service worker.
       await registration.update()
     } catch (error) {
-      console.error('SW registration failed:', error)
+      reportError('service-worker', error)
     }
   })
 }

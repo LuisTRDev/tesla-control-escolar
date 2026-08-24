@@ -9,6 +9,7 @@ type Props = {
   open: boolean
   onClose: () => void
   classrooms: Classroom[]
+  refreshKey?: number
 }
 
 type Preset = 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM'
@@ -36,7 +37,7 @@ function prettyDate(value: string) {
   return new Date(`${value}T12:00:00`).toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })
 }
 
-export default function AdvancedReports({ open, onClose, classrooms }: Props) {
+export default function AdvancedReports({ open, onClose, classrooms, refreshKey = 0 }: Props) {
   const initial = presetRange('MONTH')
   const [preset, setPreset] = useState<Preset>('MONTH')
   const [from, setFrom] = useState(initial.from)
@@ -47,12 +48,12 @@ export default function AdvancedReports({ open, onClose, classrooms }: Props) {
   const [error, setError] = useState('')
   const [detailTab, setDetailTab] = useState<DetailTab>('ATTENDANCE')
 
-  async function loadReport() {
+  async function loadReport(silent = false) {
     if (!from || !to || from > to) {
       setError('Selecciona un rango de fechas válido.')
       return
     }
-    setLoading(true)
+    if (!silent) setLoading(true)
     setError('')
     try {
       setReport(await getAdvancedReport(from, to, classroomId === 'ALL' ? null : classroomId))
@@ -60,7 +61,7 @@ export default function AdvancedReports({ open, onClose, classrooms }: Props) {
       console.error(err)
       setError(err instanceof Error ? err.message : 'No se pudo generar el reporte.')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
@@ -68,6 +69,11 @@ export default function AdvancedReports({ open, onClose, classrooms }: Props) {
     if (open) void loadReport()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
+
+  useEffect(() => {
+    if (open && refreshKey > 0) void loadReport(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey])
 
   const classroomNames = useMemo(
     () => new Map(classrooms.map((item) => [item.id, `${item.grade} ${item.section} · ${item.level}`])),

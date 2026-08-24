@@ -11,6 +11,9 @@ export type Student = {
   firstName: string
   lastName: string
   classroomId: string
+  dni?: string
+  accessAuthorized?: boolean
+  accessNote?: string
   guardianName: string
   guardianDni: string
   guardianPhone: string
@@ -24,6 +27,7 @@ export type AttendanceRecord = {
   date: string
   time: string
   status: AttendanceStatus
+  exitTime?: string
 }
 
 export type AttendanceFilter = 'ALL' | 'ON_TIME' | 'LATE' | 'PENDING'

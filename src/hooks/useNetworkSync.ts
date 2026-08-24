@@ -10,7 +10,7 @@ export type NetworkSyncState = {
   syncNow: () => Promise<void>
 }
 
-export function useNetworkSync(onPull?: () => Promise<void>, intervalMs = 120_000): NetworkSyncState {
+export function useNetworkSync(onPull?: () => Promise<void>, intervalMs = 15_000): NetworkSyncState {
   const [online, setOnline] = useState(() => navigator.onLine)
   const [syncing, setSyncing] = useState(false)
   const [pending, setPending] = useState(0)

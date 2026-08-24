@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import type { Classroom, Student } from '@/types'
+import { validateHistoricalFile } from '@/lib/fileValidation'
+import { cleanSingleLine, cleanText, safeJsonRecord, safeUserMessage } from '@/lib/security'
 import {
   confirmAllPendingHistoricalRecords, createHistoricalBatch, deleteHistoricalRecord, getHistoricalFileUrl, insertHistoricalRecords,
   listHistoricalBatches, listHistoricalRecords, updateHistoricalBatchStats, updateHistoricalRecord,
@@ -15,9 +17,10 @@ import {
   type HistoricalRecordType,
 } from '@/services/historicalImportService'
 
-type Props = { open: boolean; onClose: () => void; students: Student[]; classrooms: Classroom[] }
+type Props = { open: boolean; onClose: () => void; students: Student[]; classrooms: Classroom[]; refreshKey?: number }
 
 type ParsedRow = Record<string, unknown>
+const MAX_IMPORT_ROWS = 5000
 
 const recordTypes: Array<{ value: HistoricalRecordType; label: string }> = [
   { value: 'ATTENDANCE', label: 'Asistencia' },
@@ -103,20 +106,25 @@ function findStudent(rawName: string, students: Student[]) {
 }
 
 async function parseStructuredFile(file: File): Promise<ParsedRow[]> {
+  await validateHistoricalFile(file)
   const data = await file.arrayBuffer()
-  const workbook = XLSX.read(data, { type: 'array', cellDates: true })
-  const sheet = workbook.Sheets[workbook.SheetNames[0]]
-  return XLSX.utils.sheet_to_json<ParsedRow>(sheet, { defval: '' })
+  const workbook = XLSX.read(data, { type: 'array', cellDates: true, cellFormula: false, cellHTML: false })
+  const firstSheetName = workbook.SheetNames[0]
+  if (!firstSheetName) throw new Error('El archivo no contiene hojas para importar.')
+  const sheet = workbook.Sheets[firstSheetName]
+  const rows = XLSX.utils.sheet_to_json<ParsedRow>(sheet, { defval: '', raw: true })
+  if (rows.length > MAX_IMPORT_ROWS) throw new Error(`La carga supera el máximo de ${MAX_IMPORT_ROWS} filas por archivo.`)
+  return rows
 }
 
 function mapParsedRows(batchId: string, rows: ParsedRow[], students: Student[]): HistoricalRecordInput[] {
   return rows.map((row) => {
     const first = getCell(row, ['nombre', 'nombres'])
     const last = getCell(row, ['apellido', 'apellidos'])
-    const rawName = String(getCell(row, ['alumno', 'estudiante', 'nombre completo', 'apellidos y nombres']) || `${first} ${last}`).trim()
+    const rawName = cleanSingleLine(getCell(row, ['alumno', 'estudiante', 'nombre completo', 'apellidos y nombres']) || `${first} ${last}`, 180)
     const match = findStudent(rawName, students)
     const typeValue = getCell(row, ['tipo', 'tipo registro', 'record type'])
-    const observation = String(getCell(row, ['observacion', 'observación', 'detalle', 'descripcion', 'descripción', 'motivo']) || '').trim()
+    const observation = cleanText(getCell(row, ['observacion', 'observación', 'detalle', 'descripcion', 'descripción', 'motivo']), 2000)
     const notificationRaw = getCell(row, ['n notificacion', 'n° notificacion', 'numero notificacion', 'notificacion numero'])
     const parsedNumber = Number(String(notificationRaw).replace(/\D/g, ''))
     return {
@@ -126,11 +134,11 @@ function mapParsedRows(batchId: string, rows: ParsedRow[], students: Student[]):
       recordDate: parseDate(getCell(row, ['fecha', 'date'])),
       recordTime: parseTime(getCell(row, ['hora', 'hora ingreso', 'hora entrada', 'time'])),
       studentNameRaw: rawName,
-      classroomRaw: String(getCell(row, ['aula', 'salon', 'salón', 'grado y seccion', 'grado', 'seccion', 'sección']) || '').trim(),
-      violationType: String(getCell(row, ['incumplimiento', 'tipo incumplimiento', 'violation type']) || '').trim(),
+      classroomRaw: cleanSingleLine(getCell(row, ['aula', 'salon', 'salón', 'grado y seccion', 'grado', 'seccion', 'sección']), 120),
+      violationType: cleanSingleLine(getCell(row, ['incumplimiento', 'tipo incumplimiento', 'violation type']), 180),
       observation,
       notificationNumber: Number.isFinite(parsedNumber) && parsedNumber > 0 ? parsedNumber : null,
-      rawData: row,
+      rawData: safeJsonRecord(row),
       confidence: match?.confidence ?? null,
       reviewStatus: 'PENDING',
       errorMessage: !rawName ? 'No se encontró nombre de alumno en la fila.' : '',
@@ -138,7 +146,7 @@ function mapParsedRows(batchId: string, rows: ParsedRow[], students: Student[]):
   })
 }
 
-export default function HistoricalImport({ open, onClose, students, classrooms }: Props) {
+export default function HistoricalImport({ open, onClose, students, classrooms, refreshKey = 0 }: Props) {
   const [batches, setBatches] = useState<HistoricalImportBatch[]>([])
   const [selectedBatch, setSelectedBatch] = useState<HistoricalImportBatch | null>(null)
   const [records, setRecords] = useState<HistoricalImportRecord[]>([])
@@ -156,18 +164,31 @@ export default function HistoricalImport({ open, onClose, students, classrooms }
   async function reloadBatches() {
     setLoading(true); setError('')
     try { setBatches(await listHistoricalBatches()) }
-    catch (e) { setError(e instanceof Error ? e.message : 'No se pudieron cargar las importaciones históricas.') }
+    catch (e) { setError(safeUserMessage(e, 'No se pudieron cargar las importaciones históricas.')) }
     finally { setLoading(false) }
   }
 
   async function selectBatch(batch: HistoricalImportBatch) {
     setSelectedBatch(batch); setLoading(true); setError('')
     try { setRecords(await listHistoricalRecords(batch.id)) }
-    catch (e) { setError(e instanceof Error ? e.message : 'No se pudieron cargar los registros del lote.') }
+    catch (e) { setError(safeUserMessage(e, 'No se pudieron cargar los registros del lote.')) }
     finally { setLoading(false) }
   }
 
   useEffect(() => { if (open) void reloadBatches() }, [open])
+  useEffect(() => {
+    if (!open || refreshKey <= 0) return
+    void (async () => {
+      const nextBatches = await listHistoricalBatches()
+      setBatches(nextBatches)
+      if (selectedBatch) {
+        const fresh = nextBatches.find((item) => item.id === selectedBatch.id)
+        if (fresh) setSelectedBatch(fresh)
+        setRecords(await listHistoricalRecords(selectedBatch.id))
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey])
 
   const filtered = useMemo(() => records.filter((record) => {
     if (statusFilter !== 'ALL' && record.reviewStatus !== statusFilter) return false
@@ -180,7 +201,8 @@ export default function HistoricalImport({ open, onClose, students, classrooms }
     if (!batchName.trim() && !file) return
     setLoading(true); setError('')
     try {
-      const batch = await createHistoricalBatch(batchName, file ?? undefined, batchNotes)
+      if (file) await validateHistoricalFile(file)
+      const batch = await createHistoricalBatch(cleanSingleLine(batchName, 120), file ?? undefined, cleanText(batchNotes, 1500))
       let createdRecords: HistoricalImportRecord[] = []
       const ext = file?.name.split('.').pop()?.toLowerCase()
       if (file && ['xlsx', 'xls', 'csv'].includes(ext ?? '')) {
@@ -192,7 +214,7 @@ export default function HistoricalImport({ open, onClose, students, classrooms }
       setCreateOpen(false); setBatchName(''); setBatchNotes(''); setFile(null)
       await reloadBatches()
       await selectBatch({ ...batch, totalRecords: createdRecords.length, status: 'REVIEW' })
-    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo crear la carga histórica.') }
+    } catch (e) { setError(safeUserMessage(e, 'No se pudo crear la carga histórica.')) }
     finally { setLoading(false) }
   }
 
@@ -202,7 +224,7 @@ export default function HistoricalImport({ open, onClose, students, classrooms }
       setRecords((current) => current.map((item) => item.id === saved.id ? saved : item))
       await updateHistoricalBatchStats(record.batchId)
       setBatches(await listHistoricalBatches())
-    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo actualizar el registro.') }
+    } catch (e) { setError(safeUserMessage(e, 'No se pudo actualizar el registro.')) }
   }
 
   async function removeRecord(record: HistoricalImportRecord) {
@@ -212,13 +234,13 @@ export default function HistoricalImport({ open, onClose, students, classrooms }
       setRecords((current) => current.filter((item) => item.id !== record.id))
       await updateHistoricalBatchStats(record.batchId)
       setBatches(await listHistoricalBatches())
-    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo eliminar el registro.') }
+    } catch (e) { setError(safeUserMessage(e, 'No se pudo eliminar el registro.')) }
   }
 
   async function openOriginal() {
     if (!selectedBatch?.storagePath) return
     try { window.open(await getHistoricalFileUrl(selectedBatch.storagePath), '_blank', 'noopener,noreferrer') }
-    catch (e) { setError(e instanceof Error ? e.message : 'No se pudo abrir el archivo original.') }
+    catch (e) { setError(safeUserMessage(e, 'No se pudo abrir el archivo original.')) }
   }
 
   async function confirmAllPending() {
@@ -250,7 +272,7 @@ export default function HistoricalImport({ open, onClose, students, classrooms }
       if (freshBatch) setSelectedBatch(freshBatch)
       alert(`${confirmed} registros confirmados correctamente.${omitted > 0 ? ` ${omitted} siguen pendientes de revisión.` : ''}`)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudieron confirmar los registros.')
+      setError(safeUserMessage(e, 'No se pudieron confirmar los registros.'))
     } finally {
       setBulkConfirming(false)
     }
@@ -298,7 +320,7 @@ export default function HistoricalImport({ open, onClose, students, classrooms }
 
                 <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4"><Stat label="Total" value={records.length}/><Stat label="Pendientes" value={records.filter(r=>r.reviewStatus==='PENDING').length}/><Stat label="Confirmados" value={records.filter(r=>r.reviewStatus==='CONFIRMED').length}/><Stat label="Observados" value={records.filter(r=>r.reviewStatus==='ERROR'||r.reviewStatus==='REJECTED').length}/></div>
 
-                <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_auto]"><div className="relative"><Search className="absolute left-4 top-3.5 text-slate-400" size={18}/><Input className="pl-11" placeholder="Buscar alumno, aula u observación..." value={query} onChange={(e)=>setQuery(e.target.value)}/></div><select value={statusFilter} onChange={(e)=>setStatusFilter(e.target.value as typeof statusFilter)} className="h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900"><option value="ALL">Todos</option><option value="PENDING">Pendientes</option><option value="CONFIRMED">Confirmados</option><option value="REJECTED">Rechazados</option><option value="ERROR">Con error</option></select></div>
+                <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_auto]"><div className="relative"><Search className="absolute left-4 top-3.5 text-slate-400" size={18}/><Input className="pl-11" placeholder="Buscar alumno, aula u observación..." value={query} onChange={(e)=>setQuery(e.target.value.slice(0,120))}/></div><select value={statusFilter} onChange={(e)=>setStatusFilter(e.target.value as typeof statusFilter)} className="h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900"><option value="ALL">Todos</option><option value="PENDING">Pendientes</option><option value="CONFIRMED">Confirmados</option><option value="REJECTED">Rechazados</option><option value="ERROR">Con error</option></select></div>
 
                 <div className="mt-4 space-y-3">{filtered.map((record)=><RecordCard key={record.id} record={record} students={students} classrooms={classrooms} onSave={saveRecord} onDelete={removeRecord}/>) }{!filtered.length&&!loading&&<Card className="p-8 text-center text-sm text-slate-400">No hay registros para este filtro.</Card>}</div>
               </>
@@ -316,7 +338,7 @@ export default function HistoricalImport({ open, onClose, students, classrooms }
 function Stat({label,value}:{label:string;value:number}) { return <Card className="p-4"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-2xl font-black">{value}</p></Card> }
 
 function CreateBatchDialog({file,setFile,name,setName,notes,setNotes,loading,onCancel,onCreate}:{file:File|null;setFile:(file:File|null)=>void;name:string;setName:(v:string)=>void;notes:string;setNotes:(v:string)=>void;loading:boolean;onCancel:()=>void;onCreate:()=>void}) {
-  return <div className="fixed inset-0 z-[80] grid place-items-center bg-slate-950/60 p-4" onMouseDown={onCancel}><Card className="w-full max-w-xl p-6" onMouseDown={(e)=>e.stopPropagation()}><div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-wider text-slate-400">Nuevo lote</p><h3 className="text-xl font-black">Importar registros históricos</h3></div><Button variant="ghost" onClick={onCancel}><X size={18}/></Button></div><div className="mt-5 space-y-4"><label className="block"><span className="mb-2 block text-sm font-bold">Nombre de la carga</span><Input value={name} onChange={(e)=>setName(e.target.value)} placeholder="Ej. Tardanzas marzo 2026"/></label><label className="block"><span className="mb-2 block text-sm font-bold">Archivo</span><input type="file" accept=".xlsx,.xls,.csv,.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.heic" onChange={(e)=>setFile(e.target.files?.[0]??null)} className="block w-full rounded-xl border border-dashed border-slate-300 p-4 text-sm dark:border-slate-700"/><p className="mt-2 text-xs text-slate-500">Excel/CSV: lectura automática. PDF/Word/foto: se guarda el original y luego se revisan/agregan los registros manualmente.</p></label><label className="block"><span className="mb-2 block text-sm font-bold">Notas</span><textarea rows={3} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950" value={notes} onChange={(e)=>setNotes(e.target.value)} placeholder="Ej. Libro físico entregado por auxiliar..."/></label></div><div className="mt-6 flex justify-end gap-2"><Button variant="outline" onClick={onCancel}>Cancelar</Button><Button disabled={loading||(!name.trim()&&!file)} onClick={onCreate}>{loading?<Loader2 className="mr-2 animate-spin" size={16}/>:<Upload className="mr-2" size={16}/>}Crear carga</Button></div></Card></div>
+  return <div className="fixed inset-0 z-[80] grid place-items-center bg-slate-950/60 p-4" onMouseDown={onCancel}><Card className="w-full max-w-xl p-6" onMouseDown={(e)=>e.stopPropagation()}><div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-wider text-slate-400">Nuevo lote</p><h3 className="text-xl font-black">Importar registros históricos</h3></div><Button variant="ghost" onClick={onCancel}><X size={18}/></Button></div><div className="mt-5 space-y-4"><label className="block"><span className="mb-2 block text-sm font-bold">Nombre de la carga</span><Input maxLength={120} value={name} onChange={(e)=>setName(e.target.value)} placeholder="Ej. Tardanzas marzo 2026"/></label><label className="block"><span className="mb-2 block text-sm font-bold">Archivo</span><input type="file" accept=".xlsx,.xls,.csv,.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.heic" onChange={(e)=>setFile(e.target.files?.[0]??null)} className="block w-full rounded-xl border border-dashed border-slate-300 p-4 text-sm dark:border-slate-700"/><p className="mt-2 text-xs text-slate-500">Máximo 10 MB. Excel/CSV: lectura automática. PDF/Word/foto: se guarda el original y luego se revisan/agregan los registros manualmente.</p></label><label className="block"><span className="mb-2 block text-sm font-bold">Notas</span><textarea rows={3} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950" maxLength={1500} value={notes} onChange={(e)=>setNotes(e.target.value)} placeholder="Ej. Libro físico entregado por auxiliar..."/></label></div><div className="mt-6 flex justify-end gap-2"><Button variant="outline" onClick={onCancel}>Cancelar</Button><Button disabled={loading||(!name.trim()&&!file)} onClick={onCreate}>{loading?<Loader2 className="mr-2 animate-spin" size={16}/>:<Upload className="mr-2" size={16}/>}Crear carga</Button></div></Card></div>
 }
 
 function RecordCard({record,students,classrooms,onSave,onDelete}:{record:HistoricalImportRecord;students:Student[];classrooms:Classroom[];onSave:(r:HistoricalImportRecord,p:Partial<HistoricalImportRecord>)=>Promise<void>;onDelete:(r:HistoricalImportRecord)=>Promise<void>}) {
@@ -326,11 +348,11 @@ function RecordCard({record,students,classrooms,onSave,onDelete}:{record:Histori
   const student=students.find((item)=>item.id===record.studentId)
   const classroom=student?classrooms.find((item)=>item.id===student.classroomId):undefined
   const badge=record.reviewStatus==='CONFIRMED'?'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300':record.reviewStatus==='REJECTED'||record.reviewStatus==='ERROR'?'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300':'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
-  return <Card className="p-4"><div className="flex flex-col gap-4 xl:flex-row xl:items-start"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-lg px-2.5 py-1 text-[11px] font-black ${badge}`}>{record.reviewStatus}</span><span className="rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-black dark:bg-slate-800">{record.recordType}</span>{record.confidence!=null&&<span className="text-xs text-slate-400">coincidencia {record.confidence}%</span>}</div>{editing?<div className="mt-4 grid gap-3 md:grid-cols-2"><label className="text-xs font-bold">Alumno<select value={draft.studentId??''} onChange={(e)=>setDraft({...draft,studentId:e.target.value||null})} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-950"><option value="">Sin identificar</option>{students.map(s=><option key={s.id} value={s.id}>{studentDisplayName(s)}</option>)}</select></label><label className="text-xs font-bold">Tipo<select value={draft.recordType} onChange={(e)=>setDraft({...draft,recordType:e.target.value as HistoricalRecordType})} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-950">{recordTypes.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select></label><label className="text-xs font-bold">Fecha<Input className="mt-1" type="date" value={draft.recordDate??''} onChange={(e)=>setDraft({...draft,recordDate:e.target.value||null})}/></label><label className="text-xs font-bold">Hora<Input className="mt-1" type="time" value={draft.recordTime??''} onChange={(e)=>setDraft({...draft,recordTime:e.target.value||null})}/></label><label className="text-xs font-bold md:col-span-2">Observación<textarea rows={2} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950" value={draft.observation} onChange={(e)=>setDraft({...draft,observation:e.target.value})}/></label></div>:<><h4 className="mt-3 text-base font-black">{student?studentDisplayName(student):(record.studentNameRaw||'Alumno sin identificar')}</h4><p className="mt-1 text-sm text-slate-500">{classroom?`${classroom.grade} ${classroom.section} · ${classroom.level}`:(record.classroomRaw||'Aula no identificada')} · {record.recordDate??'Sin fecha'} {record.recordTime?`· ${record.recordTime}`:''}</p>{record.observation&&<p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{record.observation}</p>}{record.errorMessage&&<p className="mt-2 text-xs font-semibold text-red-600">{record.errorMessage}</p>}</>}</div><div className="flex flex-wrap gap-2 xl:w-auto xl:justify-end">{editing?<><Button variant="outline" onClick={()=>{setDraft(record);setEditing(false)}}>Cancelar</Button><Button onClick={async()=>{await onSave(record,draft);setEditing(false)}}>Guardar</Button></>:<Button variant="outline" onClick={()=>setEditing(true)}>Editar</Button>}{record.reviewStatus!=='CONFIRMED'&&<Button onClick={()=>void onSave(record,{reviewStatus:'CONFIRMED'})}><Check className="mr-2" size={16}/>Confirmar</Button>}{record.reviewStatus!=='REJECTED'&&<Button variant="outline" onClick={()=>void onSave(record,{reviewStatus:'REJECTED'})}><XCircle className="mr-2" size={16}/>Rechazar</Button>}<Button variant="ghost" onClick={()=>void onDelete(record)}><Trash2 size={16}/></Button></div></div></Card>
+  return <Card className="p-4"><div className="flex flex-col gap-4 xl:flex-row xl:items-start"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-lg px-2.5 py-1 text-[11px] font-black ${badge}`}>{record.reviewStatus}</span><span className="rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-black dark:bg-slate-800">{record.recordType}</span>{record.confidence!=null&&<span className="text-xs text-slate-400">coincidencia {record.confidence}%</span>}</div>{editing?<div className="mt-4 grid gap-3 md:grid-cols-2"><label className="text-xs font-bold">Alumno<select value={draft.studentId??''} onChange={(e)=>setDraft({...draft,studentId:e.target.value||null})} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-950"><option value="">Sin identificar</option>{students.map(s=><option key={s.id} value={s.id}>{studentDisplayName(s)}</option>)}</select></label><label className="text-xs font-bold">Tipo<select value={draft.recordType} onChange={(e)=>setDraft({...draft,recordType:e.target.value as HistoricalRecordType})} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-950">{recordTypes.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select></label><label className="text-xs font-bold">Fecha<Input className="mt-1" type="date" value={draft.recordDate??''} onChange={(e)=>setDraft({...draft,recordDate:e.target.value||null})}/></label><label className="text-xs font-bold">Hora<Input className="mt-1" type="time" value={draft.recordTime??''} onChange={(e)=>setDraft({...draft,recordTime:e.target.value||null})}/></label><label className="text-xs font-bold md:col-span-2">Observación<textarea rows={2} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950" maxLength={2000} value={draft.observation} onChange={(e)=>setDraft({...draft,observation:e.target.value})}/></label></div>:<><h4 className="mt-3 text-base font-black">{student?studentDisplayName(student):(record.studentNameRaw||'Alumno sin identificar')}</h4><p className="mt-1 text-sm text-slate-500">{classroom?`${classroom.grade} ${classroom.section} · ${classroom.level}`:(record.classroomRaw||'Aula no identificada')} · {record.recordDate??'Sin fecha'} {record.recordTime?`· ${record.recordTime}`:''}</p>{record.observation&&<p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{record.observation}</p>}{record.errorMessage&&<p className="mt-2 text-xs font-semibold text-red-600">{record.errorMessage}</p>}</>}</div><div className="flex flex-wrap gap-2 xl:w-auto xl:justify-end">{editing?<><Button variant="outline" onClick={()=>{setDraft(record);setEditing(false)}}>Cancelar</Button><Button onClick={async()=>{await onSave(record,draft);setEditing(false)}}>Guardar</Button></>:<Button variant="outline" onClick={()=>setEditing(true)}>Editar</Button>}{record.reviewStatus!=='CONFIRMED'&&<Button onClick={()=>void onSave(record,{reviewStatus:'CONFIRMED'})}><Check className="mr-2" size={16}/>Confirmar</Button>}{record.reviewStatus!=='REJECTED'&&<Button variant="outline" onClick={()=>void onSave(record,{reviewStatus:'REJECTED'})}><XCircle className="mr-2" size={16}/>Rechazar</Button>}<Button variant="ghost" onClick={()=>void onDelete(record)}><Trash2 size={16}/></Button></div></div></Card>
 }
 
 function ManualRecordDialog({batchId,students,classrooms,onCancel,onCreate}:{batchId:string;students:Student[];classrooms:Classroom[];onCancel:()=>void;onCreate:(input:HistoricalRecordInput)=>Promise<void>}) {
   const [studentId,setStudentId]=useState(''); const [recordType,setRecordType]=useState<HistoricalRecordType>('OTHER'); const [date,setDate]=useState(''); const [time,setTime]=useState(''); const [observation,setObservation]=useState('')
   const student=students.find(s=>s.id===studentId); const classroom=student?classrooms.find(c=>c.id===student.classroomId):undefined
-  return <div className="fixed inset-0 z-[85] grid place-items-center bg-slate-950/65 p-4" onMouseDown={onCancel}><Card className="w-full max-w-xl p-6" onMouseDown={(e)=>e.stopPropagation()}><h3 className="text-xl font-black">Agregar registro desde papel/documento</h3><div className="mt-5 grid gap-4 md:grid-cols-2"><label className="text-sm font-bold md:col-span-2">Alumno<select value={studentId} onChange={(e)=>setStudentId(e.target.value)} className="mt-2 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 dark:border-slate-700 dark:bg-slate-950"><option value="">Seleccionar alumno</option>{students.map(s=><option key={s.id} value={s.id}>{studentDisplayName(s)}</option>)}</select></label><label className="text-sm font-bold">Tipo<select value={recordType} onChange={(e)=>setRecordType(e.target.value as HistoricalRecordType)} className="mt-2 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 dark:border-slate-700 dark:bg-slate-950">{recordTypes.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select></label><label className="text-sm font-bold">Fecha<Input className="mt-2" type="date" value={date} onChange={(e)=>setDate(e.target.value)}/></label><label className="text-sm font-bold">Hora (opcional)<Input className="mt-2" type="time" value={time} onChange={(e)=>setTime(e.target.value)}/></label><label className="text-sm font-bold md:col-span-2">Observación<textarea rows={4} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-950" value={observation} onChange={(e)=>setObservation(e.target.value)}/></label></div><div className="mt-6 flex justify-end gap-2"><Button variant="outline" onClick={onCancel}>Cancelar</Button><Button disabled={!studentId||!date} onClick={()=>void onCreate({batchId,studentId:studentId||null,recordType,recordDate:date||null,recordTime:time||null,studentNameRaw:student?studentDisplayName(student):'',classroomRaw:classroom?`${classroom.grade} ${classroom.section} ${classroom.level}`:'',violationType:'',observation,notificationNumber:null,rawData:{manual:true},confidence:100,reviewStatus:'PENDING',errorMessage:''})}><Plus className="mr-2" size={16}/>Agregar</Button></div></Card></div>
+  return <div className="fixed inset-0 z-[85] grid place-items-center bg-slate-950/65 p-4" onMouseDown={onCancel}><Card className="w-full max-w-xl p-6" onMouseDown={(e)=>e.stopPropagation()}><h3 className="text-xl font-black">Agregar registro desde papel/documento</h3><div className="mt-5 grid gap-4 md:grid-cols-2"><label className="text-sm font-bold md:col-span-2">Alumno<select value={studentId} onChange={(e)=>setStudentId(e.target.value)} className="mt-2 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 dark:border-slate-700 dark:bg-slate-950"><option value="">Seleccionar alumno</option>{students.map(s=><option key={s.id} value={s.id}>{studentDisplayName(s)}</option>)}</select></label><label className="text-sm font-bold">Tipo<select value={recordType} onChange={(e)=>setRecordType(e.target.value as HistoricalRecordType)} className="mt-2 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 dark:border-slate-700 dark:bg-slate-950">{recordTypes.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select></label><label className="text-sm font-bold">Fecha<Input className="mt-2" type="date" value={date} onChange={(e)=>setDate(e.target.value)}/></label><label className="text-sm font-bold">Hora (opcional)<Input className="mt-2" type="time" value={time} onChange={(e)=>setTime(e.target.value)}/></label><label className="text-sm font-bold md:col-span-2">Observación<textarea rows={4} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-950" maxLength={2000} value={observation} onChange={(e)=>setObservation(e.target.value)}/></label></div><div className="mt-6 flex justify-end gap-2"><Button variant="outline" onClick={onCancel}>Cancelar</Button><Button disabled={!studentId||!date} onClick={()=>void onCreate({batchId,studentId:studentId||null,recordType,recordDate:date||null,recordTime:time||null,studentNameRaw:student?studentDisplayName(student):'',classroomRaw:classroom?`${classroom.grade} ${classroom.section} ${classroom.level}`:'',violationType:'',observation,notificationNumber:null,rawData:{manual:true},confidence:100,reviewStatus:'PENDING',errorMessage:''})}><Plus className="mr-2" size={16}/>Agregar</Button></div></Card></div>
 }

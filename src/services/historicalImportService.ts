@@ -1,4 +1,6 @@
 import { supabase } from '@/lib/supabase'
+import { validateHistoricalFile } from '@/lib/fileValidation'
+import { cleanSingleLine, cleanText, positiveInteger, safeJsonRecord, safeUserMessage, validIsoDate, validTime } from '@/lib/security'
 
 export type HistoricalSourceType = 'EXCEL' | 'CSV' | 'PDF' | 'WORD' | 'IMAGE' | 'PAPER' | 'MANUAL'
 export type HistoricalBatchStatus = 'PENDING' | 'PROCESSING' | 'REVIEW' | 'COMPLETED' | 'FAILED'
@@ -84,7 +86,7 @@ export async function listHistoricalBatches(): Promise<HistoricalImportBatch[]> 
     .from('historical_import_batches')
     .select('*')
     .order('created_at', { ascending: false })
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(safeUserMessage(error))
   return (data ?? []).map(mapBatch)
 }
 
@@ -92,9 +94,9 @@ export async function listHistoricalRecords(batchId: string): Promise<Historical
   const { data, error } = await supabase
     .from('historical_import_records')
     .select('*')
-    .eq('batch_id', batchId)
+    .eq('batch_id', positiveInteger(batchId, 'Lote'))
     .order('created_at', { ascending: true })
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(safeUserMessage(error))
   return (data ?? []).map(mapRecord)
 }
 
@@ -108,93 +110,94 @@ function sourceTypeForFile(file: File): HistoricalSourceType {
   return 'MANUAL'
 }
 
-function safeName(name: string) {
-  return name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/-+/g, '-')
-}
 
 export async function createHistoricalBatch(name: string, file?: File, notes = ''): Promise<HistoricalImportBatch> {
-  const sourceType = file ? sourceTypeForFile(file) : 'MANUAL'
+  const cleanName = cleanSingleLine(name, 120)
+  const cleanNotes = cleanText(notes, 1500)
+  let sourceType: HistoricalSourceType = 'MANUAL'
   let storagePath: string | null = null
 
   if (file) {
-    storagePath = `${new Date().getFullYear()}/${Date.now()}-${safeName(file.name)}`
+    const validation = await validateHistoricalFile(file)
+    sourceType = sourceTypeForFile(file)
+    storagePath = `${new Date().getFullYear()}/${crypto.randomUUID()}-${validation.safeName}`
     const { error: uploadError } = await supabase.storage
       .from('historical-imports')
-      .upload(storagePath, file, { upsert: false, contentType: file.type || undefined })
-    if (uploadError) throw new Error(`No se pudo subir el archivo: ${uploadError.message}`)
+      .upload(storagePath, file, { upsert: false, contentType: file.type || undefined, cacheControl: '3600' })
+    if (uploadError) throw new Error(safeUserMessage(uploadError, 'No se pudo subir el archivo histórico.'))
   }
 
   const { data, error } = await supabase
     .from('historical_import_batches')
     .insert({
-      name: name.trim() || file?.name || 'Carga histórica',
-      file_name: file?.name ?? null,
+      name: cleanName || file?.name || 'Carga histórica',
+      file_name: file?.name ? cleanSingleLine(file.name, 180) : null,
       source_type: sourceType,
       status: 'PROCESSING',
       total_records: 0,
       imported_records: 0,
       failed_records: 0,
-      notes,
+      notes: cleanNotes,
       storage_path: storagePath,
     })
     .select('*')
     .single()
 
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(safeUserMessage(error, 'No se pudo crear la carga histórica.'))
   return mapBatch(data)
 }
 
 export async function insertHistoricalRecords(records: HistoricalRecordInput[]): Promise<HistoricalImportRecord[]> {
   if (!records.length) return []
   const payload = records.map((record) => ({
-    batch_id: Number(record.batchId),
-    student_id: record.studentId == null ? null : Number(record.studentId),
+    batch_id: positiveInteger(record.batchId, 'Lote'),
+    student_id: record.studentId == null ? null : positiveInteger(record.studentId, 'Alumno'),
     record_type: record.recordType,
-    record_date: record.recordDate || null,
-    record_time: record.recordTime || null,
-    student_name_raw: record.studentNameRaw || null,
-    classroom_raw: record.classroomRaw || null,
-    violation_type: record.violationType || null,
-    observation: record.observation || null,
-    notification_number: record.notificationNumber,
-    raw_data: record.rawData,
-    confidence: record.confidence,
+    record_date: record.recordDate && validIsoDate(record.recordDate) ? record.recordDate : null,
+    record_time: record.recordTime && validTime(record.recordTime) ? record.recordTime.slice(0, 8) : null,
+    student_name_raw: cleanSingleLine(record.studentNameRaw, 180) || null,
+    classroom_raw: cleanSingleLine(record.classroomRaw, 120) || null,
+    violation_type: cleanSingleLine(record.violationType, 180) || null,
+    observation: cleanText(record.observation, 2000) || null,
+    notification_number: record.notificationNumber && Number.isSafeInteger(record.notificationNumber) && record.notificationNumber > 0 ? Math.min(record.notificationNumber, 9999) : null,
+    raw_data: safeJsonRecord(record.rawData),
+    confidence: record.confidence == null ? null : Math.max(0, Math.min(100, Number(record.confidence))),
     review_status: record.reviewStatus,
-    error_message: record.errorMessage || null,
+    error_message: cleanSingleLine(record.errorMessage, 300) || null,
   }))
 
   const { data, error } = await supabase.from('historical_import_records').insert(payload).select('*')
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(safeUserMessage(error))
   return (data ?? []).map(mapRecord)
 }
 
 export async function updateHistoricalRecord(id: string, patch: Partial<HistoricalImportRecord>): Promise<HistoricalImportRecord> {
   const payload: Record<string, unknown> = {}
-  if ('studentId' in patch) payload.student_id = patch.studentId == null ? null : Number(patch.studentId)
+  if ('studentId' in patch) payload.student_id = patch.studentId == null ? null : positiveInteger(patch.studentId, 'Alumno')
   if ('recordType' in patch) payload.record_type = patch.recordType
-  if ('recordDate' in patch) payload.record_date = patch.recordDate || null
-  if ('recordTime' in patch) payload.record_time = patch.recordTime || null
-  if ('studentNameRaw' in patch) payload.student_name_raw = patch.studentNameRaw || null
-  if ('classroomRaw' in patch) payload.classroom_raw = patch.classroomRaw || null
-  if ('violationType' in patch) payload.violation_type = patch.violationType || null
-  if ('observation' in patch) payload.observation = patch.observation || null
+  if ('recordDate' in patch) payload.record_date = patch.recordDate && validIsoDate(patch.recordDate) ? patch.recordDate : null
+  if ('recordTime' in patch) payload.record_time = patch.recordTime && validTime(patch.recordTime) ? patch.recordTime.slice(0, 8) : null
+  if ('studentNameRaw' in patch) payload.student_name_raw = cleanSingleLine(patch.studentNameRaw, 180) || null
+  if ('classroomRaw' in patch) payload.classroom_raw = cleanSingleLine(patch.classroomRaw, 120) || null
+  if ('violationType' in patch) payload.violation_type = cleanSingleLine(patch.violationType, 180) || null
+  if ('observation' in patch) payload.observation = cleanText(patch.observation, 2000) || null
   if ('notificationNumber' in patch) payload.notification_number = patch.notificationNumber
   if ('reviewStatus' in patch) payload.review_status = patch.reviewStatus
-  if ('errorMessage' in patch) payload.error_message = patch.errorMessage || null
+  if ('errorMessage' in patch) payload.error_message = cleanSingleLine(patch.errorMessage, 300) || null
   if (patch.reviewStatus === 'CONFIRMED' || patch.reviewStatus === 'REJECTED') {
     const { data: { user } } = await supabase.auth.getUser()
     payload.reviewed_by = user?.id ?? null
     payload.reviewed_at = new Date().toISOString()
   }
 
-  const { data, error } = await supabase.from('historical_import_records').update(payload).eq('id', Number(id)).select('*').single()
-  if (error) throw new Error(error.message)
+  const { data, error } = await supabase.from('historical_import_records').update(payload).eq('id', positiveInteger(id, 'Registro')).select('*').single()
+  if (error) throw new Error(safeUserMessage(error))
   return mapRecord(data)
 }
 
 export async function deleteHistoricalRecord(id: string) {
-  const { error } = await supabase.from('historical_import_records').delete().eq('id', Number(id))
-  if (error) throw new Error(error.message)
+  const { error } = await supabase.from('historical_import_records').delete().eq('id', positiveInteger(id, 'Registro'))
+  if (error) throw new Error(safeUserMessage(error))
 }
 
 export async function updateHistoricalBatchStats(batchId: string) {
@@ -212,8 +215,8 @@ export async function updateHistoricalBatchStats(batchId: string) {
       status,
       completed_at: status === 'COMPLETED' ? new Date().toISOString() : null,
     })
-    .eq('id', Number(batchId))
-  if (error) throw new Error(error.message)
+    .eq('id', positiveInteger(batchId, 'Lote'))
+  if (error) throw new Error(safeUserMessage(error))
 }
 
 
@@ -229,20 +232,20 @@ export async function confirmAllPendingHistoricalRecords(batchId: string): Promi
       reviewed_at: reviewedAt,
       error_message: null,
     })
-    .eq('batch_id', Number(batchId))
+    .eq('batch_id', positiveInteger(batchId, 'Lote'))
     .eq('review_status', 'PENDING')
     .not('student_id', 'is', null)
     .not('record_date', 'is', null)
     .select('id')
 
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(safeUserMessage(error))
   await updateHistoricalBatchStats(batchId)
   return data?.length ?? 0
 }
 
 export async function getHistoricalFileUrl(storagePath: string): Promise<string> {
-  const { data, error } = await supabase.storage.from('historical-imports').createSignedUrl(storagePath, 60 * 10)
-  if (error) throw new Error(error.message)
+  const { data, error } = await supabase.storage.from('historical-imports').createSignedUrl(cleanSingleLine(storagePath, 300), 60 * 5)
+  if (error) throw new Error(safeUserMessage(error))
   return data.signedUrl
 }
 
@@ -250,10 +253,10 @@ export async function listConfirmedHistoricalRecordsByStudent(studentId: string)
   const { data, error } = await supabase
     .from('historical_import_records')
     .select('*')
-    .eq('student_id', Number(studentId))
+    .eq('student_id', positiveInteger(studentId, 'Alumno'))
     .eq('review_status', 'CONFIRMED')
     .order('record_date', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(safeUserMessage(error))
   return (data ?? []).map(mapRecord)
 }

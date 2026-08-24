@@ -15,8 +15,10 @@ import AuditLog from '@/components/AuditLog'
 import QuickMode from '@/components/QuickMode'
 import BackupCenter from '@/components/BackupCenter'
 import HistoricalImport from '@/components/HistoricalImport'
+import LiveTvPanel from '@/components/LiveTvPanel'
 import SyncStatus from '@/components/SyncStatus'
 import { useNetworkSync } from '@/hooks/useNetworkSync'
+import { useSchoolRealtime } from '@/hooks/useSchoolRealtime'
 import { usePwaInstall } from '@/hooks/usePwaInstall'
 import { Input } from '@/components/ui/Input'
 import {
@@ -100,6 +102,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [quickModeOpen, setQuickModeOpen] = useState(false)
   const [backupOpen, setBackupOpen] = useState(false)
   const [historicalImportOpen, setHistoricalImportOpen] = useState(false)
+  const [tvPanelOpen, setTvPanelOpen] = useState(false)
   const [caseFileStudent, setCaseFileStudent] = useState<Student | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [now, setNow] = useState(() => new Date())
@@ -145,6 +148,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   // Las sincronizaciones de fondo actualizan los datos sin desmontar ni bloquear la pantalla.
   const pullInBackground = useCallback(async () => { await reloadData(false) }, [reloadData])
   const syncState = useNetworkSync(pullInBackground)
+  const realtimeState = useSchoolRealtime(pullInBackground)
   const { installAvailable, install } = usePwaInstall()
 
   useEffect(() => { void reloadData(true) }, [reloadData])
@@ -469,7 +473,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         userName={userName}
         userRole={userRole}
         formattedDate={formattedDate}
-        active={historicalImportOpen ? 'historical' : backupOpen ? 'backup' : quickModeOpen ? 'quick' : auditOpen ? 'audit' : dailySummaryOpen ? 'summary' : alertsOpen ? 'alerts' : reportsOpen ? 'reports' : dashboardOpen ? 'dashboard' : 'home'}
+        active={tvPanelOpen ? 'tv' : historicalImportOpen ? 'historical' : backupOpen ? 'backup' : quickModeOpen ? 'quick' : auditOpen ? 'audit' : dailySummaryOpen ? 'summary' : alertsOpen ? 'alerts' : reportsOpen ? 'reports' : dashboardOpen ? 'dashboard' : 'home'}
         onHome={() => { setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
         onDashboard={() => { setDashboardOpen(true); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false) }}
         onReports={() => { setReportsOpen(true); setDashboardOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false) }}
@@ -478,6 +482,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         onDailySummary={() => { setDailySummaryOpen(true); setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setAuditOpen(false) }}
         onAudit={() => { setAuditOpen(true); setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false) }}
         onQuickMode={() => setQuickModeOpen(true)}
+        onTvPanel={() => setTvPanelOpen(true)}
         onBackups={() => setBackupOpen(true)}
         onHistoricalImport={() => setHistoricalImportOpen(true)}
         online={syncState.online}
@@ -594,6 +599,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
             </div>
             <Button onClick={() => setQuickModeOpen(true)}>
               <Clock3 className="mr-2" size={17} /> Modo rápido
+            </Button>
+            <Button variant="outline" onClick={() => setTvPanelOpen(true)}>
+              <Monitor className="mr-2" size={17} /> Panel TV
             </Button>
             <Button variant="outline" onClick={() => setDailySummaryOpen(true)}>
               <CalendarCheck2 className="mr-2" size={17} /> Resumen / cierre
@@ -1182,6 +1190,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         currentClassroom={classroom}
         students={students}
         onOpenCaseFile={(student) => { setAlertsOpen(false); setCaseFileStudent(student) }}
+        refreshKey={realtimeState.revision}
         onOpenWhatsApp={(student, alertType) => {
           setAlertsOpen(false)
           const type: WhatsAppMessageType = alertType === 'ABSENCE' ? 'ABSENCE' : alertType === 'FREQUENT_LATE' ? 'FREQUENT_LATE' : alertType === 'THIRD_NOTIFICATION' ? 'RECURRENCE_3' : 'RECURRENCE_2'
@@ -1196,6 +1205,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         currentClassroom={classroom}
         today={today}
         onOpenAlerts={() => { setDailySummaryOpen(false); setAlertsOpen(true) }}
+        refreshKey={realtimeState.revision}
       />
 
       <StudentCaseFile
@@ -1203,6 +1213,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         classroom={caseFileStudent ? classrooms.find((item) => item.id === caseFileStudent.classroomId) : undefined}
         onClose={() => setCaseFileStudent(null)}
         onOpenWhatsApp={(student) => { setCaseFileStudent(null); openWhatsAppModal(student) }}
+        refreshKey={realtimeState.revision}
       />
 
       <HistoricalImport
@@ -1210,14 +1221,27 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         onClose={() => setHistoricalImportOpen(false)}
         students={students}
         classrooms={classrooms}
+        refreshKey={realtimeState.revision}
       />
 
-      <AuditLog open={auditOpen} onClose={() => setAuditOpen(false)} />
+      <AuditLog open={auditOpen} onClose={() => setAuditOpen(false)} refreshKey={realtimeState.revision} />
 
       <AdvancedReports
         open={reportsOpen}
         onClose={() => setReportsOpen(false)}
         classrooms={classrooms}
+        refreshKey={realtimeState.revision}
+      />
+
+      <LiveTvPanel
+        open={tvPanelOpen}
+        onClose={() => setTvPanelOpen(false)}
+        students={students}
+        classrooms={classrooms}
+        attendanceRecords={records}
+        presentationRecords={presentationRecords}
+        today={today}
+        realtimeConnected={realtimeState.connected}
       />
 
       <Dashboard

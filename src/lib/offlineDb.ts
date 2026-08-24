@@ -4,7 +4,7 @@ const SNAPSHOTS = 'snapshots'
 const QUEUE = 'sync_queue'
 const META = 'meta'
 
-export type SyncOperationType = 'ATTENDANCE_UPSERT' | 'PRESENTATION_UPSERT'
+export type SyncOperationType = 'ATTENDANCE_UPSERT' | 'ATTENDANCE_EXIT_UPSERT' | 'PRESENTATION_UPSERT'
 
 export type SyncQueueItem = {
   id: string
@@ -13,6 +13,7 @@ export type SyncQueueItem = {
   createdAt: string
   retryCount: number
   lastError?: string
+  operationKey?: string
 }
 
 type SnapshotRow = { key: string; value: unknown; updatedAt: string }
@@ -55,15 +56,24 @@ export async function getSnapshot<T>(key: string): Promise<T | null> {
   return row ? row.value as T : null
 }
 
+function operationKey(type: SyncOperationType, payload: Record<string, unknown>): string {
+  const studentId = String(payload.studentId ?? '')
+  const date = String(payload.date ?? '')
+  return `${type}:${studentId}:${date}`
+}
+
 export async function enqueueOperation(type: SyncOperationType, payload: Record<string, unknown>): Promise<SyncQueueItem> {
-  const db = await openDb()
+  const key = operationKey(type, payload)
+  const existing = (await listPendingOperations()).find((item) => item.operationKey === key || operationKey(item.type, item.payload) === key)
   const item: SyncQueueItem = {
-    id: `${type}-${Date.now()}-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`,
+    id: existing?.id ?? `${type}-${crypto.randomUUID()}`,
     type,
     payload,
-    createdAt: new Date().toISOString(),
+    operationKey: key,
+    createdAt: existing?.createdAt ?? new Date().toISOString(),
     retryCount: 0,
   }
+  const db = await openDb()
   const tx = db.transaction(QUEUE, 'readwrite')
   tx.objectStore(QUEUE).put(item)
   await new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error) })
@@ -117,4 +127,15 @@ export async function getMeta<T>(key: string): Promise<T | null> {
 export async function exportOfflineState() {
   const [queue, lastSync] = await Promise.all([listPendingOperations(), getMeta<string>('last_sync')])
   return { queue, lastSync }
+}
+
+export async function clearCachedSnapshots(): Promise<void> {
+  const db = await openDb()
+  const tx = db.transaction(SNAPSHOTS, 'readwrite')
+  tx.objectStore(SNAPSHOTS).clear()
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+  db.close()
 }

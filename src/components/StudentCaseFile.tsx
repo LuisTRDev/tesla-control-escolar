@@ -4,7 +4,6 @@ import { jsPDF } from 'jspdf'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { getStudentCaseFile, type StudentCaseFile as CaseFile } from '@/services/phase6Service'
-import { listConfirmedHistoricalRecordsByStudent, type HistoricalImportRecord } from '@/services/historicalImportService'
 import type { Classroom, Student } from '@/types'
 
 type Props = {
@@ -12,6 +11,7 @@ type Props = {
   classroom?: Classroom
   onClose: () => void
   onOpenWhatsApp: (student: Student) => void
+  refreshKey?: number
 }
 
 type TimelineItem = { id: string; date: string; title: string; detail: string; tone: 'ok' | 'warning' | 'info' | 'danger' }
@@ -28,20 +28,22 @@ const violationLabels: Record<string, string> = {
 function s(value: unknown) { return value == null ? '' : String(value) }
 function dateTime(value: string) { const d = new Date(value.length === 10 ? `${value}T12:00:00` : value); return Number.isNaN(d.getTime()) ? value : d.toLocaleString('es-PE', { day:'2-digit', month:'short', year:'numeric', hour: value.length > 10 ? '2-digit' : undefined, minute: value.length > 10 ? '2-digit' : undefined }) }
 
-export default function StudentCaseFile({ student, classroom, onClose, onOpenWhatsApp }: Props) {
+export default function StudentCaseFile({ student, classroom, onClose, onOpenWhatsApp, refreshKey = 0 }: Props) {
   const [data, setData] = useState<CaseFile | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [historical, setHistorical] = useState<HistoricalImportRecord[]>([])
 
-  useEffect(() => {
+  async function loadCaseFile(silent = false) {
     if (!student) { setData(null); return }
-    setLoading(true); setError('')
-    Promise.all([getStudentCaseFile(student.id), listConfirmedHistoricalRecordsByStudent(student.id)])
-      .then(([caseFile, historicalRecords]) => { setData(caseFile); setHistorical(historicalRecords) })
-      .catch((err) => { console.error(err); setError(err instanceof Error ? err.message : 'No se pudo cargar el expediente.') })
-      .finally(() => setLoading(false))
-  }, [student?.id])
+    if (!silent) setLoading(true)
+    setError('')
+    try { setData(await getStudentCaseFile(student.id)) }
+    catch (err) { console.error(err); setError(err instanceof Error ? err.message : 'No se pudo cargar el expediente.') }
+    finally { if (!silent) setLoading(false) }
+  }
+
+  useEffect(() => { void loadCaseFile(false) }, [student?.id])
+  useEffect(() => { if (student && refreshKey > 0) void loadCaseFile(true) }, [refreshKey])
 
   const metrics = useMemo(() => {
     if (!data) return { attendance:0, late:0, incidents:0, notifications:0, openAlerts:0 }
@@ -72,17 +74,8 @@ export default function StudentCaseFile({ student, classroom, onClose, onOpenWha
     for (const row of data.alerts) {
       items.push({ id:`al-${s(row.id)}`, date:s(row.created_at), title:`Alerta: ${s(row.alert_type)}`, detail:s(row.message), tone:s(row.status)==='OPEN'?'danger':'info' })
     }
-    for (const row of historical) {
-      items.push({
-        id: `h-${row.id}`,
-        date: row.recordDate || row.createdAt,
-        title: `Histórico · ${row.recordType}`,
-        detail: [row.observation, row.classroomRaw ? `Aula registrada: ${row.classroomRaw}` : ''].filter(Boolean).join(' — ') || 'Registro histórico confirmado',
-        tone: row.recordType === 'LATE' || row.recordType === 'ABSENCE' || row.recordType === 'CONDUCT' ? 'warning' : 'info',
-      })
-    }
     return items.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,100)
-  }, [data, historical])
+  }, [data])
 
   if (!student) return null
 
@@ -141,7 +134,7 @@ export default function StudentCaseFile({ student, classroom, onClose, onOpenWha
                 <Card className="p-5"><h3 className="flex items-center gap-2 font-black"><ShieldAlert size={18}/> Seguimiento</h3><div className="mt-4 space-y-2">{data.alerts.length===0?<p className="text-sm text-slate-500">Sin alertas históricas.</p>:data.alerts.slice(0,6).map((row)=><div key={s(row.id)} className="rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800"><div className="flex justify-between gap-2"><b>{s(row.alert_type)}</b><span className={s(row.status)==='OPEN'?'text-red-600':'text-emerald-600'}>{s(row.status)}</span></div><p className="mt-1 text-xs text-slate-500">{s(row.message)}</p></div>)}</div></Card>
               </div>
 
-              <Card className="p-5"><div className="flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-wider text-slate-400">Historial unificado</p><h3 className="mt-1 text-lg font-black">Línea de tiempo</h3></div><span className="text-xs font-bold text-slate-500">{timeline.length} eventos · {historical.length} históricos</span></div><div className="mt-5 max-h-[58vh] space-y-3 overflow-y-auto pr-1">{timeline.length===0?<p className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700">No hay eventos registrados.</p>:timeline.map((item)=><div key={item.id} className="flex gap-3"><div className={`mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-xl ${item.tone==='ok'?'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300':item.tone==='danger'?'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300':item.tone==='warning'?'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300':'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300'}`}>{item.tone==='ok'?<CheckCircle2 size={17}/>:item.tone==='danger'?<Bell size={17}/>:item.tone==='warning'?<TriangleAlert size={17}/>:<Clock3 size={17}/>}</div><div className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"><div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><p className="font-black">{item.title}</p><p className="text-xs font-semibold text-slate-400">{dateTime(item.date)}</p></div><p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.detail}</p></div></div>)}</div></Card>
+              <Card className="p-5"><div className="flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-wider text-slate-400">Historial unificado</p><h3 className="mt-1 text-lg font-black">Línea de tiempo</h3></div><span className="text-xs font-bold text-slate-500">{timeline.length} eventos</span></div><div className="mt-5 max-h-[58vh] space-y-3 overflow-y-auto pr-1">{timeline.length===0?<p className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700">No hay eventos registrados.</p>:timeline.map((item)=><div key={item.id} className="flex gap-3"><div className={`mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-xl ${item.tone==='ok'?'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300':item.tone==='danger'?'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300':item.tone==='warning'?'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300':'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300'}`}>{item.tone==='ok'?<CheckCircle2 size={17}/>:item.tone==='danger'?<Bell size={17}/>:item.tone==='warning'?<TriangleAlert size={17}/>:<Clock3 size={17}/>}</div><div className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"><div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><p className="font-black">{item.title}</p><p className="text-xs font-semibold text-slate-400">{dateTime(item.date)}</p></div><p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.detail}</p></div></div>)}</div></Card>
             </div>
           </>}
         </div>

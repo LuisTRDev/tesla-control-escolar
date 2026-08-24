@@ -11,8 +11,8 @@ const K = {
 
 type DbClassroom = { id: number | string; grade: string; section: string; level: string; tutor_name: string | null }
 type DbGuardian = { full_name: string | null; dni: string | null; phone: string | null }
-type DbStudent = { id: number | string; classroom_id: number | string; first_name: string; last_name: string; guardians?: DbGuardian[] | DbGuardian | null }
-type DbAttendance = { id: number | string; student_id: number | string; date: string; entry_time: string; status: AttendanceStatus }
+type DbStudent = { id: number | string; classroom_id: number | string; first_name: string; last_name: string; dni: string | null; access_authorized: boolean | null; access_note: string | null; guardians?: DbGuardian[] | DbGuardian | null }
+type DbAttendance = { id: number | string; student_id: number | string; date: string; entry_time: string; exit_time: string | null; status: AttendanceStatus }
 type DbViolation = { violation_type: string }
 type DbPresentation = { id: number | string; student_id: number | string; date: string; status: 'COMPLIANT' | 'NON_COMPLIANT'; other_description: string | null; checked_at: string | null; presentation_violations?: DbViolation[] | null }
 
@@ -27,9 +27,17 @@ async function overlayPendingAttendance(base: AttendanceRecord[], from: string, 
     const date = String(p.date ?? '')
     if (date < from || date > to) continue
     const studentId = String(p.studentId ?? '')
-    const record: AttendanceRecord = { id: offlineId('attendance', studentId, date), studentId, date, time: String(p.time ?? ''), status: String(p.status ?? 'ON_TIME') as AttendanceStatus }
+    const record: AttendanceRecord = { id: offlineId('attendance', studentId, date), studentId, date, time: String(p.time ?? ''), status: String(p.status ?? 'ON_TIME') as AttendanceStatus, exitTime: String(p.exitTime ?? '') || undefined }
     const index = merged.findIndex((r) => r.studentId === studentId && r.date === date)
     if (index >= 0) merged[index] = record; else merged.push(record)
+  }
+  for (const item of pending.filter((x) => x.type === 'ATTENDANCE_EXIT_UPSERT')) {
+    const p = item.payload as Record<string, unknown>
+    const date = String(p.date ?? '')
+    if (date < from || date > to) continue
+    const studentId = String(p.studentId ?? '')
+    const index = merged.findIndex((r) => r.studentId === studentId && r.date === date)
+    if (index >= 0) merged[index] = { ...merged[index], exitTime: String(p.exitTime ?? '') || undefined }
   }
   return merged
 }
@@ -63,11 +71,15 @@ export async function getClassrooms(): Promise<Classroom[]> {
 
 export async function getStudents(): Promise<Student[]> {
   try {
-    const { data, error } = await supabase.from('students').select('id, classroom_id, first_name, last_name, guardians(full_name, dni, phone)').order('last_name')
+    const { data, error } = await supabase.from('students').select('id, classroom_id, first_name, last_name, dni, access_authorized, access_note, guardians(full_name, dni, phone)').order('last_name')
     if (error) throw error
     const mapped = ((data ?? []) as DbStudent[]).map((row) => {
       const raw = row.guardians; const guardian = Array.isArray(raw) ? raw[0] : raw
-      return { id: String(row.id), firstName: row.first_name, lastName: row.last_name, classroomId: String(row.classroom_id), guardianName: guardian?.full_name ?? 'Sin apoderado registrado', guardianDni: guardian?.dni ?? '', guardianPhone: guardian?.phone ?? '' }
+      return {
+        id: String(row.id), firstName: row.first_name, lastName: row.last_name, classroomId: String(row.classroom_id),
+        dni: row.dni ?? '', accessAuthorized: row.access_authorized !== false, accessNote: row.access_note ?? '',
+        guardianName: guardian?.full_name ?? 'Sin apoderado registrado', guardianDni: guardian?.dni ?? '', guardianPhone: guardian?.phone ?? '',
+      }
     })
     await setSnapshot(K.students, mapped)
     return mapped
@@ -108,9 +120,9 @@ export function calculateStatus(time: string, entryLimit: string): AttendanceSta
 
 export async function getAttendanceRange(from: string, to: string): Promise<AttendanceRecord[]> {
   try {
-    const { data, error } = await supabase.from('attendance').select('id, student_id, date, entry_time, status').gte('date', from).lte('date', to).order('date', { ascending: false })
+    const { data, error } = await supabase.from('attendance').select('id, student_id, date, entry_time, exit_time, status').gte('date', from).lte('date', to).order('date', { ascending: false })
     if (error) throw error
-    const mapped = ((data ?? []) as DbAttendance[]).map((row) => ({ id: String(row.id), studentId: String(row.student_id), date: row.date, time: trimTime(row.entry_time), status: row.status }))
+    const mapped = ((data ?? []) as DbAttendance[]).map((row) => ({ id: String(row.id), studentId: String(row.student_id), date: row.date, time: trimTime(row.entry_time), exitTime: trimTime(row.exit_time) || undefined, status: row.status }))
     await setSnapshot(K.attendance(from, to), mapped)
     return overlayPendingAttendance(mapped, from, to)
   } catch (error) {
@@ -120,27 +132,59 @@ export async function getAttendanceRange(from: string, to: string): Promise<Atte
   }
 }
 
-export async function registerAttendance(studentId: string, entryLimit: string, date: string, time: string): Promise<AttendanceRecord> {
+async function logAccessEvent(studentId: string, eventType: 'ENTRY' | 'EXIT', source: 'WEB' | 'PDA' | 'MANUAL', deviceLabel?: string) {
+  const { error } = await supabase.from('access_events').insert({
+    student_id: Number(studentId), event_type: eventType, source, device_label: deviceLabel?.trim() || null,
+  })
+  if (error && import.meta.env.DEV) console.warn('No se pudo registrar access_event', error)
+}
+
+export async function registerAttendance(studentId: string, entryLimit: string, date: string, time: string, source: 'WEB' | 'PDA' | 'MANUAL' = 'WEB', deviceLabel?: string): Promise<AttendanceRecord> {
   const status = calculateStatus(time, entryLimit)
   const optimistic: AttendanceRecord = { id: offlineId('attendance', studentId, date), studentId, date, time, status }
   if (!navigator.onLine) {
-    await enqueueOperation('ATTENDANCE_UPSERT', optimistic as unknown as Record<string, unknown>)
+    await enqueueOperation('ATTENDANCE_UPSERT', { ...optimistic, source, deviceLabel })
     return optimistic
   }
+  const { data: studentAccess, error: studentError } = await supabase.from('students').select('access_authorized').eq('id', Number(studentId)).single()
+  if (studentError) throw studentError
+  if (studentAccess?.access_authorized === false) throw new Error('El alumno figura como NO AUTORIZADO para ingreso.')
+
   try {
-    const record = { student_id: Number(studentId), date, entry_time: time, status }
-    const { data, error } = await supabase.from('attendance').upsert(record, { onConflict: 'student_id,date', ignoreDuplicates: true }).select('id, student_id, date, entry_time, status').maybeSingle()
+    const record = { student_id: Number(studentId), date, entry_time: time, status, entry_source: source, entry_recorded_at: new Date().toISOString() }
+    const { data, error } = await supabase.from('attendance').upsert(record, { onConflict: 'student_id,date', ignoreDuplicates: true }).select('id, student_id, date, entry_time, exit_time, status').maybeSingle()
     if (error) throw error
     if (!data) {
-      const { data: existing, error: existingError } = await supabase.from('attendance').select('id, student_id, date, entry_time, status').eq('student_id', Number(studentId)).eq('date', date).single()
+      const { data: existing, error: existingError } = await supabase.from('attendance').select('id, student_id, date, entry_time, exit_time, status').eq('student_id', Number(studentId)).eq('date', date).single()
       if (existingError) throw existingError
-      return { id: String(existing.id), studentId: String(existing.student_id), date: existing.date, time: trimTime(existing.entry_time), status: existing.status }
+      return { id: String(existing.id), studentId: String(existing.student_id), date: existing.date, time: trimTime(existing.entry_time), exitTime: trimTime(existing.exit_time) || undefined, status: existing.status }
     }
-    return { id: String(data.id), studentId: String(data.student_id), date: data.date, time: trimTime(data.entry_time), status: data.status }
-  } catch {
-    await enqueueOperation('ATTENDANCE_UPSERT', optimistic as unknown as Record<string, unknown>)
+    await logAccessEvent(studentId, 'ENTRY', source, deviceLabel)
+    return { id: String(data.id), studentId: String(data.student_id), date: data.date, time: trimTime(data.entry_time), exitTime: trimTime(data.exit_time) || undefined, status: data.status }
+  } catch (error) {
+    if (!navigator.onLine) {
+      await enqueueOperation('ATTENDANCE_UPSERT', { ...optimistic, source, deviceLabel })
+      return optimistic
+    }
+    throw error
+  }
+}
+
+export async function registerExitAttendance(record: AttendanceRecord, exitTime: string, source: 'WEB' | 'PDA' | 'MANUAL' = 'WEB', deviceLabel?: string): Promise<AttendanceRecord> {
+  if (!record.id) throw new Error('No existe una entrada registrada para marcar salida.')
+  if (record.exitTime) return record
+  const optimistic = { ...record, exitTime }
+  if (!navigator.onLine) {
+    await enqueueOperation('ATTENDANCE_EXIT_UPSERT', { studentId: record.studentId, date: record.date, exitTime, source, deviceLabel })
     return optimistic
   }
+  const { data, error } = await supabase.from('attendance')
+    .update({ exit_time: exitTime, exit_source: source, exit_recorded_at: new Date().toISOString() })
+    .eq('student_id', Number(record.studentId)).eq('date', record.date)
+    .select('id, student_id, date, entry_time, exit_time, status').single()
+  if (error) throw error
+  await logAccessEvent(record.studentId, 'EXIT', source, deviceLabel)
+  return { id: String(data.id), studentId: String(data.student_id), date: data.date, time: trimTime(data.entry_time), exitTime: trimTime(data.exit_time) || undefined, status: data.status }
 }
 
 export async function recalculateAttendanceForDate(date: string, entryLimit: string): Promise<void> {

@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
+import { spreadsheetSafeObject, spreadsheetSafeText } from '@/lib/csvSecurity'
 
 export type ReportSummary = {
   totalStudents: number
@@ -252,7 +253,7 @@ function safeFilenamePart(value: string) {
 export function exportAdvancedReportExcel(report: AdvancedReport) {
   const workbook = XLSX.utils.book_new()
   const summaryRows = [
-    ['Reporte Tesla', `${report.from} a ${report.to}`],
+    ['Reporte Tesla', spreadsheetSafeText(`${report.from} a ${report.to}`)],
     ['Total alumnos', report.summary.totalStudents],
     ['Ingresos', report.summary.totalEntries],
     ['A tiempo', report.summary.onTime],
@@ -262,10 +263,10 @@ export function exportAdvancedReportExcel(report: AdvancedReport) {
     ['Reincidentes', report.summary.repeatOffenders],
   ]
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(summaryRows), 'Resumen')
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(report.attendanceDetails.map((r) => ({ Alumno: r.studentName, Aula: r.classroom, Fecha: r.date, Hora: r.time, Estado: r.status === 'LATE' ? 'Tardanza' : 'A tiempo' }))), 'Asistencia')
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(report.incidentDetails.map((r) => ({ Alumno: r.studentName, Aula: r.classroom, Fecha: r.date, Incumplimientos: r.violations, Observacion: r.observation }))), 'Incidencias')
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(report.notificationDetails.map((r) => ({ Alumno: r.studentName, Aula: r.classroom, Fecha: r.date, Numero: r.notificationNumber, Tipo: r.notificationType, Observacion: r.observation }))), 'Notificaciones')
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(report.repeatOffenders.map((r) => ({ Alumno: r.studentName, Notificaciones: r.notificationCount }))), 'Reincidencias')
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(report.attendanceDetails.map((r) => spreadsheetSafeObject({ Alumno: r.studentName, Aula: r.classroom, Fecha: r.date, Hora: r.time, Estado: r.status === 'LATE' ? 'Tardanza' : 'A tiempo' }))), 'Asistencia')
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(report.incidentDetails.map((r) => spreadsheetSafeObject({ Alumno: r.studentName, Aula: r.classroom, Fecha: r.date, Incumplimientos: r.violations, Observacion: r.observation }))), 'Incidencias')
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(report.notificationDetails.map((r) => spreadsheetSafeObject({ Alumno: r.studentName, Aula: r.classroom, Fecha: r.date, Numero: r.notificationNumber, Tipo: r.notificationType, Observacion: r.observation }))), 'Notificaciones')
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(report.repeatOffenders.map((r) => spreadsheetSafeObject({ Alumno: r.studentName, Notificaciones: r.notificationCount }))), 'Reincidencias')
   XLSX.writeFile(workbook, `Reporte-Tesla-${safeFilenamePart(report.from)}-${safeFilenamePart(report.to)}.xlsx`)
 }
 
