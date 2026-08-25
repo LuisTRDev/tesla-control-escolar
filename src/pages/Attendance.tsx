@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Check, ChevronDown, BarChart3, CalendarDays, ClipboardCheck, Clock3, Download, Edit3, FileText,
-  Menu, Monitor, Moon, RotateCcw, Search, Settings2, Shirt, Sun, TriangleAlert, Volume2, X, BookOpen, MessageCircle, Send, Bell, CalendarCheck2, FolderOpen,
+  Menu, Monitor, Moon, RotateCcw, Search, Settings2, Shirt, Sun, TriangleAlert, Volume2, X, BookOpen, MessageCircle, Send, Bell, CalendarCheck2, FolderOpen, LogOut,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -34,7 +34,7 @@ import {
 import { getCurrentTime, getPreferences, getTodayKey, resetPreferences, savePreferences, type UserPreferences } from '@/lib/storage'
 import {
   deleteAttendanceForDate, deletePresentationForDate, getAttendanceRange, getEntryLimit, getPresentationRange, getStudents,
-  recalculateAttendanceForDate, registerAttendance,registerExitAttendance, saveEntryLimit, savePresentation as savePresentationRemote,
+  registerAttendance, registerExitAttendance, saveEntryLimit, savePresentation as savePresentationRemote,
 } from '@/services/schoolService'
 import {
   ensureNotificationForLateAttendance,
@@ -151,6 +151,67 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const realtimeState = useSchoolRealtime(pullInBackground)
   const { installAvailable, install } = usePwaInstall()
 
+  useEffect(() => {
+    const handleRealtimeEvent = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { table?: string; event?: string; newRecord?: Record<string, unknown>; oldRecord?: Record<string, unknown> } | undefined
+      if (!detail?.table) return
+      const table = detail.table
+      const incoming = detail.newRecord
+
+      if (table === 'attendance' && incoming?.id != null && incoming.student_id != null && incoming.date) {
+        const mapped: AttendanceRecord = {
+          id: String(incoming.id),
+          studentId: String(incoming.student_id),
+          date: String(incoming.date),
+          time: String(incoming.entry_time ?? '').slice(0, 5),
+          status: String(incoming.status ?? 'ON_TIME') as AttendanceRecord['status'],
+          exitTime: String(incoming.exit_time ?? '').slice(0, 5),
+          exitRecordedAt: incoming.exit_recorded_at == null ? null : String(incoming.exit_recorded_at),
+          exitRecordedBy: incoming.exit_recorded_by == null ? null : String(incoming.exit_recorded_by),
+          entryRecordedAt: incoming.entry_recorded_at == null ? null : String(incoming.entry_recorded_at),
+          entryRecordedBy: incoming.entry_recorded_by == null ? null : String(incoming.entry_recorded_by),
+          entrySource: incoming.entry_source == null ? null : String(incoming.entry_source),
+          exitSource: incoming.exit_source == null ? null : String(incoming.exit_source),
+        }
+        if (detail.event === 'DELETE') {
+          setRecords((curr) => curr.filter((item) => !(item.studentId === mapped.studentId && item.date === mapped.date)))
+        } else {
+          setRecords((curr) => [...curr.filter((item) => !(item.studentId === mapped.studentId && item.date === mapped.date)), mapped])
+        }
+        return
+      }
+
+      if (table === 'notifications' && incoming?.id != null && incoming.student_id != null && incoming.date) {
+        const mapped: NotificationRecord = {
+          id: String(incoming.id),
+          studentId: String(incoming.student_id),
+          presentationControlId: incoming.presentation_control_id == null ? null : String(incoming.presentation_control_id),
+          attendanceId: incoming.attendance_id == null ? null : String(incoming.attendance_id),
+          notificationNumber: Math.max(1, Number(incoming.notification_number) || 1),
+          notificationType: (incoming.notification_type ?? 'PRESENTATION') as NotificationRecord['notificationType'],
+          observation: String(incoming.observation ?? ''),
+          date: String(incoming.date),
+          generatedAt: String(incoming.generated_at ?? new Date().toISOString()),
+        }
+        if (detail.event === 'DELETE') setNotifications((curr) => curr.filter((item) => item.id !== mapped.id))
+        else setNotifications((curr) => [mapped, ...curr.filter((item) => item.id !== mapped.id)])
+        return
+      }
+
+      if (table === 'presentation_controls' && incoming?.id != null && incoming.student_id != null && incoming.date) {
+        const base = presentationRecords.find((item) => item.id === String(incoming.id))
+        if (detail.event === 'DELETE') {
+          setPresentationRecords((curr) => curr.filter((item) => item.id !== String(incoming.id)))
+        } else if (base) {
+          setPresentationRecords((curr) => [...curr.filter((item) => item.id !== base.id), { ...base, status: String(incoming.status ?? base.status) as PresentationRecord['status'], observation: String(incoming.other_description ?? base.observation), checkedAt: String(incoming.checked_at ?? base.checkedAt) }])
+        }
+      }
+    }
+
+    window.addEventListener('tesla-realtime-event', handleRealtimeEvent)
+    return () => window.removeEventListener('tesla-realtime-event', handleRealtimeEvent)
+  }, [presentationRecords])
+
   useEffect(() => { void reloadData(true) }, [reloadData])
   useEffect(() => { document.documentElement.classList.toggle('dark', darkMode); return () => document.documentElement.classList.remove('dark') }, [darkMode])
   useEffect(() => { const media=window.matchMedia('(prefers-color-scheme: dark)'); const update=(e:MediaQueryListEvent)=>setSystemDark(e.matches); media.addEventListener('change',update); return()=>media.removeEventListener('change',update) }, [])
@@ -185,23 +246,28 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   })
 
   async function mark(studentId:string) {
-    try { const rec=await registerAttendance(studentId,entryLimit,today,getCurrentTime()); setRecords((curr)=>[...curr.filter((r)=>!(r.studentId===studentId&&r.date===today)),rec]); playConfirmation() }
-    catch(error){ console.error(error); setDataError(error instanceof Error?error.message:'No se pudo registrar la entrada.') }
+    const existing = todayRecords.find((item) => item.studentId === studentId)
+    if (existing) return
+    try {
+      const rec=await registerAttendance(studentId,entryLimit,today,getCurrentTime())
+      setRecords((curr)=>[...curr.filter((r)=>!(r.studentId===studentId&&r.date===today)),rec])
+      playConfirmation()
+    } catch(error){ console.error(error); setDataError(error instanceof Error?error.message:'No se pudo registrar la entrada.') }
   }
 
   async function markExit(studentId: string) {
-  const record = todayRecords.find((r) => r.studentId === studentId)
-  if (!record) { setDataError('El alumno no tiene entrada registrada hoy, no se puede marcar salida.'); return }
-  try {
-    const updated = await registerExitAttendance(record, getCurrentTime())
-    setRecords((curr) => [...curr.filter((r) => !(r.studentId === studentId && r.date === today)), updated])
-    playConfirmation()
+    const record = todayRecords.find((r) => r.studentId === studentId)
+    if (!record) { setDataError('El alumno no tiene entrada registrada hoy, no se puede marcar salida.'); return }
+    if (record.exitTime) return
+    try {
+      const updated = await registerExitAttendance(record, getCurrentTime())
+      setRecords((curr) => [...curr.filter((r) => !(r.studentId === studentId && r.date === today)), updated])
+      playConfirmation()
     } catch (error) {
       console.error(error)
       setDataError(error instanceof Error ? error.message : 'No se pudo registrar la salida.')
     }
   }
-
   async function resetToday() {
     if(!confirm('¿Borrar los registros de ingreso y presentación de hoy?')) return
     try {
@@ -215,7 +281,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   function changeClassroom(classroomId:string){ const selected=classrooms.find((i)=>i.id===classroomId); if(!selected)return; setQuery('');setFilter('ALL');setPresentationFilter('ALL');onClassroomChange(selected); if(preferences.rememberClassroom)updatePreferences({...preferences,lastClassroomId:selected.id}) }
   async function updateEntryLimit(value:string){
     setEntryLimit(value)
-    try { await saveEntryLimit(value); await recalculateAttendanceForDate(today,value); const range=monthRange(); setRecords(await getAttendanceRange(range.from,range.to)) }
+    try { await saveEntryLimit(value) }
     catch(error){ console.error(error); setDataError(error instanceof Error?error.message:'No se pudo actualizar la hora límite.') }
   }
   function openPresentation(student:Student){
@@ -730,9 +796,21 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                           </div>
                         )
                       ) : (
-                        <Button className="w-full sm:w-auto" onClick={() => mark(student.id)}>
+                        <Button className="w-full sm:w-auto" onClick={() => void mark(student.id)}>
                           <Clock3 className="mr-2" size={18} />
                           Marcar entrada
+                        </Button>
+                      )}
+                      {record && (
+                        <Button
+                          variant="outline"
+                          className="w-full sm:w-auto"
+                          disabled={Boolean(record.exitTime)}
+                          onClick={() => void markExit(student.id)}
+                          title={record.exitTime ? `Salida registrada: ${record.exitTime}` : 'Registrar salida'}
+                        >
+                          <LogOut className="mr-2" size={18} />
+                          {record.exitTime ? `Salida ${record.exitTime}` : 'Marcar salida'}
                         </Button>
                       )}
                     </div>
@@ -1205,7 +1283,6 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         currentClassroom={classroom}
         students={students}
         onOpenCaseFile={(student) => { setAlertsOpen(false); setCaseFileStudent(student) }}
-        refreshKey={realtimeState.revision}
         onOpenWhatsApp={(student, alertType) => {
           setAlertsOpen(false)
           const type: WhatsAppMessageType = alertType === 'ABSENCE' ? 'ABSENCE' : alertType === 'FREQUENT_LATE' ? 'FREQUENT_LATE' : alertType === 'THIRD_NOTIFICATION' ? 'RECURRENCE_3' : 'RECURRENCE_2'
@@ -1228,7 +1305,6 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         classroom={caseFileStudent ? classrooms.find((item) => item.id === caseFileStudent.classroomId) : undefined}
         onClose={() => setCaseFileStudent(null)}
         onOpenWhatsApp={(student) => { setCaseFileStudent(null); openWhatsAppModal(student) }}
-        refreshKey={realtimeState.revision}
       />
 
       <HistoricalImport

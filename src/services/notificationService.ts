@@ -100,13 +100,41 @@ function getPresentationNotificationType(record: PresentationRecord): Notificati
   return 'PRESENTATION'
 }
 
-/** Una sola notificación por control de reglamento. */
+/** Una sola notificación por control de reglamento. Si el único motivo es tardanza, reutiliza la notificación LATE_ENTRY asociada a la asistencia. */
 export async function ensureNotificationForPresentation(record: PresentationRecord): Promise<NotificationRecord> {
   if (!record.id) throw new Error('El control de reglamento no tiene un id persistido.')
   if (record.status !== 'NON_COMPLIANT') throw new Error('Solo se generan notificaciones para incumplimientos.')
 
   const existing = await getExistingByPresentation(record.id)
   if (existing) return existing
+
+  const onlyLate = record.lateEntryViolation
+    && !record.hairstyleViolation
+    && !record.uniformUsageViolation
+    && !record.nonInstitutionalGarment
+    && !record.inappropriateConductViolation
+
+  if (onlyLate) {
+    const { data: attendance, error: attendanceError } = await supabase
+      .from('attendance')
+      .select('id, student_id, date, entry_time, status')
+      .eq('student_id', Number(record.studentId))
+      .eq('date', record.date)
+      .eq('status', 'LATE')
+      .maybeSingle()
+
+    if (!attendanceError && attendance?.id) {
+      const existingLate = await getExistingByAttendance(String(attendance.id))
+      if (existingLate) return existingLate
+      return ensureNotificationForLateAttendance({
+        id: String(attendance.id),
+        studentId: String(record.studentId),
+        date: record.date,
+        time: String(attendance.entry_time ?? '').slice(0, 5),
+        status: 'LATE',
+      })
+    }
+  }
 
   const notificationNumber = await getNextNotificationNumber(record.studentId)
   const { data, error } = await supabase

@@ -11,12 +11,13 @@ export type Student = {
   firstName: string
   lastName: string
   classroomId: string
-  dni?: string
-  accessAuthorized?: boolean
-  accessNote?: string
   guardianName: string
   guardianDni: string
   guardianPhone: string
+  /** Optional PDA/access fields; kept optional until the corresponding DB columns are added. */
+  dni?: string
+  accessAuthorized?: boolean
+  accessNote?: string
 }
 
 export type AttendanceStatus = 'ON_TIME' | 'LATE'
@@ -28,6 +29,12 @@ export type AttendanceRecord = {
   time: string
   status: AttendanceStatus
   exitTime?: string
+  exitRecordedAt?: string | null
+  exitRecordedBy?: string | null
+  entryRecordedAt?: string | null
+  entryRecordedBy?: string | null
+  entrySource?: string | null
+  exitSource?: string | null
 }
 
 export type AttendanceFilter = 'ALL' | 'ON_TIME' | 'LATE' | 'PENDING'

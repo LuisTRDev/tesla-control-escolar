@@ -13,7 +13,6 @@ type Props = {
   students: Student[]
   onOpenCaseFile: (student: Student) => void
   onOpenWhatsApp: (student: Student, alertType: AlertType) => void
-  refreshKey?: number
 }
 
 const typeLabels: Record<AlertType, string> = {
@@ -29,15 +28,15 @@ function badgeClass(type: AlertType) {
   return 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
 }
 
-export default function AlertCenter({ open, onClose, classrooms, currentClassroom, students, onOpenCaseFile, onOpenWhatsApp, refreshKey = 0 }: Props) {
+export default function AlertCenter({ open, onClose, classrooms, currentClassroom, students, onOpenCaseFile, onOpenWhatsApp }: Props) {
   const [status, setStatus] = useState<AlertStatus | 'ALL'>('OPEN')
   const [classroomId, setClassroomId] = useState<string | 'ALL'>(currentClassroom.id)
   const [alerts, setAlerts] = useState<AlertRecord[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  async function load(silent = false) {
-    if (!silent) setLoading(true)
+  async function load() {
+    setLoading(true)
     setError('')
     try {
       setAlerts(await getAlerts({ status, classroomId: classroomId === 'ALL' ? null : classroomId }))
@@ -45,18 +44,13 @@ export default function AlertCenter({ open, onClose, classrooms, currentClassroo
       console.error(err)
       setError(err instanceof Error ? err.message : 'No se pudieron cargar las alertas.')
     } finally {
-      if (!silent) setLoading(false)
+      setLoading(false)
     }
   }
 
   useEffect(() => {
     if (open) void load()
   }, [open, status, classroomId])
-
-  useEffect(() => {
-    if (open && refreshKey > 0) void load(true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey])
 
   const counts = useMemo(() => ({
     total: alerts.length,

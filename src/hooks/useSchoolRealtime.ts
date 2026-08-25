@@ -72,7 +72,12 @@ export function useSchoolRealtime(onChange: () => void | Promise<void>) {
       channel = channel.on(
         'postgres_changes',
         { event: '*', schema: 'public', table },
-        () => requestRefresh(table),
+        (payload) => {
+          window.dispatchEvent(new CustomEvent('tesla-realtime-event', {
+            detail: { table, event: payload.eventType, newRecord: payload.new, oldRecord: payload.old },
+          }))
+          requestRefresh(table)
+        },
       )
     })
 
