@@ -41,8 +41,12 @@ export default function PdaMode({ open, onClose, students, classrooms, records, 
 
   function lookup() {
     const clean = dni.replace(/\D/g, '').slice(0, 8)
+    console.log('Buscando:', JSON.stringify(clean))
+    console.log('Total alumnos cargados:', students.length)
+    console.log('Primeros 5 DNIs:', students.slice(0, 5).map(s => JSON.stringify(s.dni)))
+    console.log('¿Existe ese DNI en el array?', students.some(s => s.dni === clean))
     if (clean.length !== 8) { setSelected(null); setMessage('Ingresa o escanea un DNI de 8 dígitos.'); return }
-    const found = students.find((student) => student.dni === clean)
+    const found = students.find((student) => (student.dni ?? '').replace(/\D/g, '') === clean)
     if (!found) { setSelected(null); setMessage('DNI no encontrado en la base de alumnos.'); return }
     setSelected(found)
     setMessage('')

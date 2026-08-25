@@ -10,6 +10,7 @@ import Sidebar from '@/components/Sidebar'
 import AdvancedReports from '@/components/AdvancedReports'
 import AlertCenter from '@/components/AlertCenter'
 import DailySummary from '@/components/DailySummary'
+import PdaMode from '@/components/PdaMode'
 import StudentCaseFile from '@/components/StudentCaseFile'
 import AuditLog from '@/components/AuditLog'
 import QuickMode from '@/components/QuickMode'
@@ -100,6 +101,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [dailySummaryOpen, setDailySummaryOpen] = useState(false)
   const [auditOpen, setAuditOpen] = useState(false)
   const [quickModeOpen, setQuickModeOpen] = useState(false)
+  const [pdaModeOpen, setPdaModeOpen] = useState(false)
   const [backupOpen, setBackupOpen] = useState(false)
   const [historicalImportOpen, setHistoricalImportOpen] = useState(false)
   const [tvPanelOpen, setTvPanelOpen] = useState(false)
@@ -562,6 +564,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         onDailySummary={() => { setDailySummaryOpen(true); setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setAuditOpen(false) }}
         onAudit={() => { setAuditOpen(true); setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false) }}
         onQuickMode={() => setQuickModeOpen(true)}
+        onPdaMode={() => setPdaModeOpen(true)}
         onTvPanel={() => setTvPanelOpen(true)}
         onBackups={() => setBackupOpen(true)}
         onHistoricalImport={() => setHistoricalImportOpen(true)}
@@ -889,6 +892,17 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         onMark={mark}
         onExit={markExit}
         online={syncState.online}
+      />
+
+      <PdaMode
+      open={pdaModeOpen}
+      onClose={() => setPdaModeOpen(false)}
+      students={students}
+      classrooms={classrooms}
+      records={todayRecords}
+      online={syncState.online}
+      onEntry={mark}
+      onExit={markExit}
       />
 
       <BackupCenter open={backupOpen} onClose={() => setBackupOpen(false)} online={syncState.online} />

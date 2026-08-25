@@ -16,7 +16,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   </React.StrictMode>
 )
 
-if ('serviceWorker' in navigator) {
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', async () => {
     try {
       const registration = await navigator.serviceWorker.register('/sw.js')
@@ -43,8 +43,6 @@ if ('serviceWorker' in navigator) {
         })
       })
 
-      // Comprobación temprana al cargar. El navegador también realiza sus propias
-      // comprobaciones periódicas del service worker.
       await registration.update()
     } catch (error) {
       reportError('service-worker', error)

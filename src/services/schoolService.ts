@@ -11,7 +11,27 @@ const K = {
 
 type DbClassroom = { id: number | string; grade: string; section: string; level: string; tutor_name: string | null }
 type DbGuardian = { full_name: string | null; dni: string | null; phone: string | null }
-type DbStudent = { id: number | string; classroom_id: number | string; first_name: string; last_name: string; guardians?: DbGuardian[] | DbGuardian | null }
+type DbStudent = {
+  id: number
+  classroom_id: number | null
+  first_name: string
+  last_name: string
+  dni: string | null
+  access_authorized: boolean | null
+  access_note: string | null
+  guardians:
+    | {
+        full_name: string | null
+        dni: string | null
+        phone: string | null
+      }
+    | {
+        full_name: string | null
+        dni: string | null
+        phone: string | null
+      }[]
+    | null
+}
 type DbAttendance = { id: number | string; student_id: number | string; date: string; entry_time: string; status: AttendanceStatus; exit_time?: string | null; exit_recorded_at?: string | null; exit_recorded_by?: string | null; entry_recorded_at?: string | null; entry_recorded_by?: string | null; entry_source?: string | null; exit_source?: string | null }
 type DbViolation = { violation_type: string }
 type DbPresentation = { id: number | string; student_id: number | string; date: string; status: 'COMPLIANT' | 'NON_COMPLIANT'; other_description: string | null; checked_at: string | null; presentation_violations?: DbViolation[] | null }
@@ -63,17 +83,75 @@ export async function getClassrooms(): Promise<Classroom[]> {
 
 export async function getStudents(): Promise<Student[]> {
   try {
-    const { data, error } = await supabase.from('students').select('id, classroom_id, first_name, last_name, guardians(full_name, dni, phone)').order('last_name')
+    const { data, error } = await supabase
+      .from('students')
+      .select(`
+        id,
+        classroom_id,
+        first_name,
+        last_name,
+        dni,
+        access_authorized,
+        access_note,
+        guardians (
+          full_name,
+          dni,
+          phone
+        )
+      `)
+      .order('last_name', { ascending: true })
+
     if (error) throw error
+
     const mapped = ((data ?? []) as DbStudent[]).map((row) => {
-      const raw = row.guardians; const guardian = Array.isArray(raw) ? raw[0] : raw
-      return { id: String(row.id), firstName: row.first_name, lastName: row.last_name, classroomId: String(row.classroom_id), guardianName: guardian?.full_name ?? 'Sin apoderado registrado', guardianDni: guardian?.dni ?? '', guardianPhone: guardian?.phone ?? '' }
+      const rawGuardian = row.guardians
+      const guardian = Array.isArray(rawGuardian)
+        ? rawGuardian[0]
+        : rawGuardian
+
+      return {
+        id: String(row.id),
+
+        firstName: row.first_name ?? '',
+        lastName: row.last_name ?? '',
+
+        classroomId:
+          row.classroom_id != null
+            ? String(row.classroom_id)
+            : '',
+
+        dni: row.dni ?? '',
+
+        accessAuthorized:
+          row.access_authorized !== false,
+
+        accessNote:
+          row.access_note ?? '',
+
+        guardianName:
+          guardian?.full_name ??
+          'Sin apoderado registrado',
+
+        guardianDni:
+          guardian?.dni ??
+          '',
+
+        guardianPhone:
+          guardian?.phone ??
+          '',
+      }
     })
+
     await setSnapshot(K.students, mapped)
+
     return mapped
   } catch (error) {
     const cached = await getSnapshot<Student[]>(K.students)
-    if (cached) return cached
+
+    if (cached) {
+      return cached
+    }
+
     throw error
   }
 }
