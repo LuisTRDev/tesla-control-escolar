@@ -6,6 +6,15 @@ export type Classroom = {
   tutorName: string
 }
 
+export type Guardian = {
+  id: string
+  fullName: string
+  dni: string
+  phone: string
+  relationship: string
+  isPrimary: boolean
+}
+
 export type Student = {
   id: string
   firstName: string
@@ -14,6 +23,7 @@ export type Student = {
   guardianName: string
   guardianDni: string
   guardianPhone: string
+  guardians?: Guardian[]
   /** Optional PDA/access fields; kept optional until the corresponding DB columns are added. */
   dni?: string
   accessAuthorized?: boolean

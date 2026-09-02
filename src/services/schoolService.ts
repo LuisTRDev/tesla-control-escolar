@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { enqueueOperation, getSnapshot, listPendingOperations, setSnapshot } from '@/lib/offlineDb'
-import type { AttendanceRecord, AttendanceStatus, Classroom, PresentationRecord, Student } from '@/types'
+import type { AttendanceRecord, AttendanceStatus, Classroom, Guardian, PresentationRecord, Student } from '@/types'
 
 const DEFAULT_LIMIT = '07:45'
 const K = {
@@ -10,7 +10,17 @@ const K = {
 }
 
 type DbClassroom = { id: number | string; grade: string; section: string; level: string; tutor_name: string | null }
-type DbGuardian = { full_name: string | null; dni: string | null; phone: string | null }
+type DbGuardian = {
+  id: number | string
+  fullName: string | null
+  dni: string | null
+  phone: string | null
+}
+type DbStudentGuardian = {
+  relationship: string | null
+  is_primary: boolean | null
+  guardians: DbGuardian | DbGuardian[] | null
+}
 type DbStudent = {
   id: number
   classroom_id: number | null
@@ -19,18 +29,7 @@ type DbStudent = {
   dni: string | null
   access_authorized: boolean | null
   access_note: string | null
-  guardians:
-    | {
-        full_name: string | null
-        dni: string | null
-        phone: string | null
-      }
-    | {
-        full_name: string | null
-        dni: string | null
-        phone: string | null
-      }[]
-    | null
+  student_guardians: DbStudentGuardian[] | null
 }
 type DbAttendance = { id: number | string; student_id: number | string; date: string; entry_time: string; status: AttendanceStatus; exit_time?: string | null; exit_recorded_at?: string | null; exit_recorded_by?: string | null; entry_recorded_at?: string | null; entry_recorded_by?: string | null; entry_source?: string | null; exit_source?: string | null }
 type DbViolation = { violation_type: string }
@@ -93,10 +92,15 @@ export async function getStudents(): Promise<Student[]> {
         dni,
         access_authorized,
         access_note,
-        guardians (
-          full_name,
-          dni,
-          phone
+        student_guardians (
+          relationship,
+          is_primary,
+          guardians (
+            id,
+            fullName:full_name,
+            dni,
+            phone
+          )
         )
       `)
       .order('last_name', { ascending: true })
@@ -104,10 +108,32 @@ export async function getStudents(): Promise<Student[]> {
     if (error) throw error
 
     const mapped = ((data ?? []) as DbStudent[]).map((row) => {
-      const rawGuardian = row.guardians
-      const guardian = Array.isArray(rawGuardian)
-        ? rawGuardian[0]
-        : rawGuardian
+      const relationRows = (row.student_guardians ?? [])
+        .map((relation) => {
+          const rawGuardian = relation.guardians
+          const guardian = Array.isArray(rawGuardian)
+            ? rawGuardian[0]
+            : rawGuardian
+
+          if (!guardian) return null
+
+          return {
+            id: String(guardian.id),
+            fullName: guardian.fullName ?? '',
+            dni: guardian.dni ?? '',
+            phone: guardian.phone ?? '',
+            relationship: relation.relationship ?? '',
+            isPrimary: relation.is_primary === true,
+          } satisfies Guardian
+        })
+        .filter((item): item is Guardian => item !== null)
+
+      const guardians = [
+        ...relationRows.filter((item) => item.isPrimary),
+        ...relationRows.filter((item) => !item.isPrimary),
+      ]
+
+      const guardian = guardians[0]
 
       return {
         id: String(row.id),
@@ -129,7 +155,7 @@ export async function getStudents(): Promise<Student[]> {
           row.access_note ?? '',
 
         guardianName:
-          guardian?.full_name ??
+          guardian?.fullName ??
           'Sin apoderado registrado',
 
         guardianDni:
@@ -139,6 +165,8 @@ export async function getStudents(): Promise<Student[]> {
         guardianPhone:
           guardian?.phone ??
           '',
+
+        guardians,
       }
     })
 

@@ -2,17 +2,22 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import PwaUpdateNotice from '@/components/PwaUpdateNotice'
-import './index.css'
+import AppErrorBoundary from '@/components/AppErrorBoundary'
+import { installGlobalErrorLogging } from '@/services/errorLogger'
 import { installProductionConsoleGuards, reportError } from '@/lib/security'
+import './index.css'
 
 installProductionConsoleGuards()
+installGlobalErrorLogging()
 
 const UPDATE_EVENT = 'tesla-pwa-update-available'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
-    <PwaUpdateNotice />
+    <AppErrorBoundary>
+      <App />
+      <PwaUpdateNotice />
+    </AppErrorBoundary>
   </React.StrictMode>
 )
 

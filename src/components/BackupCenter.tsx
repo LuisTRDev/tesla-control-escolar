@@ -6,7 +6,7 @@ import { exportOfflineState } from '@/lib/offlineDb'
 
 type Props = { open: boolean; onClose: () => void; online: boolean }
 
-const TABLES = ['classrooms','students','guardians','attendance','presentation_controls','presentation_violations','notifications','alerts','attendance_closures'] as const
+const TABLES = ['classrooms','students','guardians','student_guardians','attendance','presentation_controls','presentation_violations','notifications','alerts','attendance_closures'] as const
 
 function downloadJson(data: unknown, filename: string) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })

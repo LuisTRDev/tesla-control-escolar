@@ -5,6 +5,7 @@ export type RealtimeTable =
   | 'students'
   | 'classrooms'
   | 'guardians'
+  | 'student_guardians'
   | 'attendance'
   | 'presentation_controls'
   | 'presentation_violations'
@@ -20,6 +21,7 @@ const TABLES: RealtimeTable[] = [
   'students',
   'classrooms',
   'guardians',
+  'student_guardians',
   'attendance',
   'presentation_controls',
   'presentation_violations',
