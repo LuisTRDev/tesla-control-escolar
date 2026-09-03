@@ -36,6 +36,7 @@ import { getCurrentTime, getPreferences, getTodayKey, resetPreferences, savePref
 import {
   deleteAttendanceForDate, deletePresentationForDate, getAttendanceRange, getEntryLimit, getPresentationRange, getStudents,
   registerAttendance, registerExitAttendance, saveEntryLimit, savePresentation as savePresentationRemote,
+  updateAttendanceEntryTime,
 } from '@/services/schoolService'
 import {
   ensureNotificationForLateAttendance,
@@ -120,6 +121,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [whatsAppError, setWhatsAppError] = useState('')
   const [openingWhatsApp, setOpeningWhatsApp] = useState(false)
   const [presentationDraft, setPresentationDraft] = useState<PresentationDraft>(emptyPresentationDraft)
+  const [editingAttendance, setEditingAttendance] = useState<AttendanceRecord | null>(null)
+  const [editingAttendanceTime, setEditingAttendanceTime] = useState('')
+  const [savingAttendanceEdit, setSavingAttendanceEdit] = useState(false)
   const [preferences, setPreferences] = useState<UserPreferences>(() => getPreferences())
   const today = getTodayKey()
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
@@ -270,6 +274,54 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       setDataError(error instanceof Error ? error.message : 'No se pudo registrar la salida.')
     }
   }
+  function openAttendanceEdit(record: AttendanceRecord) {
+    setEditingAttendance(record)
+    setEditingAttendanceTime(record.time || '')
+    setDataError('')
+  }
+
+  async function saveAttendanceEdit() {
+    if (!editingAttendance) return
+
+    const newTime = editingAttendanceTime.trim()
+
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(newTime)) {
+      setDataError('Ingresa una hora válida en formato HH:MM.')
+      return
+    }
+
+    try {
+      setSavingAttendanceEdit(true)
+      setDataError('')
+
+      const updated = await updateAttendanceEntryTime(
+        editingAttendance,
+        newTime,
+        entryLimit,
+      )
+
+      setRecords((curr) => [
+        ...curr.filter(
+          (item) => !(item.studentId === updated.studentId && item.date === updated.date),
+        ),
+        updated,
+      ])
+
+      setEditingAttendance(null)
+      setEditingAttendanceTime('')
+      playConfirmation()
+    } catch (error) {
+      console.error(error)
+      setDataError(
+        error instanceof Error
+          ? error.message
+          : 'No se pudo corregir la hora de ingreso.',
+      )
+    } finally {
+      setSavingAttendanceEdit(false)
+    }
+  }
+
   async function resetToday() {
     if(!confirm('¿Borrar los registros de ingreso y presentación de hoy?')) return
     try {
@@ -805,16 +857,28 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                         </Button>
                       )}
                       {record && (
-                        <Button
-                          variant="outline"
-                          className="w-full sm:w-auto"
-                          disabled={Boolean(record.exitTime)}
-                          onClick={() => void markExit(student.id)}
-                          title={record.exitTime ? `Salida registrada: ${record.exitTime}` : 'Registrar salida'}
-                        >
-                          <LogOut className="mr-2" size={18} />
-                          {record.exitTime ? `Salida ${record.exitTime}` : 'Marcar salida'}
-                        </Button>
+                        <>
+                          <Button
+                            variant="outline"
+                            className="w-full sm:w-auto"
+                            onClick={() => openAttendanceEdit(record)}
+                            title="Corregir hora de ingreso"
+                          >
+                            <Edit3 className="mr-2" size={18} />
+                            Editar ingreso
+                          </Button>
+
+                          <Button
+                            variant="outline"
+                            className="w-full sm:w-auto"
+                            disabled={Boolean(record.exitTime)}
+                            onClick={() => void markExit(student.id)}
+                            title={record.exitTime ? `Salida registrada: ${record.exitTime}` : 'Registrar salida'}
+                          >
+                            <LogOut className="mr-2" size={18} />
+                            {record.exitTime ? `Salida ${record.exitTime}` : 'Marcar salida'}
+                          </Button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -882,6 +946,75 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         </div>
         </section>
       </div>
+
+      {editingAttendance && (
+        <div
+          className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/65 p-4 backdrop-blur-sm"
+          onMouseDown={() => {
+            if (!savingAttendanceEdit) setEditingAttendance(null)
+          }}
+        >
+          <Card
+            className="w-full max-w-md p-6"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">
+                  Corrección de asistencia
+                </p>
+                <h3 className="mt-1 text-xl font-black">Editar hora de ingreso</h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Corrige la hora registrada para este alumno.
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                disabled={savingAttendanceEdit}
+                onClick={() => setEditingAttendance(null)}
+                aria-label="Cerrar"
+              >
+                <X size={20} />
+              </Button>
+            </div>
+
+            <div className="mt-6">
+              <p className="text-sm font-bold">
+                Alumno: {editingAttendance.studentId}
+              </p>
+              <label className="mt-4 block text-sm font-bold">
+                Hora de ingreso
+                <Input
+                  className="mt-2 h-12 text-lg font-bold"
+                  type="time"
+                  value={editingAttendanceTime}
+                  onChange={(event) => setEditingAttendanceTime(event.target.value)}
+                  disabled={savingAttendanceEdit}
+                />
+              </label>
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                Hora actual: {editingAttendance.time || '—'} · Límite: {entryLimit}
+              </p>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <Button
+                variant="outline"
+                disabled={savingAttendanceEdit}
+                onClick={() => setEditingAttendance(null)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                disabled={savingAttendanceEdit || !editingAttendanceTime}
+                onClick={() => void saveAttendanceEdit()}
+              >
+                {savingAttendanceEdit ? 'Guardando...' : 'Guardar corrección'}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
 
       <QuickMode
         open={quickModeOpen}

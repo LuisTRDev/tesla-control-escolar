@@ -108,31 +108,24 @@ export async function getStudents(): Promise<Student[]> {
     if (error) throw error
 
     const mapped = ((data ?? []) as DbStudent[]).map((row) => {
-      const relationRows = (row.student_guardians ?? [])
-        .map((relation) => {
-          const rawGuardian = relation.guardians
-          const guardian = Array.isArray(rawGuardian)
-            ? rawGuardian[0]
-            : rawGuardian
-
-          if (!guardian) return null
-
-          return {
-            id: String(guardian.id),
-            fullName: guardian.fullName ?? '',
-            dni: guardian.dni ?? '',
-            phone: guardian.phone ?? '',
-            relationship: relation.relationship ?? '',
-            isPrimary: relation.is_primary === true,
-          } satisfies Guardian
-        })
-        .filter((item): item is Guardian => item !== null)
+      const relationRows = (row.student_guardians ?? []).map((relation) => {
+        const rawGuardian = relation.guardians
+        const guardian = Array.isArray(rawGuardian) ? rawGuardian[0] : rawGuardian
+        if (!guardian) return null
+        return {
+          id: String(guardian.id),
+          fullName: guardian.fullName ?? '',
+          dni: guardian.dni ?? '',
+          phone: guardian.phone ?? '',
+          relationship: relation.relationship ?? '',
+          isPrimary: relation.is_primary === true,
+        } satisfies Guardian
+      }).filter((item): item is Guardian => item !== null)
 
       const guardians = [
         ...relationRows.filter((item) => item.isPrimary),
         ...relationRows.filter((item) => !item.isPrimary),
       ]
-
       const guardian = guardians[0]
 
       return {
@@ -246,6 +239,87 @@ export async function registerAttendance(studentId: string, entryLimit: string, 
   } catch {
     await enqueueOperation('ATTENDANCE_UPSERT', optimistic as unknown as Record<string, unknown>)
     return optimistic
+  }
+}
+
+export async function updateAttendanceEntryTime(
+  record: AttendanceRecord,
+  newTime: string,
+  entryLimit: string,
+): Promise<AttendanceRecord> {
+  if (!record.id || record.id.startsWith('offline-')) {
+    throw new Error(
+      'Esta entrada todavía no está sincronizada; espera a que vuelva la conexión.',
+    )
+  }
+
+  if (!navigator.onLine) {
+    throw new Error(
+      'La corrección de la hora de ingreso requiere conexión a Internet.',
+    )
+  }
+
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(newTime)) {
+    throw new Error('La hora de ingreso no es válida.')
+  }
+
+  const status = calculateStatus(newTime, entryLimit)
+  const attendanceId = Number(record.id)
+
+  const { data, error } = await supabase
+    .from('attendance')
+    .update({
+      entry_time: newTime,
+      status,
+    })
+    .eq('id', attendanceId)
+    .select('id, student_id, date, entry_time, status, exit_time, exit_recorded_at, exit_recorded_by, entry_recorded_at, entry_recorded_by, entry_source, exit_source')
+    .single()
+
+  if (error) throw error
+
+  const { data: lateNotification, error: notificationLookupError } = await supabase
+    .from('notifications')
+    .select('id')
+    .eq('attendance_id', attendanceId)
+    .eq('notification_type', 'LATE_ENTRY')
+    .maybeSingle()
+
+  if (notificationLookupError) throw notificationLookupError
+
+  if (status === 'LATE') {
+    if (lateNotification?.id) {
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .update({
+          observation: `Tardanza en el ingreso. Hora registrada: ${newTime}.`,
+        })
+        .eq('id', lateNotification.id)
+
+      if (notificationError) throw notificationError
+    }
+  } else if (lateNotification?.id) {
+    const { error: deleteNotificationError } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('id', lateNotification.id)
+
+    if (deleteNotificationError) throw deleteNotificationError
+  }
+
+  return {
+    id: String(data.id),
+    studentId: String(data.student_id),
+    date: data.date,
+    time: trimTime(data.entry_time),
+    status: data.status,
+    exitTime: trimTime(data.exit_time),
+    exitRecordedAt: data.exit_recorded_at ?? null,
+    exitRecordedBy: data.exit_recorded_by ?? null,
+    entryRecordedAt: data.entry_recorded_at ?? null,
+    entryRecordedBy: data.entry_recorded_by ?? null,
+    entrySource: data.entry_source ?? null,
+    exitSource: data.exit_source ?? null,
   }
 }
 

@@ -16,6 +16,9 @@ type DbNotification = {
 
 const SELECT_FIELDS = 'id, student_id, presentation_control_id, attendance_id, notification_number, notification_type, observation, date, generated_at'
 
+/** El CHECK de la tabla `notifications` solo permite 1, 2 o 3. Ver supabase/phase4_setup.sql. */
+const MAX_NOTIFICATION_NUMBER = 3
+
 function mapNotification(row: DbNotification): NotificationRecord {
   return {
     id: String(row.id),
@@ -93,6 +96,63 @@ export async function getNextNotificationNumber(studentId: string): Promise<numb
   return Math.max(1, Number(data?.notification_number ?? 0) + 1)
 }
 
+/**
+ * Cuando un alumno ya tiene sus 3 notificaciones (el máximo que permite el
+ * CHECK de la tabla), una nueva infracción NO debe intentar crear una 4ta
+ * notificación (eso siempre falla con 23514). En su lugar, se registra una
+ * alerta de reincidencia para que el colegio le dé seguimiento aparte.
+ * No duplica la alerta si ya existe una abierta para el mismo alumno.
+ */
+async function raiseRepeatOffenderAlert(studentId: string, message: string): Promise<void> {
+  const { data: existing, error: findError } = await supabase
+    .from('alerts')
+    .select('id')
+    .eq('student_id', Number(studentId))
+    .eq('alert_type', 'REPEAT_OFFENDER')
+    .eq('status', 'OPEN')
+    .maybeSingle()
+
+  if (findError) throw findError
+  if (existing) return // ya hay una alerta abierta, no se duplica
+
+  const { error: insertError } = await supabase.from('alerts').insert({
+    student_id: Number(studentId),
+    alert_type: 'REPEAT_OFFENDER',
+    message,
+    source_table: 'notifications',
+  })
+  if (insertError) throw insertError
+}
+
+/**
+ * Devuelve el número de la próxima notificación, o `null` si el alumno ya
+ * alcanzó el máximo de 3 y en su lugar se debe registrar una alerta.
+ */
+async function getNextNotificationNumberOrAlert(
+  studentId: string,
+  alertMessage: string,
+): Promise<number | null> {
+  const next = await getNextNotificationNumber(studentId)
+  if (next > MAX_NOTIFICATION_NUMBER) {
+    await raiseRepeatOffenderAlert(studentId, alertMessage)
+    return null
+  }
+  return next
+}
+
+/** La notificación N°3 (la más reciente) de un alumno, para devolverla cuando ya no se genera una nueva. */
+async function getLatestNotification(studentId: string): Promise<NotificationRecord | null> {
+  const { data, error } = await supabase
+    .from('notifications')
+    .select(SELECT_FIELDS)
+    .eq('student_id', Number(studentId))
+    .order('notification_number', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  return data ? mapNotification(data as DbNotification) : null
+}
+
 function getPresentationNotificationType(record: PresentationRecord): NotificationType {
   const presentationReasons = record.hairstyleViolation || record.uniformUsageViolation || record.nonInstitutionalGarment
   if (!presentationReasons && record.inappropriateConductViolation) return 'INAPPROPRIATE_CONDUCT'
@@ -136,7 +196,16 @@ export async function ensureNotificationForPresentation(record: PresentationReco
     }
   }
 
-  const notificationNumber = await getNextNotificationNumber(record.studentId)
+  const notificationNumber = await getNextNotificationNumberOrAlert(
+    record.studentId,
+    `El alumno superó las 3 notificaciones por incumplimientos de reglamento. Última observación: ${record.observation.trim() || getPresentationNotificationType(record)}.`,
+  )
+  if (notificationNumber === null) {
+    const latest = await getLatestNotification(record.studentId)
+    if (latest) return latest
+    throw new Error('El alumno alcanzó el máximo de notificaciones y no se encontró una notificación previa para mostrar.')
+  }
+
   const { data, error } = await supabase
     .from('notifications')
     .insert({
@@ -170,7 +239,16 @@ export async function ensureNotificationForLateAttendance(record: AttendanceReco
   const existing = await getExistingByAttendance(record.id)
   if (existing) return existing
 
-  const notificationNumber = await getNextNotificationNumber(record.studentId)
+  const notificationNumber = await getNextNotificationNumberOrAlert(
+    record.studentId,
+    `El alumno superó las 3 notificaciones por tardanzas. Última tardanza registrada: ${record.time}.`,
+  )
+  if (notificationNumber === null) {
+    const latest = await getLatestNotification(record.studentId)
+    if (latest) return latest
+    throw new Error('El alumno alcanzó el máximo de notificaciones y no se encontró una notificación previa para mostrar.')
+  }
+
   const observation = `Tardanza en el ingreso. Hora registrada: ${record.time}.`
   const { data, error } = await supabase
     .from('notifications')
