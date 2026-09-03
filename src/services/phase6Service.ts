@@ -42,6 +42,7 @@ export type SmartInsight = {
 export type AuditLogRecord = {
   id: string
   userId: string | null
+  userName: string | null
   action: string
   entityType: string
   entityId: string | null
@@ -207,9 +208,31 @@ export async function getAuditLogs(limit = 100): Promise<AuditLogRecord[]> {
     .order('created_at', { ascending: false })
     .limit(limit)
   if (error) throw error
-  return (data ?? []).map((row: Record<string, any>) => ({
+
+  const rows = data ?? []
+
+  // `audit_logs.user_id` es el uuid de auth.uid(); el nombre real vive en
+  // `profiles`, así que se cruza aparte (no hay FK directa entre ambas).
+  const userIds = Array.from(
+    new Set(rows.map((row: Record<string, any>) => row.user_id).filter((id: unknown): id is string => typeof id === 'string')),
+  )
+
+  const namesById = new Map<string, string>()
+  if (userIds.length > 0) {
+    const { data: profiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', userIds)
+    if (profilesError) throw profilesError
+    for (const profile of profiles ?? []) {
+      if (profile.full_name) namesById.set(String(profile.id), String(profile.full_name))
+    }
+  }
+
+  return rows.map((row: Record<string, any>) => ({
     id: String(row.id),
     userId: row.user_id == null ? null : String(row.user_id),
+    userName: row.user_id == null ? null : namesById.get(String(row.user_id)) ?? null,
     action: String(row.action ?? ''),
     entityType: String(row.entity_type ?? ''),
     entityId: row.entity_id == null ? null : String(row.entity_id),
