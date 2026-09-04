@@ -173,9 +173,9 @@ export default function LiveTvPanel({
         <header className="flex flex-col gap-5 border-b border-white/10 pb-5 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <div className="flex items-center gap-3">
-              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-blue-500/15 text-blue-300"><Activity size={25} /></div>
+              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-brand-gold/15 text-brand-gold"><Activity size={25} /></div>
               <div>
-                <p className="text-xs font-black uppercase tracking-[.24em] text-blue-300">Tesla Control Escolar</p>
+                <p className="text-xs font-black uppercase tracking-[.24em] text-brand-gold">Tesla Control Escolar</p>
                 <h1 className="mt-1 text-2xl font-black tracking-tight sm:text-3xl">Panel de operación en vivo</h1>
               </div>
             </div>
@@ -257,12 +257,12 @@ export default function LiveTvPanel({
 }
 
 function Metric({ icon, label, value, accent = 'slate' }: { icon: ReactNode; label: string; value: number; accent?: 'slate' | 'emerald' | 'blue' | 'amber' }) {
-  const accentClass = accent === 'emerald' ? 'text-emerald-300 bg-emerald-500/10' : accent === 'blue' ? 'text-blue-300 bg-blue-500/10' : accent === 'amber' ? 'text-amber-300 bg-amber-500/10' : 'text-slate-300 bg-white/5'
+  const accentClass = accent === 'emerald' ? 'text-emerald-300 bg-emerald-500/10' : accent === 'blue' ? 'text-brand-gold bg-brand-gold/10' : accent === 'amber' ? 'text-amber-300 bg-amber-500/10' : 'text-slate-300 bg-white/5'
   return <div className="rounded-2xl border border-white/10 bg-white/[.035] p-4 xl:p-5"><div className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-black uppercase tracking-wider ${accentClass}`}>{icon}{label}</div><p className="mt-4 text-4xl font-black tabular-nums xl:text-5xl">{value}</p></div>
 }
 
 function TvCard({ title, subtitle, icon, children, strong = false }: { title: string; subtitle: string; icon: ReactNode; children: ReactNode; strong?: boolean }) {
-  return <section className={`rounded-3xl border p-4 xl:p-5 ${strong ? 'border-blue-400/15 bg-blue-500/[.035]' : 'border-white/10 bg-white/[.025]'}`}><div className="mb-4 flex items-start gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-white/5 text-slate-300">{icon}</div><div><h2 className="text-lg font-black xl:text-xl">{title}</h2><p className="mt-0.5 text-xs font-semibold text-slate-500">{subtitle}</p></div></div>{children}</section>
+  return <section className={`rounded-3xl border p-4 xl:p-5 ${strong ? 'border-brand-gold/15 bg-brand-gold/[.035]' : 'border-white/10 bg-white/[.025]'}`}><div className="mb-4 flex items-start gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-white/5 text-slate-300">{icon}</div><div><h2 className="text-lg font-black xl:text-xl">{title}</h2><p className="mt-0.5 text-xs font-semibold text-slate-500">{subtitle}</p></div></div>{children}</section>
 }
 
 function Empty({ text }: { text: string }) {

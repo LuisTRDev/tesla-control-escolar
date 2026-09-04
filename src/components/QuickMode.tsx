@@ -49,7 +49,7 @@ export default function QuickMode({ open, onClose, classrooms, students, records
       <section className="mx-auto flex h-full max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950" onMouseDown={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-800">
           <div>
-            <p className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-blue-600 dark:text-blue-400"><Zap size={15}/> Modo auxiliar rápido</p>
+            <p className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-brand-navy dark:text-brand-gold"><Zap size={15}/> Modo auxiliar rápido</p>
             <h2 className="mt-1 text-2xl font-black">Todo el colegio</h2>
             <p className="mt-1 text-sm text-slate-500">Busca en todos los salones o filtra por aula. {online ? 'Conectado a Supabase.' : 'Sin conexión: las entradas quedarán en cola.'}</p>
           </div>

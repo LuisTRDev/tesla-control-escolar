@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useToast } from '@/lib/toast'
 import * as XLSX from 'xlsx'
 import {
   Archive, Check, ChevronDown, FileArchive, FileSpreadsheet, FileText, Image as ImageIcon,
@@ -147,6 +148,7 @@ function mapParsedRows(batchId: string, rows: ParsedRow[], students: Student[]):
 }
 
 export default function HistoricalImport({ open, onClose, students, classrooms, refreshKey = 0 }: Props) {
+  const toast = useToast()
   const [batches, setBatches] = useState<HistoricalImportBatch[]>([])
   const [selectedBatch, setSelectedBatch] = useState<HistoricalImportBatch | null>(null)
   const [records, setRecords] = useState<HistoricalImportRecord[]>([])
@@ -224,7 +226,9 @@ export default function HistoricalImport({ open, onClose, students, classrooms, 
       setRecords((current) => current.map((item) => item.id === saved.id ? saved : item))
       await updateHistoricalBatchStats(record.batchId)
       setBatches(await listHistoricalBatches())
-    } catch (e) { setError(safeUserMessage(e, 'No se pudo actualizar el registro.')) }
+      if (patch.reviewStatus === 'CONFIRMED') toast.success('Registro confirmado')
+      else if (patch.reviewStatus === 'REJECTED') toast.info('Registro rechazado')
+    } catch (e) { setError(safeUserMessage(e, 'No se pudo actualizar el registro.')); toast.error('No se pudo actualizar el registro') }
   }
 
   async function removeRecord(record: HistoricalImportRecord) {
@@ -234,7 +238,8 @@ export default function HistoricalImport({ open, onClose, students, classrooms, 
       setRecords((current) => current.filter((item) => item.id !== record.id))
       await updateHistoricalBatchStats(record.batchId)
       setBatches(await listHistoricalBatches())
-    } catch (e) { setError(safeUserMessage(e, 'No se pudo eliminar el registro.')) }
+      toast.success('Registro eliminado')
+    } catch (e) { setError(safeUserMessage(e, 'No se pudo eliminar el registro.')); toast.error('No se pudo eliminar el registro') }
   }
 
   async function openOriginal() {
@@ -285,7 +290,7 @@ export default function HistoricalImport({ open, onClose, students, classrooms, 
       <section className="absolute inset-0 overflow-hidden bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-slate-100 lg:left-[260px]" onMouseDown={(e) => e.stopPropagation()}>
         <header className="flex min-h-16 items-center justify-between border-b border-slate-200 bg-white px-4 dark:border-slate-800 dark:bg-slate-900 sm:px-6">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[.2em] text-blue-500">Migración histórica</p>
+            <p className="text-[10px] font-black uppercase tracking-[.2em] text-brand-gold">Migración histórica</p>
             <h2 className="text-xl font-black">Carga histórica de alumnos</h2>
           </div>
           <Button variant="ghost" onClick={onClose}><X size={20} /></Button>
@@ -297,7 +302,7 @@ export default function HistoricalImport({ open, onClose, students, classrooms, 
             <p className="mt-5 px-1 text-[10px] font-black uppercase tracking-[.18em] text-slate-400">Lotes importados</p>
             <div className="mt-2 space-y-2">
               {batches.map((batch) => (
-                <button key={batch.id} type="button" onClick={() => void selectBatch(batch)} className={`w-full rounded-xl border p-3 text-left transition ${selectedBatch?.id===batch.id?'border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30':'border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-800'}`}>
+                <button key={batch.id} type="button" onClick={() => void selectBatch(batch)} className={`w-full rounded-xl border p-3 text-left transition ${selectedBatch?.id===batch.id?'border-brand-gold bg-brand-gold/10 dark:border-brand-navy dark:bg-brand-navyDeep/30':'border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-800'}`}>
                   <div className="flex items-start gap-3"><Archive className="mt-0.5 shrink-0 text-slate-400" size={18}/><div className="min-w-0"><p className="truncate text-sm font-black">{batch.name}</p><p className="mt-1 truncate text-xs text-slate-500">{batch.fileName ?? 'Carga manual'} · {batch.sourceType}</p><div className="mt-2 flex gap-2 text-[10px] font-bold"><span className="text-slate-500">{batch.totalRecords} reg.</span><span className="text-emerald-600">{batch.importedRecords} conf.</span>{batch.failedRecords>0&&<span className="text-red-600">{batch.failedRecords} obs.</span>}</div></div></div>
                 </button>
               ))}

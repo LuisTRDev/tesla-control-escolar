@@ -131,7 +131,7 @@ export default function AdvancedReports({ open, onClose, classrooms, refreshKey 
 
               <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
                 {[
-                  ['Alumnos', report.summary.totalStudents, ''], ['Ingresos', report.summary.totalEntries, ''], ['A tiempo', report.summary.onTime, 'text-emerald-600 dark:text-emerald-400'], ['Tardanzas', report.summary.late, 'text-amber-600 dark:text-amber-400'], ['Incidencias', report.summary.presentationIncidents, 'text-orange-600 dark:text-orange-400'], ['Notificaciones', report.summary.notifications, 'text-blue-600 dark:text-blue-400'], ['Reincidentes', report.summary.repeatOffenders, 'text-rose-600 dark:text-rose-400'],
+                  ['Alumnos', report.summary.totalStudents, ''], ['Ingresos', report.summary.totalEntries, ''], ['A tiempo', report.summary.onTime, 'text-emerald-600 dark:text-emerald-400'], ['Tardanzas', report.summary.late, 'text-amber-600 dark:text-amber-400'], ['Incidencias', report.summary.presentationIncidents, 'text-orange-600 dark:text-orange-400'], ['Notificaciones', report.summary.notifications, 'text-brand-navy dark:text-brand-gold'], ['Reincidentes', report.summary.repeatOffenders, 'text-rose-600 dark:text-rose-400'],
                 ].map(([label, value, cls]) => <Card key={String(label)} className="p-4"><p className="text-xs text-slate-500 dark:text-slate-400">{label}</p><p className={`mt-1 text-2xl font-black ${cls}`}>{value}</p></Card>)}
               </div>
 

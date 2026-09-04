@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useToast } from '@/lib/toast'
 import { Bell, BookOpen, CheckCircle2, Filter, MessageCircle, RefreshCw, TriangleAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -29,6 +30,7 @@ function badgeClass(type: AlertType) {
 }
 
 export default function AlertCenter({ open, onClose, classrooms, currentClassroom, students, onOpenCaseFile, onOpenWhatsApp }: Props) {
+  const toast = useToast()
   const [status, setStatus] = useState<AlertStatus | 'ALL'>('OPEN')
   const [classroomId, setClassroomId] = useState<string | 'ALL'>(currentClassroom.id)
   const [alerts, setAlerts] = useState<AlertRecord[]>([])
@@ -61,9 +63,11 @@ export default function AlertCenter({ open, onClose, classrooms, currentClassroo
     try {
       await resolveAlert(alert.id)
       await load()
+      toast.success('Alerta resuelta')
     } catch (err) {
       console.error(err)
       setError(err instanceof Error ? err.message : 'No se pudo resolver la alerta.')
+      toast.error('No se pudo resolver la alerta')
     }
   }
 

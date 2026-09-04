@@ -9,9 +9,9 @@ export default function PwaUpdateNotice() {
 
   return (
     <div className="fixed bottom-4 left-4 right-4 z-[100] sm:left-auto sm:right-5 sm:w-[390px]">
-      <div className="overflow-hidden rounded-2xl border border-blue-200 bg-white shadow-2xl shadow-slate-950/20 dark:border-blue-900/60 dark:bg-slate-950">
+      <div className="overflow-hidden rounded-2xl border border-brand-gold/30 bg-white shadow-2xl shadow-slate-950/20 dark:border-brand-navyDeep/60 dark:bg-slate-950">
         <div className="flex items-start gap-3 p-4">
-          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-600 text-white">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-navy text-white">
             <Sparkles size={19} />
           </div>
 
@@ -48,7 +48,7 @@ export default function PwaUpdateNotice() {
 
           <Button
             type="button"
-            className="h-9 bg-blue-600 px-3 text-xs text-white hover:bg-blue-500"
+            className="h-9 bg-brand-navy px-3 text-xs text-white hover:bg-brand-gold"
             onClick={() => void updateNow()}
             disabled={updating}
           >

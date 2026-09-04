@@ -65,7 +65,7 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
       <section className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-2xl dark:border-slate-800 dark:bg-slate-950">
         <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 sm:px-7">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div><p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400"><Sparkles size={15}/> Automatización diaria</p><h2 className="mt-1 text-2xl font-black">Resumen y cierre de asistencia</h2><p className="mt-1 text-sm text-slate-500">{new Date(today + 'T12:00:00').toLocaleDateString('es-PE', { weekday:'long', day:'2-digit', month:'long', year:'numeric' })}</p></div>
+            <div><p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-brand-navy dark:text-brand-gold"><Sparkles size={15}/> Automatización diaria</p><h2 className="mt-1 text-2xl font-black">Resumen y cierre de asistencia</h2><p className="mt-1 text-sm text-slate-500">{new Date(today + 'T12:00:00').toLocaleDateString('es-PE', { weekday:'long', day:'2-digit', month:'long', year:'numeric' })}</p></div>
             <div className="flex flex-wrap items-end gap-2">
               <label className="block min-w-60"><span className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-slate-400">Alcance</span><select value={classroomId} onChange={(e)=>setClassroomId(e.target.value)} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold dark:border-slate-700 dark:bg-slate-950"><option value="ALL">Todo el colegio</option>{classrooms.map((item)=><option key={item.id} value={item.id}>{item.grade} {item.section} · {item.level}</option>)}</select></label>
               <Button variant="ghost" className="h-11 px-3" onClick={onClose}><X size={20}/></Button>
@@ -83,7 +83,7 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
               {metric(closed ? 'Ausencias confirmadas' : 'Sin ingreso', summary.absent, <TriangleAlert size={17} className="text-violet-500"/>, 'text-violet-700 dark:text-violet-400')}
               {metric('A tiempo', summary.onTime, <CheckCircle2 size={17} className="text-emerald-500"/>)}
               {metric('Incidencias', summary.incidents, <TriangleAlert size={17} className="text-amber-500"/>)}
-              {metric('Notificaciones', summary.notifications, <CalendarCheck2 size={17} className="text-blue-500"/>)}
+              {metric('Notificaciones', summary.notifications, <CalendarCheck2 size={17} className="text-brand-gold"/>)}
               {metric('Alertas abiertas', summary.openAlerts, <Bell size={17} className="text-red-500"/>, summary.openAlerts ? 'text-red-600 dark:text-red-400' : '')}
             </div>
 
@@ -97,7 +97,7 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
               </Card>
 
               <Card className="p-5">
-                <div className="flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-wider text-slate-400">Análisis automático</p><h3 className="mt-1 font-black">Qué requiere atención</h3></div><Sparkles className="text-blue-500" size={22}/></div>
+                <div className="flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-wider text-slate-400">Análisis automático</p><h3 className="mt-1 font-black">Qué requiere atención</h3></div><Sparkles className="text-brand-gold" size={22}/></div>
                 <div className="mt-4 space-y-3">{insights.map((item)=><div key={item.id} className={`rounded-xl border p-4 ${item.tone==='warning'?'border-amber-200 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/30':item.tone==='positive'?'border-emerald-200 bg-emerald-50 dark:border-emerald-900/60 dark:bg-emerald-950/30':'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900'}`}><div className="flex items-start justify-between gap-3"><div><p className="font-black">{item.title}</p><p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.detail}</p></div>{item.value && <span className="text-lg font-black">{item.value}</span>}</div></div>)}</div>
                 {summary.openAlerts > 0 && <Button variant="outline" className="mt-4 w-full" onClick={onOpenAlerts}><Bell className="mr-2" size={17}/> Revisar alertas</Button>}
               </Card>

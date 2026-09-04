@@ -7,6 +7,14 @@ import { cleanSingleLine, reportError, safeUserMessage } from '@/lib/security'
 import { clearCachedSnapshots } from '@/lib/offlineDb'
 import { getClassrooms } from '@/services/schoolService'
 import type { Classroom } from '@/types'
+import { ToastProvider } from '@/lib/toast'
+import { OnboardingTour, type TourStep } from '@/components/OnboardingTour'
+
+const TOUR_STEPS: TourStep[] = [
+  { target: '[data-tour="nav-quick"]', title: 'Modo auxiliar rápido', description: 'El flujo más veloz para marcar asistencia uno por uno, ideal para la hora de ingreso.' },
+  { target: '[data-tour="nav-alerts"]', title: 'Centro de alertas', description: 'Aquí aparecen automáticamente los alumnos con reincidencias o 3+ notificaciones, sin que tengas que revisarlo manualmente.' },
+  { target: '[data-tour="nav-settings"]', title: 'Configuración', description: 'Hora límite, tolerancia de ingreso, apariencia y más — todo lo que puedes personalizar vive aquí.' },
+]
 
 type CachedProfile = { full_name: string; role: string }
 const PROFILE_CACHE_KEY = 'tesla_cached_profile'
@@ -124,17 +132,24 @@ export default function App() {
   }
 
   if (!userName || !classroom) {
-    return <Login onLogin={() => void loadAuthenticatedWorkspace(false)} externalError={appError} />
+    return (
+      <ToastProvider>
+        <Login onLogin={() => void loadAuthenticatedWorkspace(false)} externalError={appError} />
+      </ToastProvider>
+    )
   }
 
   return (
-    <Attendance
-      userName={userName}
-      userRole={userRole}
-      classrooms={classrooms}
-      classroom={classroom}
-      onClassroomChange={setClassroom}
-      onLogout={() => void logout()}
-    />
+    <ToastProvider>
+      <Attendance
+        userName={userName}
+        userRole={userRole}
+        classrooms={classrooms}
+        classroom={classroom}
+        onClassroomChange={setClassroom}
+        onLogout={() => void logout()}
+      />
+      <OnboardingTour steps={TOUR_STEPS} />
+    </ToastProvider>
   )
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useToast } from '@/lib/toast'
 import { DatabaseBackup, Download, HardDrive, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
@@ -14,12 +15,13 @@ function downloadJson(data: unknown, filename: string) {
 }
 
 export default function BackupCenter({ open, onClose, online }: Props) {
+  const toast = useToast()
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   if (!open) return null
 
   async function exportCloudBackup() {
-    if (!online) { setMessage('Necesitas conexión para descargar una copia de Supabase.'); return }
+    if (!online) { setMessage('Necesitas conexión para descargar una copia de Supabase.'); toast.warning('Sin conexión', 'Necesitas internet para descargar una copia de Supabase.'); return }
     setLoading(true); setMessage('')
     try {
       const backup: Record<string, unknown> = { generatedAt: new Date().toISOString(), version: '0.7.0' }
@@ -30,13 +32,15 @@ export default function BackupCenter({ open, onClose, online }: Props) {
       }
       downloadJson(backup, `tesla-backup-${new Date().toISOString().slice(0,10)}.json`)
       setMessage('Copia lógica descargada correctamente.')
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'No se pudo generar la copia.') }
+      toast.success('Copia descargada', 'El archivo JSON se guardó en tu dispositivo.')
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'No se pudo generar la copia.'); toast.error('No se pudo generar la copia') }
     finally { setLoading(false) }
   }
 
   async function exportLocalBackup() {
     const state = await exportOfflineState()
     downloadJson({ generatedAt:new Date().toISOString(), ...state }, `tesla-offline-${new Date().toISOString().slice(0,10)}.json`)
+    toast.success('Estado offline exportado')
   }
 
   return <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={onClose}>

@@ -7,6 +7,8 @@ import { Card } from '@/components/ui/Card'
 import { getStudentCaseFile, type StudentCaseFile as CaseFile } from '@/services/phase6Service'
 import type { Classroom, Student } from '@/types'
 import { getAlertTypeLabel, getNotificationTypeLabel } from '@/lib/displayLabels'
+import { AnimatedCounter } from '@/components/ui/AnimatedCounter'
+import { ConfettiBurst } from '@/components/ui/ConfettiBurst'
 
 type Props = {
   student: Student | null
@@ -156,12 +158,18 @@ export default function StudentCaseFile({ student, classroom, onClose, onOpenWha
           {data && <>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
               <Card className="p-4"><p className="text-xs text-slate-500">Estado</p><p className={`mt-1 text-lg font-black ${status==='Seguimiento'?'text-amber-700 dark:text-amber-400':'text-emerald-700 dark:text-emerald-400'}`}>{status}</p></Card>
-              <Card className="p-4"><p className="text-xs text-slate-500">Ingresos</p><p className="mt-1 text-2xl font-black">{metrics.attendance}</p></Card>
-              <Card className="p-4"><p className="text-xs text-slate-500">Tardanzas</p><p className="mt-1 text-2xl font-black text-amber-700 dark:text-amber-400">{metrics.late}</p></Card>
-              <Card className="p-4"><p className="text-xs text-slate-500">Incidencias</p><p className="mt-1 text-2xl font-black">{metrics.incidents}</p></Card>
-              <Card className="p-4"><p className="text-xs text-slate-500">Notificaciones</p><p className="mt-1 text-2xl font-black">{metrics.notifications}</p></Card>
-              <Card className="p-4"><p className="text-xs text-slate-500">Alertas</p><p className="mt-1 text-2xl font-black text-red-600 dark:text-red-400">{metrics.openAlerts}</p></Card>
+              <Card className="p-4"><p className="text-xs text-slate-500">Ingresos</p><p className="mt-1 text-2xl font-black"><AnimatedCounter value={metrics.attendance} /></p></Card>
+              <Card className="p-4"><p className="text-xs text-slate-500">Tardanzas</p><p className="mt-1 text-2xl font-black text-amber-700 dark:text-amber-400"><AnimatedCounter value={metrics.late} /></p></Card>
+              <Card className="p-4"><p className="text-xs text-slate-500">Incidencias</p><p className="mt-1 text-2xl font-black"><AnimatedCounter value={metrics.incidents} /></p></Card>
+              <Card className="p-4"><p className="text-xs text-slate-500">Notificaciones</p><p className="mt-1 text-2xl font-black"><AnimatedCounter value={metrics.notifications} /></p></Card>
+              <Card className="p-4"><p className="text-xs text-slate-500">Alertas</p><p className="mt-1 text-2xl font-black text-red-600 dark:text-red-400"><AnimatedCounter value={metrics.openAlerts} /></p></Card>
             </div>
+            {metrics.attendance >= 5 && metrics.late === 0 && (
+              <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                🎉 Sin tardanzas registradas — ¡buen ritmo!
+              </p>
+            )}
+            <ConfettiBurst trigger={metrics.attendance >= 5 && metrics.late === 0 ? metrics.attendance : 0} />
 
             <div className="mt-5 grid gap-4 lg:grid-cols-[.72fr_1.28fr]">
               <div className="space-y-4">

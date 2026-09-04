@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useToast } from '@/lib/toast'
+import { resetTour } from '@/components/OnboardingTour'
 import {
   Check, ChevronDown, BarChart3, CalendarDays, ClipboardCheck, Clock3, Download, Edit3, FileText,
   Menu, Monitor, Moon, RotateCcw, Search, Settings2, Shirt, Sun, TriangleAlert, Volume2, X, BookOpen, MessageCircle, Send, Bell, CalendarCheck2, FolderOpen, LogOut,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { Tooltip } from '@/components/ui/Tooltip'
 import { Card } from '@/components/ui/Card'
 import Dashboard from '@/components/Dashboard'
 import Sidebar from '@/components/Sidebar'
@@ -36,8 +39,7 @@ import { getCurrentTime, getPreferences, getTodayKey, resetPreferences, savePref
 import {
   deleteAttendanceForDate, deletePresentationForDate, getAttendanceRange, getEntryLimit, getPresentationRange, getStudents,
   registerAttendance, registerExitAttendance, saveEntryLimit, savePresentation as savePresentationRemote,
-  getToleranceSettings, saveToleranceSettings, type ToleranceSettings,
-  updateAttendanceEntryTime,
+  getToleranceSettings, saveToleranceSettings, type ToleranceSettings,  updateAttendanceEntryTime,
 } from '@/services/schoolService'
 import {
   ensureNotificationForLateAttendance,
@@ -86,6 +88,7 @@ function monthRange() {
 }
 
 export default function Attendance({ userName, userRole, classrooms, classroom, onClassroomChange, onLogout }: Props) {
+  const toast = useToast()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<AttendanceFilter>('ALL')
   const [presentationFilter, setPresentationFilter] = useState<PresentationFilter>('ALL')
@@ -112,10 +115,11 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [now, setNow] = useState(() => new Date())
   const [presentationStudent, setPresentationStudent] = useState<Student | null>(null)
-  const [notificationStudent, setNotificationStudent] = useState<Student | null>(null)
+  const [notificationPreviewData, setNotificationPreviewData] = useState<NotificationPrintData | null>(null)
   const [multiNotificationOpen, setMultiNotificationOpen] = useState(false)
   const [selectedNotificationIds, setSelectedNotificationIds] = useState<string[]>([])
   const [notificationSearch, setNotificationSearch] = useState('')
+  const [multiNotificationDate, setMultiNotificationDate] = useState(getTodayKey())
   const [historyStudent, setHistoryStudent] = useState<Student | null>(null)
   const [whatsAppStudent, setWhatsAppStudent] = useState<Student | null>(null)
   const [whatsAppType, setWhatsAppType] = useState<WhatsAppMessageType>('LATE')
@@ -258,11 +262,15 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   async function mark(studentId:string) {
     const existing = todayRecords.find((item) => item.studentId === studentId)
     if (existing) return
+    const student = students.find((s) => s.id === studentId)
     try {
       const rec=await registerAttendance(studentId,entryLimit,today,getCurrentTime(),toleranceSettings)
       setRecords((curr)=>[...curr.filter((r)=>!(r.studentId===studentId&&r.date===today)),rec])
       playConfirmation()
-    } catch(error){ console.error(error); setDataError(error instanceof Error?error.message:'No se pudo registrar la entrada.') }
+      const name = student ? `${student.firstName} ${student.lastName}` : 'Alumno'
+      if (rec.status === 'LATE') toast.warning(`${name} — Tardanza`, `Hora registrada: ${rec.time}`)
+      else toast.success(`${name} — A tiempo`, `Hora registrada: ${rec.time}`)
+    } catch(error){ console.error(error); setDataError(error instanceof Error?error.message:'No se pudo registrar la entrada.'); toast.error('No se pudo registrar la entrada', error instanceof Error?error.message:undefined) }
   }
 
   async function markExit(studentId: string) {
@@ -430,11 +438,12 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     return prior[0]?.notificationNumber ?? 1
   }
 
-  function buildNotificationData(student: Student): NotificationPrintData | null {
+  function buildNotificationData(student: Student, dateOverride?: string): NotificationPrintData | null {
+    const targetDate = dateOverride ?? today
     const studentClassroom = classrooms.find((item) => item.id === student.classroomId)
     if (!studentClassroom) return null
-    const presentation = todayPresentationRecords.find((item) => item.studentId === student.id && item.status === 'NON_COMPLIANT')
-    const attendance = todayRecords.find((item) => item.studentId === student.id && item.status === 'LATE')
+    const presentation = presentationRecords.find((item) => item.studentId === student.id && item.date === targetDate && item.status === 'NON_COMPLIANT')
+    const attendance = records.find((item) => item.studentId === student.id && item.date === targetDate && item.status === 'LATE')
     if (!presentation && !attendance) return null
 
     const exactNotification = presentation?.id
@@ -448,7 +457,34 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       classroom: studentClassroom,
       presentation,
       attendance,
-      notificationNumber: exactNotification?.notificationNumber ?? getNotificationNumber(student.id, today, presentation?.id, attendance?.id),
+      notificationNumber: exactNotification?.notificationNumber ?? getNotificationNumber(student.id, targetDate, presentation?.id, attendance?.id),
+    }
+  }
+
+  /**
+   * A diferencia de `buildNotificationData` (que busca "la" incidencia de un
+   * alumno en una fecha), esta función parte de una notificación YA
+   * EXISTENTE (ej. clic en el historial) y reconstruye su ficha exacta —
+   * funciona para cualquier fecha pasada, no solo hoy, porque `records` y
+   * `presentationRecords` ya traen el mes completo, no solo el día actual.
+   */
+  function buildNotificationDataFromNotification(student: Student, notification: NotificationRecord): NotificationPrintData | null {
+    const studentClassroom = classrooms.find((item) => item.id === student.classroomId)
+    if (!studentClassroom) return null
+    const presentation = notification.presentationControlId
+      ? presentationRecords.find((item) => item.id === notification.presentationControlId)
+      : undefined
+    const attendance = notification.attendanceId
+      ? records.find((item) => item.id === notification.attendanceId)
+      : undefined
+    if (!presentation && !attendance) return null
+
+    return {
+      student,
+      classroom: studentClassroom,
+      presentation,
+      attendance,
+      notificationNumber: notification.notificationNumber,
     }
   }
 
@@ -480,7 +516,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     try {
       const notification = await ensureTodayNotification(student)
       if (!notification) return
-      setNotificationStudent(student)
+      const data = buildNotificationData(student)
+      if (data) setNotificationPreviewData(data)
     } catch (error) {
       console.error(error)
       setDataError(error instanceof Error ? error.message : 'No se pudo registrar la notificación.')
@@ -488,8 +525,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   }
 
   const notificationCandidates = students.filter((student) => {
-    const presentation = todayPresentationRecords.find((item) => item.studentId === student.id && item.status === 'NON_COMPLIANT')
-    const attendance = todayRecords.find((item) => item.studentId === student.id && item.status === 'LATE')
+    const presentation = presentationRecords.find((item) => item.studentId === student.id && item.date === multiNotificationDate && item.status === 'NON_COMPLIANT')
+    const attendance = records.find((item) => item.studentId === student.id && item.date === multiNotificationDate && item.status === 'LATE')
     if (!presentation && !attendance) return false
     const classroomInfo = classrooms.find((item) => item.id === student.classroomId)
     const haystack = `${student.firstName} ${student.lastName} ${classroomInfo?.grade ?? ''} ${classroomInfo?.section ?? ''} ${classroomInfo?.level ?? ''}`.toLowerCase()
@@ -499,7 +536,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const selectedNotificationData = selectedNotificationIds
     .map((studentId) => {
       const student = students.find((item) => item.id === studentId)
-      return student ? buildNotificationData(student) : null
+      return student ? buildNotificationData(student, multiNotificationDate) : null
     })
     .filter((item): item is NotificationPrintData => Boolean(item))
 
@@ -516,6 +553,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     // No debe crear/consultar una notificación por cada alumno ni bloquear la operación diaria.
     setSelectedNotificationIds([])
     setNotificationSearch('')
+    setMultiNotificationDate(today)
     setMultiNotificationOpen(true)
   }
 
@@ -745,12 +783,16 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">(+{toleranceSettings.minutes} min tolerancia)</span>
               )}
             </div>
-            <Button onClick={() => setQuickModeOpen(true)}>
-              <Clock3 className="mr-2" size={17} /> Modo rápido
-            </Button>
-            <Button variant="outline" onClick={() => setTvPanelOpen(true)}>
-              <Monitor className="mr-2" size={17} /> Panel TV
-            </Button>
+            <Tooltip content="Marca asistencia de un alumno a la vez, ideal para la hora de ingreso">
+              <Button onClick={() => setQuickModeOpen(true)}>
+                <Clock3 className="mr-2" size={17} /> Modo rápido
+              </Button>
+            </Tooltip>
+            <Tooltip content="Muestra la asistencia del aula en una pantalla grande, en tiempo real">
+              <Button variant="outline" onClick={() => setTvPanelOpen(true)}>
+                <Monitor className="mr-2" size={17} /> Panel TV
+              </Button>
+            </Tooltip>
             <Button variant="outline" onClick={() => setDailySummaryOpen(true)}>
               <CalendarCheck2 className="mr-2" size={17} /> Resumen / cierre
             </Button>
@@ -973,7 +1015,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">
+                <p className="text-xs font-black uppercase tracking-widest text-brand-navy dark:text-brand-gold">
                   Corrección de asistencia
                 </p>
                 <h3 className="mt-1 text-xl font-black">Editar hora de ingreso</h3>
@@ -1136,29 +1178,31 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         </div>
       )}
 
-      {notificationStudent && (() => {
-        const notificationData = buildNotificationData(notificationStudent)
-        if (!notificationData) return null
+      {notificationPreviewData && (() => {
+        const notificationData = notificationPreviewData
+        const previewStudent = notificationData.student
         const labels = getPresentationViolationLabels(notificationData.presentation)
         if (notificationData.attendance?.status === 'LATE' && !labels.some((item) => item.startsWith('Tardanza'))) labels.push('Tardanza en el ingreso.')
         return (
-          <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-[1px] dark:bg-black/65" onMouseDown={() => setNotificationStudent(null)}>
+          <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-[1px] dark:bg-black/65" onMouseDown={() => setNotificationPreviewData(null)}>
             <section className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-5 text-slate-950 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 sm:p-6" onMouseDown={(event) => event.stopPropagation()}>
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Ficha oficial · 1/3 A4</p>
                   <h2 className="mt-1 text-xl font-black">Notificación sobre incumplimiento de reglamento interno</h2>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">PDF y Word con el nuevo formato institucional.</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Fecha del incidente: {new Date((notificationData.presentation?.date ?? notificationData.attendance?.date ?? today) + 'T12:00:00').toLocaleDateString('es-PE', { day:'2-digit', month:'long', year:'numeric' })}
+                  </p>
                 </div>
-                <Button variant="ghost" onClick={() => setNotificationStudent(null)} aria-label="Cerrar"><X size={20} /></Button>
+                <Button variant="ghost" onClick={() => setNotificationPreviewData(null)} aria-label="Cerrar"><X size={20} /></Button>
               </div>
 
               <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-700 dark:bg-slate-950/60">
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <p><span className="font-black">Estudiante:</span> {notificationStudent.firstName} {notificationStudent.lastName}</p>
+                  <p><span className="font-black">Estudiante:</span> {previewStudent.firstName} {previewStudent.lastName}</p>
                   <p><span className="font-black">Año y sección:</span> {notificationData.classroom.grade} {notificationData.classroom.section}</p>
-                  <p><span className="font-black">Apoderado:</span> {notificationStudent.guardianName}</p>
-                  <p><span className="font-black">DNI:</span> {notificationStudent.guardianDni || 'Sin DNI registrado'}</p>
+                  <p><span className="font-black">Apoderado:</span> {previewStudent.guardianName}</p>
+                  <p><span className="font-black">DNI:</span> {previewStudent.guardianDni || 'Sin DNI registrado'}</p>
                   <p><span className="font-black">N° de notificación:</span> {notificationData.notificationNumber}</p>
                   <p><span className="font-black">Seguimiento:</span> {getNotificationLabel(notificationData.notificationNumber)}</p>
                 </div>
@@ -1202,7 +1246,18 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
             </div>
 
             <div className="flex-1 overflow-y-auto p-5 sm:p-6">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <label className="w-full sm:w-48">
+                  <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Fecha de la incidencia</span>
+                  <Input
+                    type="date"
+                    value={multiNotificationDate}
+                    min={`${today.slice(0,7)}-01`}
+                    max={today}
+                    onChange={(event) => { setMultiNotificationDate(event.target.value); setSelectedNotificationIds([]) }}
+                    className="font-bold"
+                  />
+                </label>
                 <div className="relative flex-1">
                   <Search className="absolute left-4 top-3.5 text-slate-400" size={20} />
                   <Input className="pl-12" placeholder="Buscar por alumno, grado o aula..." value={notificationSearch} onChange={(event) => setNotificationSearch(event.target.value)} />
@@ -1212,7 +1267,12 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 </div>
               </div>
 
-              <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">Aparecen estudiantes con incumplimiento del reglamento o tardanza registrada hoy. Puedes combinar alumnos de distintas aulas.</p>
+              <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                {multiNotificationDate === today
+                  ? 'Aparecen estudiantes con incumplimiento del reglamento o tardanza registrada hoy.'
+                  : <>Aparecen estudiantes con incumplimiento del reglamento o tardanza registrada el {new Date(multiNotificationDate + 'T12:00:00').toLocaleDateString('es-PE', { day:'2-digit', month:'long', year:'numeric' })}.</>
+                } Puedes combinar alumnos de distintas aulas.
+              </p>
 
               <div className="mt-4 space-y-2">
                 {notificationCandidates.length === 0 ? (
@@ -1228,7 +1288,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                         <p className="font-black">{student.firstName} {student.lastName}</p>
                         <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{studentClassroom ? `${studentClassroom.grade} ${studentClassroom.section} · ${studentClassroom.level}` : 'Aula no encontrada'} · Apoderado: {student.guardianName}</p>
                       </div>
-                      <span className="text-xs font-bold text-amber-700 dark:text-amber-300">N° {getNotificationNumber(student.id, today, todayPresentationRecords.find((item) => item.studentId === student.id)?.id, todayRecords.find((item) => item.studentId === student.id && item.status === 'LATE')?.id)}</span>
+                      <span className="text-xs font-bold text-amber-700 dark:text-amber-300">N° {getNotificationNumber(student.id, multiNotificationDate, presentationRecords.find((item) => item.studentId === student.id && item.date === multiNotificationDate)?.id, records.find((item) => item.studentId === student.id && item.date === multiNotificationDate && item.status === 'LATE')?.id)}</span>
                     </label>
                   )
                 })}
@@ -1311,17 +1371,33 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                     <div className="rounded-xl border border-dashed border-slate-300 p-5 text-center text-sm text-slate-500 dark:border-slate-700">
                       El alumno aún no tiene notificaciones registradas.
                     </div>
-                  ) : notificationHistory.map((item) => (
-                    <div key={item.id} className="flex flex-col gap-1 rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="font-black">{getNotificationLabel(item.notificationNumber)}</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Registro #{item.id}</p>
-                      </div>
-                      <p className="text-sm font-bold text-slate-600 dark:text-slate-300">
-                        {new Date(item.date + 'T12:00:00').toLocaleDateString('es-PE', { day:'2-digit', month:'long', year:'numeric' })}
-                      </p>
-                    </div>
-                  ))}
+                  ) : notificationHistory.map((item) => {
+                    const previewData = buildNotificationDataFromNotification(historyStudent, item)
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        disabled={!previewData}
+                        onClick={() => {
+                          if (!previewData) return
+                          setNotificationPreviewData(previewData)
+                          setHistoryStudent(null)
+                        }}
+                        className="flex w-full flex-col gap-1 rounded-xl border border-slate-200 px-4 py-3 text-left transition-colors dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between enabled:hover:border-brand-gold enabled:hover:bg-brand-gold/10 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <div>
+                          <p className="font-black">{getNotificationLabel(item.notificationNumber)}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Registro #{item.id}{!previewData && ' · sin ficha vinculada'}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <p className="text-sm font-bold text-slate-600 dark:text-slate-300">
+                            {new Date(item.date + 'T12:00:00').toLocaleDateString('es-PE', { day:'2-digit', month:'long', year:'numeric' })}
+                          </p>
+                          {previewData && <Download size={16} className="text-brand-navy dark:text-brand-gold" />}
+                        </div>
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             </section>
@@ -1392,7 +1468,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                   <button
                     type="button"
                     onClick={() => setWhatsAppMessage(buildStudentWhatsAppMessage(whatsAppStudent, whatsAppType))}
-                    className="normal-case tracking-normal text-blue-600 hover:underline dark:text-blue-400"
+                    className="normal-case tracking-normal text-brand-navy hover:underline dark:text-brand-gold"
                   >
                     Restaurar texto automático
                   </button>
@@ -1638,6 +1714,10 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                   />
                 </label>
               </section>
+
+              <Button variant="outline" className="w-full" onClick={() => { resetTour(); window.location.reload() }}>
+                Ver el recorrido guiado de nuevo
+              </Button>
 
               <Button variant="outline" className="w-full" onClick={() => { const next = resetPreferences(); setPreferences(next) }}>
                 <RotateCcw className="mr-2" size={17} /> Restablecer preferencias
