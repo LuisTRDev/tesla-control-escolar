@@ -36,6 +36,7 @@ import { getCurrentTime, getPreferences, getTodayKey, resetPreferences, savePref
 import {
   deleteAttendanceForDate, deletePresentationForDate, getAttendanceRange, getEntryLimit, getPresentationRange, getStudents,
   registerAttendance, registerExitAttendance, saveEntryLimit, savePresentation as savePresentationRemote,
+  getToleranceSettings, saveToleranceSettings, type ToleranceSettings,
   updateAttendanceEntryTime,
 } from '@/services/schoolService'
 import {
@@ -93,6 +94,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [presentationRecords, setPresentationRecords] = useState<PresentationRecord[]>([])
   const [notifications, setNotifications] = useState<NotificationRecord[]>([])
   const [entryLimit, setEntryLimit] = useState('07:45')
+  const [toleranceSettings, setToleranceSettings] = useState<ToleranceSettings>({ enabled: false, minutes: 5 })
   const [loadingData, setLoadingData] = useState(true)
   const [dataError, setDataError] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -134,18 +136,20 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     if (showLoading) setLoadingData(true); setDataError('')
     try {
       const range = monthRange()
-      const [studentData, attendanceData, presentationData, notificationData, limit] = await Promise.all([
+      const [studentData, attendanceData, presentationData, notificationData, limit, tolerance] = await Promise.all([
         getStudents(),
         getAttendanceRange(range.from, range.to),
         getPresentationRange(range.from, range.to),
         getNotifications(),
         getEntryLimit(),
+        getToleranceSettings(),
       ])
       setStudents(studentData)
       setRecords(attendanceData)
       setPresentationRecords(presentationData)
       setNotifications(notificationData)
       setEntryLimit(limit)
+      setToleranceSettings(tolerance)
     } catch (error) {
       console.error(error); setDataError(error instanceof Error ? error.message : 'No se pudieron cargar los datos locales/remotos.')
     } finally { if (showLoading) setLoadingData(false) }
@@ -255,7 +259,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     const existing = todayRecords.find((item) => item.studentId === studentId)
     if (existing) return
     try {
-      const rec=await registerAttendance(studentId,entryLimit,today,getCurrentTime())
+      const rec=await registerAttendance(studentId,entryLimit,today,getCurrentTime(),toleranceSettings)
       setRecords((curr)=>[...curr.filter((r)=>!(r.studentId===studentId&&r.date===today)),rec])
       playConfirmation()
     } catch(error){ console.error(error); setDataError(error instanceof Error?error.message:'No se pudo registrar la entrada.') }
@@ -298,6 +302,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         editingAttendance,
         newTime,
         entryLimit,
+        toleranceSettings,
       )
 
       setRecords((curr) => [
@@ -337,6 +342,11 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     setEntryLimit(value)
     try { await saveEntryLimit(value) }
     catch(error){ console.error(error); setDataError(error instanceof Error?error.message:'No se pudo actualizar la hora límite.') }
+  }
+  async function updateTolerance(next: ToleranceSettings){
+    setToleranceSettings(next)
+    try { await saveToleranceSettings(next) }
+    catch(error){ console.error(error); setDataError(error instanceof Error?error.message:'No se pudo actualizar la tolerancia.') }
   }
   function openPresentation(student:Student){
     const existing=todayPresentationRecords.find((i)=>i.studentId===student.id)
@@ -731,6 +741,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
           <div className="flex flex-wrap items-center gap-2">
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 transition-colors dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
               Hora límite: <span className="font-black text-slate-950 dark:text-slate-100">{entryLimit}</span>
+              {toleranceSettings.enabled && toleranceSettings.minutes > 0 && (
+                <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">(+{toleranceSettings.minutes} min tolerancia)</span>
+              )}
             </div>
             <Button onClick={() => setQuickModeOpen(true)}>
               <Clock3 className="mr-2" size={17} /> Modo rápido
@@ -1531,6 +1544,56 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                     )
                   })}
                 </div>
+              </section>
+
+              <section>
+                <h3 className="font-black">Asistencia</h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Tolerancia sobre la hora límite (configurada en la vista de Asistencia: {entryLimit}).
+                </p>
+
+                <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-4 transition-colors dark:border-slate-700 dark:bg-slate-950/60">
+                  <span>
+                    <b className="block">Tolerancia de ingreso</b>
+                    <small className="text-slate-500 dark:text-slate-400">
+                      No marcar tardanza dentro de los primeros minutos después de la hora límite
+                    </small>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={toleranceSettings.enabled}
+                    onChange={(e) => updateTolerance({ ...toleranceSettings, enabled: e.target.checked })}
+                    className="h-5 w-5"
+                  />
+                </label>
+
+                {toleranceSettings.enabled && (
+                  <div className="mt-3 flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 transition-colors dark:border-slate-700 dark:bg-slate-950/60">
+                    <span className="text-sm font-semibold">Minutos de tolerancia</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={60}
+                      value={toleranceSettings.minutes}
+                      onChange={(e) => {
+                        const minutes = Math.max(0, Math.min(60, Number(e.target.value) || 0))
+                        updateTolerance({ ...toleranceSettings, minutes })
+                      }}
+                      className="ml-auto h-10 w-20 rounded-lg border border-slate-300 bg-white px-2 text-center text-sm font-bold text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                    <span className="text-sm text-slate-500 dark:text-slate-400">min</span>
+                  </div>
+                )}
+
+                {toleranceSettings.enabled && toleranceSettings.minutes > 0 && (
+                  <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">
+                    Con esta configuración, un alumno que ingrese hasta las {(() => {
+                      const [h, m] = entryLimit.split(':').map(Number)
+                      const total = Math.min(23 * 60 + 59, h * 60 + m + toleranceSettings.minutes)
+                      return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+                    })()} no contará como tardanza.
+                  </p>
+                )}
               </section>
 
               <section>

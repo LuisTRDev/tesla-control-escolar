@@ -4,7 +4,7 @@ import type { AttendanceRecord, AttendanceStatus, Classroom, Guardian, Presentat
 
 const DEFAULT_LIMIT = '07:45'
 const K = {
-  classrooms: 'classrooms', students: 'students', entryLimit: 'entry_limit',
+  classrooms: 'classrooms', students: 'students', entryLimit: 'entry_limit', tolerance: 'entry_tolerance',
   attendance: (from: string, to: string) => `attendance:${from}:${to}`,
   presentation: (from: string, to: string) => `presentation:${from}:${to}`,
 }
@@ -36,6 +36,16 @@ type DbViolation = { violation_type: string }
 type DbPresentation = { id: number | string; student_id: number | string; date: string; status: 'COMPLIANT' | 'NON_COMPLIANT'; other_description: string | null; checked_at: string | null; presentation_violations?: DbViolation[] | null }
 
 function trimTime(value?: string | null) { return (value ?? '').slice(0, 5) }
+
+/** Suma minutos a un horario "HH:MM" y devuelve otro "HH:MM" (recorta a 23:59, no da la vuelta al día siguiente). */
+function addMinutesToTime(time: string, minutes: number): string {
+  const [h, m] = time.split(':').map(Number)
+  if (Number.isNaN(h) || Number.isNaN(m) || !minutes) return time
+  const total = Math.min(23 * 60 + 59, h * 60 + m + minutes)
+  const hh = String(Math.floor(total / 60)).padStart(2, '0')
+  const mm = String(total % 60).padStart(2, '0')
+  return `${hh}:${mm}`
+}
 function offlineId(prefix: string, studentId: string, date: string) { return `offline-${prefix}-${studentId}-${date}` }
 
 async function overlayPendingAttendance(base: AttendanceRecord[], from: string, to: string) {
@@ -189,6 +199,47 @@ export async function getEntryLimit(): Promise<string> {
   }
 }
 
+export type ToleranceSettings = { enabled: boolean; minutes: number }
+const DEFAULT_TOLERANCE: ToleranceSettings = { enabled: false, minutes: 0 }
+
+export async function getToleranceSettings(): Promise<ToleranceSettings> {
+  try {
+    const { data, error } = await supabase
+      .from('school_settings')
+      .select('tolerance_enabled, tolerance_minutes')
+      .order('id')
+      .limit(1)
+      .maybeSingle()
+    if (error) throw error
+    const value: ToleranceSettings = {
+      enabled: Boolean(data?.tolerance_enabled),
+      minutes: Number(data?.tolerance_minutes ?? 0),
+    }
+    await setSnapshot(K.tolerance, value)
+    return value
+  } catch {
+    return (await getSnapshot<ToleranceSettings>(K.tolerance)) ?? DEFAULT_TOLERANCE
+  }
+}
+
+export async function saveToleranceSettings(settings: ToleranceSettings): Promise<void> {
+  if (!navigator.onLine) throw new Error('La tolerancia solo puede modificarse con conexión a Internet.')
+  if (settings.minutes < 0 || settings.minutes > 60) {
+    throw new Error('La tolerancia debe estar entre 0 y 60 minutos.')
+  }
+  const { data: existing, error: readError } = await supabase.from('school_settings').select('id').order('id').limit(1).maybeSingle()
+  if (readError) throw readError
+  const payload = { tolerance_enabled: settings.enabled, tolerance_minutes: settings.minutes }
+  if (existing?.id) {
+    const { error } = await supabase.from('school_settings').update(payload).eq('id', existing.id)
+    if (error) throw error
+  } else {
+    const { error } = await supabase.from('school_settings').insert(payload)
+    if (error) throw error
+  }
+  await setSnapshot(K.tolerance, settings)
+}
+
 export async function saveEntryLimit(value: string): Promise<void> {
   if (!navigator.onLine) throw new Error('La hora límite solo puede modificarse con conexión a Internet.')
   const { data: existing, error: readError } = await supabase.from('school_settings').select('id').order('id').limit(1).maybeSingle()
@@ -203,7 +254,16 @@ export async function saveEntryLimit(value: string): Promise<void> {
   await setSnapshot(K.entryLimit, value)
 }
 
-export function calculateStatus(time: string, entryLimit: string): AttendanceStatus { return time <= entryLimit ? 'ON_TIME' : 'LATE' }
+/**
+ * Compara la hora de ingreso contra la hora límite, aplicando la
+ * tolerancia en minutos si está activada. Ej: límite 07:45 + tolerancia
+ * de 5 min -> el límite real ese día es 07:50; a las 07:46 sigue siendo
+ * ON_TIME.
+ */
+export function calculateStatus(time: string, entryLimit: string, tolerance?: ToleranceSettings): AttendanceStatus {
+  const effectiveLimit = tolerance?.enabled ? addMinutesToTime(entryLimit, tolerance.minutes) : entryLimit
+  return time <= effectiveLimit ? 'ON_TIME' : 'LATE'
+}
 
 export async function getAttendanceRange(from: string, to: string): Promise<AttendanceRecord[]> {
   try {
@@ -219,8 +279,8 @@ export async function getAttendanceRange(from: string, to: string): Promise<Atte
   }
 }
 
-export async function registerAttendance(studentId: string, entryLimit: string, date: string, time: string): Promise<AttendanceRecord> {
-  const status = calculateStatus(time, entryLimit)
+export async function registerAttendance(studentId: string, entryLimit: string, date: string, time: string, tolerance?: ToleranceSettings): Promise<AttendanceRecord> {
+  const status = calculateStatus(time, entryLimit, tolerance)
   const optimistic: AttendanceRecord = { id: offlineId('attendance', studentId, date), studentId, date, time, status }
   if (!navigator.onLine) {
     await enqueueOperation('ATTENDANCE_UPSERT', optimistic as unknown as Record<string, unknown>)
@@ -246,6 +306,7 @@ export async function updateAttendanceEntryTime(
   record: AttendanceRecord,
   newTime: string,
   entryLimit: string,
+  tolerance?: ToleranceSettings,
 ): Promise<AttendanceRecord> {
   if (!record.id || record.id.startsWith('offline-')) {
     throw new Error(
@@ -263,7 +324,7 @@ export async function updateAttendanceEntryTime(
     throw new Error('La hora de ingreso no es válida.')
   }
 
-  const status = calculateStatus(newTime, entryLimit)
+  const status = calculateStatus(newTime, entryLimit, tolerance)
   const attendanceId = Number(record.id)
 
   const { data, error } = await supabase
