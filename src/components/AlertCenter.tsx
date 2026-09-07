@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useToast } from '@/lib/toast'
 import { Bell, BookOpen, CheckCircle2, Filter, MessageCircle, RefreshCw, TriangleAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -71,11 +72,10 @@ export default function AlertCenter({ open, onClose, classrooms, currentClassroo
     }
   }
 
-  if (!open) return null
-
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 p-3 backdrop-blur-sm dark:bg-black/70 sm:p-6">
-      <section className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+    <AnimatePresence>{open && (
+    <motion.div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 p-3 backdrop-blur-sm dark:bg-black/70 sm:p-6" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
+      <motion.section className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-2xl dark:border-slate-800 dark:bg-slate-950" initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
         <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 sm:px-7">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -148,7 +148,8 @@ export default function AlertCenter({ open, onClose, classrooms, currentClassroo
             })}
           </div>
         </div>
-      </section>
-    </div>
+      </motion.section>
+    </motion.div>
+    )}</AnimatePresence>
   )
 }

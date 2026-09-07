@@ -302,6 +302,53 @@ export async function registerAttendance(studentId: string, entryLimit: string, 
   }
 }
 
+/**
+ * Marca como ON_TIME a varios alumnos a la vez, usando la hora límite
+ * (no la hora real del clic) como hora de ingreso registrada — porque
+ * no se conoce el momento exacto en que cada uno entró, solo que fue
+ * antes del límite. `ignoreDuplicates: true` protege a cualquier
+ * alumno que YA tenga una asistencia registrada hoy (tardanza o a
+ * tiempo individual): esos simplemente se ignoran, nunca se
+ * sobrescriben.
+ */
+export async function registerBulkAttendance(studentIds: string[], entryLimit: string, date: string): Promise<AttendanceRecord[]> {
+  if (studentIds.length === 0) return []
+  const status: AttendanceStatus = 'ON_TIME'
+
+  if (!navigator.onLine) {
+    const results: AttendanceRecord[] = []
+    for (const studentId of studentIds) {
+      const optimistic: AttendanceRecord = { id: offlineId('attendance', studentId, date), studentId, date, time: entryLimit, status }
+      await enqueueOperation('ATTENDANCE_UPSERT', optimistic as unknown as Record<string, unknown>)
+      results.push(optimistic)
+    }
+    return results
+  }
+
+  const rows = studentIds.map((studentId) => ({ student_id: Number(studentId), date, entry_time: entryLimit, status }))
+  const { data, error } = await supabase
+    .from('attendance')
+    .upsert(rows, { onConflict: 'student_id,date', ignoreDuplicates: true })
+    .select('id, student_id, date, entry_time, status, exit_time, exit_recorded_at, exit_recorded_by, entry_recorded_at, entry_recorded_by, entry_source, exit_source')
+
+  if (error) throw error
+
+  return (data ?? []).map((row) => ({
+    id: String(row.id),
+    studentId: String(row.student_id),
+    date: row.date,
+    time: trimTime(row.entry_time),
+    status: row.status,
+    exitTime: trimTime(row.exit_time),
+    exitRecordedAt: row.exit_recorded_at ?? null,
+    exitRecordedBy: row.exit_recorded_by ?? null,
+    entryRecordedAt: row.entry_recorded_at ?? null,
+    entryRecordedBy: row.entry_recorded_by ?? null,
+    entrySource: row.entry_source ?? null,
+    exitSource: row.exit_source ?? null,
+  }))
+}
+
 export async function updateAttendanceEntryTime(
   record: AttendanceRecord,
   newTime: string,

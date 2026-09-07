@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import {
   Activity, AlertTriangle, Clock3, Expand, LogIn, Minimize, ShieldAlert,
   TrendingUp, Users, Wifi, WifiOff, X,
@@ -154,8 +155,6 @@ export default function LiveTvPanel({
     }
   }, [attendanceRecords, classrooms, presentationRecords, students, today])
 
-  if (!open) return null
-
   async function toggleFullscreen() {
     try {
       if (document.fullscreenElement) await document.exitFullscreen()
@@ -168,7 +167,8 @@ export default function LiveTvPanel({
   const maxType = Math.max(1, ...data.topTypes.map((item) => item.count))
 
   return (
-    <section className="fixed inset-0 z-[100] overflow-y-auto bg-[#050b16] text-white">
+    <AnimatePresence>{open && (
+    <motion.section className="fixed inset-0 z-[100] overflow-y-auto bg-[#050b16] text-white" initial={{opacity:0,scale:1.02}} animate={{opacity:1,scale:1}} exit={{opacity:0,scale:1.02}} transition={{duration:0.35,ease:[0.2,0.8,0.25,1]}}>
       <div className="min-h-screen p-4 sm:p-6 xl:p-8">
         <header className="flex flex-col gap-5 border-b border-white/10 pb-5 xl:flex-row xl:items-center xl:justify-between">
           <div>
@@ -252,7 +252,8 @@ export default function LiveTvPanel({
           </div>
         </div>
       </div>
-    </section>
+    </motion.section>
+    )}</AnimatePresence>
   )
 }
 

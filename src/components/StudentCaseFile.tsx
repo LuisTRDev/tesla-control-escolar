@@ -50,7 +50,9 @@ export default function StudentCaseFile({ student, classroom, onClose, onOpenWha
       attendance: data.attendance.length,
       late: data.attendance.filter((row) => s(row.status) === 'LATE').length,
       incidents: data.presentation.filter((row) => s(row.status) === 'NON_COMPLIANT').length,
-      notifications: data.notifications.length,
+      // Las notificaciones anuladas (voided) por una corrección de asistencia
+      // ya no cuentan para el rendimiento del alumno.
+      notifications: data.notifications.filter((row) => !row.voided).length,
       openAlerts: data.alerts.filter((row) => s(row.status) === 'OPEN').length,
     }
   }, [data])
@@ -68,7 +70,14 @@ export default function StudentCaseFile({ student, classroom, onClose, onOpenWha
       items.push({ id:`p-${s(row.id)}`, date:s(row.date), title:'Incumplimiento del reglamento', detail:[types.map((t)=>violationLabels[t] ?? t).join(' · '), s(row.other_description)].filter(Boolean).join(' — ') || 'Sin detalle', tone:'warning' })
     }
     for (const row of data.notifications) {
-      items.push({ id:`n-${s(row.id)}`, date:s(row.date), title:`Notificación N° ${s(row.notification_number)}`, detail:s(row.observation) || getNotificationTypeLabel(row.notification_type), tone:Number(row.notification_number) >= 3 ? 'danger' : 'info' })
+      const voided = Boolean(row.voided)
+      items.push({
+        id:`n-${s(row.id)}`,
+        date:s(row.date),
+        title: voided ? `Notificación N° ${s(row.notification_number)} (anulada)` : `Notificación N° ${s(row.notification_number)}`,
+        detail: voided ? (s(row.voided_reason) || 'Anulada por corrección de asistencia.') : (s(row.observation) || getNotificationTypeLabel(row.notification_type)),
+        tone: voided ? 'info' : (Number(row.notification_number) >= 3 ? 'danger' : 'info'),
+      })
     }
     for (const row of data.alerts) {
       items.push({ id:`al-${s(row.id)}`, date:s(row.created_at), title:`Alerta: ${getAlertTypeLabel(row.alert_type)}`, detail:s(row.message), tone:s(row.status)==='OPEN'?'danger':'info' })

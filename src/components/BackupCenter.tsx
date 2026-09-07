@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useToast } from '@/lib/toast'
 import { DatabaseBackup, Download, HardDrive, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -18,8 +19,6 @@ export default function BackupCenter({ open, onClose, online }: Props) {
   const toast = useToast()
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
-  if (!open) return null
-
   async function exportCloudBackup() {
     if (!online) { setMessage('Necesitas conexión para descargar una copia de Supabase.'); toast.warning('Sin conexión', 'Necesitas internet para descargar una copia de Supabase.'); return }
     setLoading(true); setMessage('')
@@ -43,8 +42,9 @@ export default function BackupCenter({ open, onClose, online }: Props) {
     toast.success('Estado offline exportado')
   }
 
-  return <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={onClose}>
-    <section className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900" onMouseDown={(e)=>e.stopPropagation()}>
+  return <AnimatePresence>{open && (
+    <motion.div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={onClose} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
+    <motion.section className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900" onMouseDown={(e)=>e.stopPropagation()} initial={{scale:0.94,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.96,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
       <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-widest text-slate-400">Fase 7</p><h2 className="mt-1 flex items-center gap-2 text-2xl font-black"><DatabaseBackup size={23}/> Backups</h2><p className="mt-1 text-sm text-slate-500">Copia lógica manual para contingencia. No sustituye los backups administrados de PostgreSQL/Supabase.</p></div><Button variant="ghost" onClick={onClose}><X size={20}/></Button></div>
       <div className="mt-6 grid gap-3 sm:grid-cols-2">
         <button onClick={()=>void exportCloudBackup()} disabled={loading||!online} className="rounded-2xl border border-slate-200 p-5 text-left hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"><Download size={22}/><p className="mt-3 font-black">Copia de Supabase</p><p className="mt-1 text-xs text-slate-500">Exporta las tablas operativas a un JSON descargable.</p></button>
@@ -52,6 +52,7 @@ export default function BackupCenter({ open, onClose, online }: Props) {
       </div>
       {message && <div className="mt-4 rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold dark:bg-slate-800">{message}</div>}
       <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"><strong>Política recomendada:</strong> mantener backups automáticos del proveedor cuando estén disponibles y descargar una copia lógica antes de migraciones importantes.</div>
-    </section>
-  </div>
+    </motion.section>
+    </motion.div>
+  )}</AnimatePresence>
 }

@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
-import { Check, Clock3, LogOut, Search, TriangleAlert, X, Zap } from 'lucide-react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { Check, Clock3, LogOut, Search, TriangleAlert, Users, X, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import type { AttendanceRecord, Classroom, Student } from '@/types'
 
@@ -13,14 +15,19 @@ type Props = {
   onMark: (studentId: string) => Promise<void>
   onExit?: (studentId: string) => Promise<void>
   online: boolean
+  entryLimit: string
+  onBulkMark: (studentIds: string[]) => Promise<void>
 }
 
-export default function QuickMode({ open, onClose, classrooms, students, records, onMark, onExit, online }: Props) {
+export default function QuickMode({ open, onClose, classrooms, students, records, onMark, onExit, online, entryLimit, onBulkMark }: Props) {
   const [query, setQuery] = useState('')
   const [classroomId, setClassroomId] = useState<string>('ALL')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'MARKED' | 'LATE'>('ALL')
   const [markingId, setMarkingId] = useState<string | null>(null)
   const [exitingId, setExitingId] = useState<string | null>(null)
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set())
+  const [bulkSaving, setBulkSaving] = useState(false)
 
   const classroomMap = useMemo(() => new Map(classrooms.map((c) => [c.id, c])), [classrooms])
 
@@ -42,18 +49,59 @@ export default function QuickMode({ open, onClose, classrooms, students, records
       })
   }, [students, records, classroomId, query, statusFilter])
 
-  if (!open) return null
+  // Alumnos sin ninguna asistencia hoy, respetando el filtro de aula/búsqueda
+  // actual (pero no el filtro de estado, para no confundir qué se va a marcar).
+  const unmarkedInView = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return students
+      .filter((student) => classroomId === 'ALL' || student.classroomId === classroomId)
+      .filter((student) => `${student.firstName} ${student.lastName}`.toLowerCase().includes(q))
+      .filter((student) => !records.some((r) => r.studentId === student.id))
+      .sort((a, b) => a.lastName.localeCompare(b.lastName, 'es') || a.firstName.localeCompare(b.firstName, 'es'))
+  }, [students, records, classroomId, query])
+
+  function openBulk() {
+    setBulkSelected(new Set(unmarkedInView.map((s) => s.id)))
+    setBulkOpen(true)
+  }
+
+  function toggleBulkStudent(studentId: string) {
+    setBulkSelected((curr) => {
+      const next = new Set(curr)
+      if (next.has(studentId)) next.delete(studentId)
+      else next.add(studentId)
+      return next
+    })
+  }
+
+  async function confirmBulk() {
+    const ids = Array.from(bulkSelected)
+    if (ids.length === 0) { setBulkOpen(false); return }
+    setBulkSaving(true)
+    try {
+      await onBulkMark(ids)
+      setBulkOpen(false)
+    } finally {
+      setBulkSaving(false)
+    }
+  }
 
   return (
-    <div className="fixed inset-0 z-[70] bg-slate-950/60 p-3 backdrop-blur-sm sm:p-5" onMouseDown={onClose}>
-      <section className="mx-auto flex h-full max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950" onMouseDown={(e) => e.stopPropagation()}>
+    <AnimatePresence>{open && (
+    <motion.div className="fixed inset-0 z-[70] bg-slate-950/60 p-3 backdrop-blur-sm sm:p-5" onMouseDown={onClose} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
+      <motion.section className="relative mx-auto flex h-full max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950" onMouseDown={(e) => e.stopPropagation()} initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-800">
           <div>
             <p className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-brand-navy dark:text-brand-gold"><Zap size={15}/> Modo auxiliar rápido</p>
             <h2 className="mt-1 text-2xl font-black">Todo el colegio</h2>
             <p className="mt-1 text-sm text-slate-500">Busca en todos los salones o filtra por aula. {online ? 'Conectado a Supabase.' : 'Sin conexión: las entradas quedarán en cola.'}</p>
           </div>
-          <Button variant="ghost" onClick={onClose}><X size={20}/></Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={openBulk} disabled={unmarkedInView.length === 0}>
+              <Users className="mr-2" size={16}/> Marcar el resto a tiempo
+            </Button>
+            <Button variant="ghost" onClick={onClose}><X size={20}/></Button>
+          </div>
         </div>
 
         <div className="grid gap-3 border-b border-slate-200 p-4 dark:border-slate-800 md:grid-cols-[1fr_210px_180px]">
@@ -111,7 +159,81 @@ export default function QuickMode({ open, onClose, classrooms, students, records
             {filtered.length===0 && <div className="py-12 text-center text-sm text-slate-500">No hay alumnos para este filtro.</div>}
           </div>
         </div>
-      </section>
-    </div>
+
+        <AnimatePresence>{bulkOpen && (
+          <motion.div
+            className="absolute inset-0 z-10 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-sm"
+            onMouseDown={() => { if (!bulkSaving) setBulkOpen(false) }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+          >
+            <motion.div
+              className="w-full max-w-lg"
+              onMouseDown={(e) => e.stopPropagation()}
+              initial={{ scale: 0.94, opacity: 0, y: 12 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.96, opacity: 0, y: 8 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+            >
+              <Card className="flex max-h-[80vh] flex-col p-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-widest text-brand-navy dark:text-brand-gold">Marcado masivo</p>
+                    <h3 className="mt-1 text-xl font-black">Confirmar alumnos a marcar a tiempo</h3>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      Se guardará <b>{entryLimit}</b> (hora límite) como hora de ingreso, en {classroomId === 'ALL' ? 'todo el colegio' : 'el aula filtrada'}. Desmarca a quien sepas que <b>faltó</b> hoy.
+                    </p>
+                  </div>
+                  <Button variant="ghost" onClick={() => setBulkOpen(false)} disabled={bulkSaving}><X size={20} /></Button>
+                </div>
+
+                <div className="mt-4 flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400">
+                  <span>{bulkSelected.size} de {unmarkedInView.length} seleccionados</span>
+                  <div className="flex gap-3">
+                    <button type="button" className="text-brand-navy hover:underline dark:text-brand-gold" onClick={() => setBulkSelected(new Set(unmarkedInView.map((s) => s.id)))}>Marcar todos</button>
+                    <button type="button" className="text-brand-navy hover:underline dark:text-brand-gold" onClick={() => setBulkSelected(new Set())}>Ninguno</button>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex-1 space-y-1.5 overflow-y-auto pr-1">
+                  {unmarkedInView.map((student) => {
+                    const checked = bulkSelected.has(student.id)
+                    const studentClassroom = classroomMap.get(student.classroomId)
+                    return (
+                      <button
+                        key={student.id}
+                        type="button"
+                        onClick={() => toggleBulkStudent(student.id)}
+                        className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors ${checked ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-950/20' : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'}`}
+                      >
+                        <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border-2 ${checked ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300 dark:border-slate-600'}`}>
+                          {checked && <Check size={13} className="text-white" />}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-semibold">{student.lastName}, {student.firstName}</span>
+                          {classroomId === 'ALL' && studentClassroom && (
+                            <span className="block text-xs text-slate-400">{studentClassroom.grade} {studentClassroom.section} · {studentClassroom.level}</span>
+                          )}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                <div className="mt-5 flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setBulkOpen(false)} disabled={bulkSaving}>Cancelar</Button>
+                  <Button onClick={() => void confirmBulk()} disabled={bulkSaving || bulkSelected.size === 0}>
+                    {bulkSaving ? 'Guardando...' : `Marcar ${bulkSelected.size} a tiempo`}
+                  </Button>
+                </div>
+              </Card>
+            </motion.div>
+          </motion.div>
+        )}</AnimatePresence>
+      </motion.section>
+    </motion.div>
+    )}</AnimatePresence>
   )
 }

@@ -12,9 +12,11 @@ type DbNotification = {
   observation: string | null
   date: string
   generated_at: string
+  voided: boolean | null
+  voided_reason: string | null
 }
 
-const SELECT_FIELDS = 'id, student_id, presentation_control_id, attendance_id, notification_number, notification_type, observation, date, generated_at'
+const SELECT_FIELDS = 'id, student_id, presentation_control_id, attendance_id, notification_number, notification_type, observation, date, generated_at, voided, voided_reason'
 
 /** El CHECK de la tabla `notifications` solo permite 1, 2 o 3. Ver supabase/phase4_setup.sql. */
 const MAX_NOTIFICATION_NUMBER = 3
@@ -30,6 +32,8 @@ function mapNotification(row: DbNotification): NotificationRecord {
     observation: row.observation ?? '',
     date: row.date,
     generatedAt: row.generated_at,
+    voided: Boolean(row.voided),
+    voidedReason: row.voided_reason ?? null,
   }
 }
 
@@ -84,24 +88,22 @@ async function getExistingByAttendance(attendanceId: string): Promise<Notificati
 }
 
 export async function getNextNotificationNumber(studentId: string): Promise<number> {
-  const { data, error } = await supabase
+  const { count, error } = await supabase
     .from('notifications')
-    .select('notification_number')
+    .select('id', { count: 'exact', head: true })
     .eq('student_id', Number(studentId))
-    .order('notification_number', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+    .eq('voided', false)
 
   if (error) throw error
-  return Math.max(1, Number(data?.notification_number ?? 0) + 1)
+  return Math.max(1, (count ?? 0) + 1)
 }
 
 /**
  * Cuando un alumno ya tiene sus 3 notificaciones (el máximo que permite el
  * CHECK de la tabla), una nueva infracción NO debe intentar crear una 4ta
- * notificación (eso siempre falla con 23514). En su lugar, se registra una
- * alerta de reincidencia para que el colegio le dé seguimiento aparte.
- * No duplica la alerta si ya existe una abierta para el mismo alumno.
+ * notificación (eso siempre falla con 23514: notifications_notification_number_check).
+ * En su lugar, se registra una alerta de reincidencia para que el colegio le
+ * dé seguimiento aparte. No duplica la alerta si ya existe una abierta.
  */
 async function raiseRepeatOffenderAlert(studentId: string, message: string): Promise<void> {
   const { data: existing, error: findError } = await supabase
@@ -239,16 +241,7 @@ export async function ensureNotificationForLateAttendance(record: AttendanceReco
   const existing = await getExistingByAttendance(record.id)
   if (existing) return existing
 
-  const notificationNumber = await getNextNotificationNumberOrAlert(
-    record.studentId,
-    `El alumno superó las 3 notificaciones por tardanzas. Última tardanza registrada: ${record.time}.`,
-  )
-  if (notificationNumber === null) {
-    const latest = await getLatestNotification(record.studentId)
-    if (latest) return latest
-    throw new Error('El alumno alcanzó el máximo de notificaciones y no se encontró una notificación previa para mostrar.')
-  }
-
+  const notificationNumber = await getNextNotificationNumber(record.studentId)
   const observation = `Tardanza en el ingreso. Hora registrada: ${record.time}.`
   const { data, error } = await supabase
     .from('notifications')

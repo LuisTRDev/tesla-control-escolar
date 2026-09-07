@@ -1,8 +1,9 @@
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { CheckCircle2, Info, TriangleAlert, X, XCircle } from 'lucide-react'
 
 type ToastVariant = 'success' | 'error' | 'info' | 'warning'
-type ToastItem = { id: number; title: string; description?: string; variant: ToastVariant; leaving?: boolean }
+type ToastItem = { id: number; title: string; description?: string; variant: ToastVariant }
 
 type ToastInput = { title: string; description?: string; variant?: ToastVariant; duration?: number }
 
@@ -29,8 +30,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const idRef = useRef(0)
 
   const dismiss = useCallback((id: number) => {
-    setToasts((curr) => curr.map((t) => (t.id === id ? { ...t, leaving: true } : t)))
-    setTimeout(() => setToasts((curr) => curr.filter((t) => t.id !== id)), 200)
+    setToasts((curr) => curr.filter((t) => t.id !== id))
   }, [])
 
   const show = useCallback((toast: ToastInput) => {
@@ -45,26 +45,33 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={{ show }}>
       {children}
       <div className="pointer-events-none fixed inset-x-0 top-4 z-[200] flex flex-col items-center gap-2 px-4 sm:items-end sm:right-4 sm:left-auto">
-        {toasts.map((t) => (
-          <div
-            key={t.id}
-            className={`pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-2xl border bg-white p-4 shadow-lg dark:bg-slate-900 ${BORDERS[t.variant]} ${t.leaving ? 'animate-toastOut' : 'animate-toastIn'}`}
-          >
-            <span className="mt-0.5 shrink-0">{ICONS[t.variant]}</span>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{t.title}</p>
-              {t.description && <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{t.description}</p>}
-            </div>
-            <button
-              type="button"
-              onClick={() => dismiss(t.id)}
-              className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
-              aria-label="Cerrar aviso"
+        <AnimatePresence initial={false}>
+          {toasts.map((t) => (
+            <motion.div
+              key={t.id}
+              layout
+              initial={{ opacity: 0, y: -16, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 80, scale: 0.9, transition: { duration: 0.18 } }}
+              transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+              className={`pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-2xl border bg-white p-4 shadow-lg dark:bg-slate-900 ${BORDERS[t.variant]}`}
             >
-              <X size={16} />
-            </button>
-          </div>
-        ))}
+              <span className="mt-0.5 shrink-0">{ICONS[t.variant]}</span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{t.title}</p>
+                {t.description && <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{t.description}</p>}
+              </div>
+              <button
+                type="button"
+                onClick={() => dismiss(t.id)}
+                className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                aria-label="Cerrar aviso"
+              >
+                <X size={16} />
+              </button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
     </ToastContext.Provider>
   )

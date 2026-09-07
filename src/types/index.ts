@@ -82,6 +82,8 @@ export type NotificationRecord = {
   observation: string
   date: string
   generatedAt: string
+  voided: boolean
+  voidedReason: string | null
 }
 
 export type PresentationFilter = 'ALL' | 'COMPLIANT' | 'NON_COMPLIANT' | 'PENDING'

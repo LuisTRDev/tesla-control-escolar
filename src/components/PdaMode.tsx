@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { BadgeCheck, Clock3, DoorOpen, IdCard, Search, ShieldAlert, Smartphone, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -37,8 +38,6 @@ export default function PdaMode({ open, onClose, students, classrooms, records, 
     setMessage('')
   }, [open])
 
-  if (!open) return null
-
   function lookup() {
     const clean = dni.replace(/\D/g, '').slice(0, 8)
     console.log('Buscando:', JSON.stringify(clean))
@@ -68,8 +67,9 @@ export default function PdaMode({ open, onClose, students, classrooms, records, 
   }
 
   return (
-    <div className="fixed inset-0 z-[85] bg-slate-950 p-3 text-white sm:p-5" onMouseDown={onClose}>
-      <section className="mx-auto flex h-full max-h-[95vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-900 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+    <AnimatePresence>{open && (
+    <motion.div className="fixed inset-0 z-[85] bg-slate-950 p-3 text-white sm:p-5" onMouseDown={onClose} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
+      <motion.section className="mx-auto flex h-full max-h-[95vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-900 shadow-2xl" onMouseDown={(event) => event.stopPropagation()} initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
         <header className="flex items-start justify-between border-b border-white/10 p-5">
           <div><p className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-brand-gold"><Smartphone size={16}/> Modo PDA</p><h2 className="mt-1 text-2xl font-black">Control por DNI</h2><p className="mt-1 text-sm text-slate-400">Compatible con ingreso manual y lectores que escriben el DNI como teclado.</p></div>
           <Button variant="ghost" className="text-white" onClick={onClose}><X size={20}/></Button>
@@ -113,7 +113,8 @@ export default function PdaMode({ open, onClose, students, classrooms, records, 
 
           {message && <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-sm font-bold text-slate-200">{message}</div>}
         </div>
-      </section>
-    </div>
+      </motion.section>
+    </motion.div>
+    )}</AnimatePresence>
   )
 }

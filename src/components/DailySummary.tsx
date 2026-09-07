@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { Bell, CalendarCheck2, CheckCircle2, Clock3, Sparkles, TriangleAlert, Users, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -46,8 +47,6 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
 
   useEffect(() => { if (open) void load() }, [open, classroomId, today])
   useEffect(() => { if (open && refreshKey > 0) void load(true) }, [refreshKey])
-  if (!open) return null
-
   async function closeAttendance() {
     if (classroomId === 'ALL' || closed) return
     const classroom = classrooms.find((item) => item.id === classroomId)
@@ -61,8 +60,9 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
   const presentPct = summary?.totalStudents ? Math.round((summary.present / summary.totalStudents) * 100) : 0
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 p-3 backdrop-blur-sm dark:bg-black/70 sm:p-6">
-      <section className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+    <AnimatePresence>{open && (
+    <motion.div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 p-3 backdrop-blur-sm dark:bg-black/70 sm:p-6" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
+      <motion.section className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-2xl dark:border-slate-800 dark:bg-slate-950" initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
         <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 sm:px-7">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div><p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-brand-navy dark:text-brand-gold"><Sparkles size={15}/> Automatización diaria</p><h2 className="mt-1 text-2xl font-black">Resumen y cierre de asistencia</h2><p className="mt-1 text-sm text-slate-500">{new Date(today + 'T12:00:00').toLocaleDateString('es-PE', { weekday:'long', day:'2-digit', month:'long', year:'numeric' })}</p></div>
@@ -104,7 +104,8 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
             </div>
           </>}
         </div>
-      </section>
-    </div>
+      </motion.section>
+    </motion.div>
+    )}</AnimatePresence>
   )
 }

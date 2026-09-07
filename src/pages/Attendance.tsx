@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useToast } from '@/lib/toast'
+import { AnimatePresence, motion } from 'framer-motion'
 import { resetTour } from '@/components/OnboardingTour'
+import Cobranza from '@/components/Cobranza'
 import {
   Check, ChevronDown, BarChart3, CalendarDays, ClipboardCheck, Clock3, Download, Edit3, FileText,
-  Menu, Monitor, Moon, RotateCcw, Search, Settings2, Shirt, Sun, TriangleAlert, Volume2, X, BookOpen, MessageCircle, Send, Bell, CalendarCheck2, FolderOpen, LogOut,
+  Menu, Monitor, Moon, RotateCcw, Search, Settings2, Shirt, Sun, TriangleAlert, Volume2, X, BookOpen, MessageCircle, Send, Bell, CalendarCheck2, FolderOpen, LogOut, Users,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Tooltip } from '@/components/ui/Tooltip'
@@ -38,7 +40,7 @@ import {
 import { getCurrentTime, getPreferences, getTodayKey, resetPreferences, savePreferences, type UserPreferences } from '@/lib/storage'
 import {
   deleteAttendanceForDate, deletePresentationForDate, getAttendanceRange, getEntryLimit, getPresentationRange, getStudents,
-  registerAttendance, registerExitAttendance, saveEntryLimit, savePresentation as savePresentationRemote,
+  registerAttendance, registerBulkAttendance, registerExitAttendance, saveEntryLimit, savePresentation as savePresentationRemote,
   getToleranceSettings, saveToleranceSettings, type ToleranceSettings,  updateAttendanceEntryTime,
 } from '@/services/schoolService'
 import {
@@ -103,6 +105,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [dashboardOpen, setDashboardOpen] = useState(false)
   const [reportsOpen, setReportsOpen] = useState(false)
+  const [cobranzaOpen, setCobranzaOpen] = useState(false)
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [dailySummaryOpen, setDailySummaryOpen] = useState(false)
   const [auditOpen, setAuditOpen] = useState(false)
@@ -120,6 +123,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [selectedNotificationIds, setSelectedNotificationIds] = useState<string[]>([])
   const [notificationSearch, setNotificationSearch] = useState('')
   const [multiNotificationDate, setMultiNotificationDate] = useState(getTodayKey())
+  const [bulkAttendanceOpen, setBulkAttendanceOpen] = useState(false)
+  const [bulkAttendanceSelected, setBulkAttendanceSelected] = useState<Set<string>>(new Set())
+  const [bulkAttendanceSaving, setBulkAttendanceSaving] = useState(false)
   const [historyStudent, setHistoryStudent] = useState<Student | null>(null)
   const [whatsAppStudent, setWhatsAppStudent] = useState<Student | null>(null)
   const [whatsAppType, setWhatsAppType] = useState<WhatsAppMessageType>('LATE')
@@ -206,6 +212,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
           observation: String(incoming.observation ?? ''),
           date: String(incoming.date),
           generatedAt: String(incoming.generated_at ?? new Date().toISOString()),
+          voided: Boolean(incoming.voided),
+          voidedReason: incoming.voided_reason == null ? null : String(incoming.voided_reason),
         }
         if (detail.event === 'DELETE') setNotifications((curr) => curr.filter((item) => item.id !== mapped.id))
         else setNotifications((curr) => [mapped, ...curr.filter((item) => item.id !== mapped.id)])
@@ -258,6 +266,49 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     if(presentationFilter==='COMPLIANT'&&presentation?.status!=='COMPLIANT')return false; if(presentationFilter==='NON_COMPLIANT'&&presentation?.status!=='NON_COMPLIANT')return false; if(presentationFilter==='PENDING'&&presentation)return false
     return true
   })
+
+  const unmarkedToday = classroomStudents.filter((student) => !todayRecords.some((r) => r.studentId === student.id))
+
+  function openBulkAttendance() {
+    // Todos pre-seleccionados por defecto: el auxiliar desmarca solo
+    // a quienes sabe que faltaron hoy, en vez de tener que elegir uno
+    // por uno a quién SÍ marcar.
+    setBulkAttendanceSelected(new Set(unmarkedToday.map((s) => s.id)))
+    setBulkAttendanceOpen(true)
+  }
+
+  function toggleBulkStudent(studentId: string) {
+    setBulkAttendanceSelected((curr) => {
+      const next = new Set(curr)
+      if (next.has(studentId)) next.delete(studentId)
+      else next.add(studentId)
+      return next
+    })
+  }
+
+  async function bulkMarkStudents(ids: string[]): Promise<void> {
+    if (ids.length === 0) return
+    const inserted = await registerBulkAttendance(ids, entryLimit, today)
+    setRecords((curr) => [
+      ...curr.filter((r) => !(r.date === today && ids.includes(r.studentId))),
+      ...inserted,
+    ])
+    toast.success(`${inserted.length} alumno${inserted.length !== 1 ? 's' : ''} marcado${inserted.length !== 1 ? 's' : ''} a tiempo`, `Hora registrada: ${entryLimit} (hora límite)`)
+  }
+
+  async function confirmBulkAttendance() {
+    const ids = Array.from(bulkAttendanceSelected)
+    if (ids.length === 0) { setBulkAttendanceOpen(false); return }
+    setBulkAttendanceSaving(true)
+    try {
+      await bulkMarkStudents(ids)
+      setBulkAttendanceOpen(false)
+    } catch (error) {
+      toast.error('No se pudo completar el marcado masivo', error instanceof Error ? error.message : undefined)
+    } finally {
+      setBulkAttendanceSaving(false)
+    }
+  }
 
   async function mark(studentId:string) {
     const existing = todayRecords.find((item) => item.studentId === studentId)
@@ -655,14 +706,15 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         userName={userName}
         userRole={userRole}
         formattedDate={formattedDate}
-        active={tvPanelOpen ? 'tv' : historicalImportOpen ? 'historical' : backupOpen ? 'backup' : quickModeOpen ? 'quick' : auditOpen ? 'audit' : dailySummaryOpen ? 'summary' : alertsOpen ? 'alerts' : reportsOpen ? 'reports' : dashboardOpen ? 'dashboard' : 'home'}
-        onHome={() => { setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
-        onDashboard={() => { setDashboardOpen(true); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false) }}
-        onReports={() => { setReportsOpen(true); setDashboardOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false) }}
+        active={tvPanelOpen ? 'tv' : historicalImportOpen ? 'historical' : backupOpen ? 'backup' : quickModeOpen ? 'quick' : auditOpen ? 'audit' : dailySummaryOpen ? 'summary' : alertsOpen ? 'alerts' : cobranzaOpen ? 'cobranza' : reportsOpen ? 'reports' : dashboardOpen ? 'dashboard' : 'home'}
+        onHome={() => { setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false); setCobranzaOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+        onDashboard={() => { setDashboardOpen(true); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false); setCobranzaOpen(false) }}
+        onReports={() => { setReportsOpen(true); setDashboardOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false); setCobranzaOpen(false) }}
+        onCobranza={() => { setCobranzaOpen(true); setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false) }}
         onNotifications={openMultiNotification}
-        onAlerts={() => { setAlertsOpen(true); setDashboardOpen(false); setReportsOpen(false); setDailySummaryOpen(false); setAuditOpen(false) }}
-        onDailySummary={() => { setDailySummaryOpen(true); setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setAuditOpen(false) }}
-        onAudit={() => { setAuditOpen(true); setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false) }}
+        onAlerts={() => { setAlertsOpen(true); setDashboardOpen(false); setReportsOpen(false); setDailySummaryOpen(false); setAuditOpen(false); setCobranzaOpen(false) }}
+        onDailySummary={() => { setDailySummaryOpen(true); setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setAuditOpen(false); setCobranzaOpen(false) }}
+        onAudit={() => { setAuditOpen(true); setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setCobranzaOpen(false) }}
         onQuickMode={() => setQuickModeOpen(true)}
         onPdaMode={() => setPdaModeOpen(true)}
         onTvPanel={() => setTvPanelOpen(true)}
@@ -783,6 +835,11 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">(+{toleranceSettings.minutes} min tolerancia)</span>
               )}
             </div>
+            <Tooltip content="Para cuando entran muchos alumnos a la vez: marca a los que ya entraron y no fueron marcados individualmente">
+              <Button variant="outline" onClick={openBulkAttendance} disabled={unmarkedToday.length === 0}>
+                <Users className="mr-2" size={17} /> Marcar el resto a tiempo
+              </Button>
+            </Tooltip>
             <Tooltip content="Marca asistencia de un alumno a la vez, ideal para la hora de ingreso">
               <Button onClick={() => setQuickModeOpen(true)}>
                 <Clock3 className="mr-2" size={17} /> Modo rápido
@@ -1002,13 +1059,92 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         </section>
       </div>
 
-      {editingAttendance && (
-        <div
+      <AnimatePresence>{bulkAttendanceOpen && (
+        <motion.div
+          className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/60 p-4 backdrop-blur-sm"
+          onMouseDown={() => { if (!bulkAttendanceSaving) setBulkAttendanceOpen(false) }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18 }}
+        >
+          <motion.div
+            className="w-full max-w-lg"
+            onMouseDown={(e) => e.stopPropagation()}
+            initial={{ scale: 0.94, opacity: 0, y: 12 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.96, opacity: 0, y: 8 }}
+            transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+          >
+            <Card className="flex max-h-[85vh] flex-col p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-widest text-brand-navy dark:text-brand-gold">Marcado masivo</p>
+                  <h3 className="mt-1 text-xl font-black">Confirmar alumnos a marcar a tiempo</h3>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Se guardará <b>{entryLimit}</b> (hora límite) como hora de ingreso. Desmarca a quien sepas que <b>faltó</b> hoy — el resto quedará con asistencia normal, igual que si se hubiera marcado uno por uno.
+                  </p>
+                </div>
+                <Button variant="ghost" onClick={() => setBulkAttendanceOpen(false)} disabled={bulkAttendanceSaving}><X size={20} /></Button>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400">
+                <span>{bulkAttendanceSelected.size} de {unmarkedToday.length} seleccionados</span>
+                <div className="flex gap-3">
+                  <button type="button" className="text-brand-navy hover:underline dark:text-brand-gold" onClick={() => setBulkAttendanceSelected(new Set(unmarkedToday.map((s) => s.id)))}>Marcar todos</button>
+                  <button type="button" className="text-brand-navy hover:underline dark:text-brand-gold" onClick={() => setBulkAttendanceSelected(new Set())}>Ninguno</button>
+                </div>
+              </div>
+
+              <div className="mt-3 flex-1 space-y-1.5 overflow-y-auto pr-1">
+                {unmarkedToday.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700">Todos los alumnos del aula ya tienen asistencia registrada hoy.</p>
+                ) : unmarkedToday.map((student) => {
+                  const checked = bulkAttendanceSelected.has(student.id)
+                  return (
+                    <button
+                      key={student.id}
+                      type="button"
+                      onClick={() => toggleBulkStudent(student.id)}
+                      className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors ${checked ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-950/20' : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'}`}
+                    >
+                      <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border-2 ${checked ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300 dark:border-slate-600'}`}>
+                        {checked && <Check size={13} className="text-white" />}
+                      </span>
+                      <span className="font-semibold">{student.firstName} {student.lastName}</span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="mt-5 flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setBulkAttendanceOpen(false)} disabled={bulkAttendanceSaving}>Cancelar</Button>
+                <Button onClick={() => void confirmBulkAttendance()} disabled={bulkAttendanceSaving || bulkAttendanceSelected.size === 0}>
+                  {bulkAttendanceSaving ? 'Guardando...' : `Marcar ${bulkAttendanceSelected.size} a tiempo`}
+                </Button>
+              </div>
+            </Card>
+          </motion.div>
+        </motion.div>
+      )}</AnimatePresence>
+
+      <AnimatePresence>{editingAttendance && (
+        <motion.div
           className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/65 p-4 backdrop-blur-sm"
           onMouseDown={() => {
             if (!savingAttendanceEdit) setEditingAttendance(null)
           }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18 }}
         >
+          <motion.div
+            initial={{ scale: 0.94, opacity: 0, y: 12 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.96, opacity: 0, y: 8 }}
+            transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+          >
           <Card
             className="w-full max-w-md p-6"
             onMouseDown={(event) => event.stopPropagation()}
@@ -1068,8 +1204,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
               </Button>
             </div>
           </Card>
-        </div>
-      )}
+          </motion.div>
+        </motion.div>
+      )}</AnimatePresence>
 
       <QuickMode
         open={quickModeOpen}
@@ -1080,6 +1217,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         onMark={mark}
         onExit={markExit}
         online={syncState.online}
+        entryLimit={entryLimit}
+        onBulkMark={bulkMarkStudents}
       />
 
       <PdaMode
@@ -1095,11 +1234,15 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
 
       <BackupCenter open={backupOpen} onClose={() => setBackupOpen(false)} online={syncState.online} />
 
-      {presentationStudent && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-[1px] dark:bg-black/65" onMouseDown={() => setPresentationStudent(null)}>
-          <section
+      <AnimatePresence>{presentationStudent && (
+        <motion.div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-[1px] dark:bg-black/65" onMouseDown={() => setPresentationStudent(null)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
+          <motion.section
             className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 text-slate-950 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 sm:p-6"
             onMouseDown={(event) => event.stopPropagation()}
+            initial={{ scale: 0.96, opacity: 0, y: 12 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.97, opacity: 0, y: 8 }}
+            transition={{ type: 'spring', stiffness: 380, damping: 32 }}
           >
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -1134,7 +1277,10 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
               </button>
             </div>
 
-            {presentationDraft.status === 'NON_COMPLIANT' && (
+            {presentationDraft.status === 'NON_COMPLIANT' && (() => {
+              const attendanceToday = todayRecords.find((r) => r.studentId === presentationStudent.id)
+              const lateAllowed = attendanceToday?.status === 'LATE'
+              return (
               <div className="mt-6 space-y-3">
                 <p className="text-sm font-black">Incumplimientos institucionales</p>
                 {[
@@ -1143,17 +1289,24 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                   ['nonInstitutionalGarment', '3. Prenda no correspondiente al uniforme institucional.'],
                   ['lateEntryViolation', '4. Tardanza en el ingreso.'],
                   ['inappropriateConductViolation', '5. Conducta inapropiada.'],
-                ].map(([key, label]) => (
-                  <label key={key} className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 transition-colors hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950/60 dark:hover:border-slate-600">
+                ].map(([key, label]) => {
+                  const disabled = key === 'lateEntryViolation' && !lateAllowed && !presentationDraft.lateEntryViolation
+                  return (
+                  <label key={key} className={`flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 transition-colors hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950/60 dark:hover:border-slate-600 ${disabled ? 'cursor-not-allowed opacity-50 hover:border-slate-200 dark:hover:border-slate-700' : ''}`}>
                     <input
                       type="checkbox"
                       className="mt-0.5 h-5 w-5 shrink-0 accent-slate-950 dark:accent-slate-100"
                       checked={Boolean(presentationDraft[key as keyof PresentationDraft])}
+                      disabled={disabled}
                       onChange={(event) => setPresentationDraft((current) => ({ ...current, [key]: event.target.checked }))}
                     />
-                    <span className="text-sm font-semibold leading-6">{label}</span>
+                    <span className="text-sm font-semibold leading-6">
+                      {label}
+                      {disabled && <span className="mt-1 block text-xs font-normal text-slate-400">No disponible: el alumno no tiene una tardanza de ingreso registrada hoy.</span>}
+                    </span>
                   </label>
-                ))}
+                  )
+                })}
 
                 <label className="block rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/50">
                   <span className="text-sm font-black">Descripción de la observación</span>
@@ -1166,7 +1319,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                   />
                 </label>
               </div>
-            )}
+              )
+            })()}
 
             <div className="mt-7 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button variant="outline" onClick={() => setPresentationStudent(null)}>Cancelar</Button>
@@ -1174,18 +1328,18 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 <ClipboardCheck className="mr-2" size={18} /> Guardar control
               </Button>
             </div>
-          </section>
-        </div>
-      )}
+          </motion.section>
+        </motion.div>
+      )}</AnimatePresence>
 
-      {notificationPreviewData && (() => {
+      <AnimatePresence>{notificationPreviewData && (() => {
         const notificationData = notificationPreviewData
         const previewStudent = notificationData.student
         const labels = getPresentationViolationLabels(notificationData.presentation)
         if (notificationData.attendance?.status === 'LATE' && !labels.some((item) => item.startsWith('Tardanza'))) labels.push('Tardanza en el ingreso.')
         return (
-          <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-[1px] dark:bg-black/65" onMouseDown={() => setNotificationPreviewData(null)}>
-            <section className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-5 text-slate-950 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 sm:p-6" onMouseDown={(event) => event.stopPropagation()}>
+          <motion.div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-[1px] dark:bg-black/65" onMouseDown={() => setNotificationPreviewData(null)} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
+            <motion.section className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-5 text-slate-950 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 sm:p-6" onMouseDown={(event) => event.stopPropagation()} initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Ficha oficial · 1/3 A4</p>
@@ -1228,14 +1382,14 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                   <Download className="mr-2" size={18} /> Descargar imagen PNG
                 </Button>
               </div>
-            </section>
-          </div>
+            </motion.section>
+          </motion.div>
         )
-      })()}
+      })()}</AnimatePresence>
 
-      {multiNotificationOpen && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-4 backdrop-blur-[1px] dark:bg-black/70" onMouseDown={() => setMultiNotificationOpen(false)}>
-          <section className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-950 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100" onMouseDown={(event) => event.stopPropagation()}>
+      <AnimatePresence>{multiNotificationOpen && (
+        <motion.div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-4 backdrop-blur-[1px] dark:bg-black/70" onMouseDown={() => setMultiNotificationOpen(false)} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
+          <motion.section className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-950 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100" onMouseDown={(event) => event.stopPropagation()} initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
             <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-800 sm:p-6">
               <div>
                 <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Impresión optimizada</p>
@@ -1313,11 +1467,11 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
               </div>
               <p className="mt-3 text-center text-xs text-slate-500 dark:text-slate-400">Si eliges 1 o 2 alumnos, los espacios restantes quedan vacíos para conservar el formato de corte.</p>
             </div>
-          </section>
-        </div>
-      )}
+          </motion.section>
+        </motion.div>
+      )}</AnimatePresence>
 
-      {historyStudent && (() => {
+      <AnimatePresence>{historyStudent && (() => {
         const attendanceHistory = records.filter((r) => r.studentId === historyStudent.id).sort((a,b) => b.date.localeCompare(a.date))
         const presentationHistory = presentationRecords.filter((r) => r.studentId === historyStudent.id).sort((a,b) => b.date.localeCompare(a.date))
         const notificationHistory = notifications
@@ -1327,8 +1481,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         const incidentTotal = presentationHistory.filter((r) => r.status === 'NON_COMPLIANT').length
         const dates = Array.from(new Set([...attendanceHistory.map(r => r.date), ...presentationHistory.map(r => r.date)])).sort((a,b) => b.localeCompare(a))
         return (
-          <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-[1px] dark:bg-black/65" onMouseDown={() => setHistoryStudent(null)}>
-            <section className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-900 sm:p-6" onMouseDown={(e) => e.stopPropagation()}>
+          <motion.div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-[1px] dark:bg-black/65" onMouseDown={() => setHistoryStudent(null)} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
+            <motion.section className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-900 sm:p-6" onMouseDown={(e) => e.stopPropagation()} initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
               <div className="flex items-start justify-between gap-4">
                 <div><p className="text-xs font-bold uppercase tracking-widest text-slate-400">Historial mensual</p><h2 className="mt-1 text-xl font-black">{historyStudent.firstName} {historyStudent.lastName}</h2><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Datos persistentes almacenados en PostgreSQL.</p></div>
                 <Button variant="ghost" onClick={() => setHistoryStudent(null)}><X size={20}/></Button>
@@ -1359,11 +1513,14 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                     <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Reincidencias</p>
                     <h3 className="mt-1 font-black">Historial de notificaciones</h3>
                   </div>
-                  {notificationHistory[0] && (
-                    <span className="rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-black text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                      Nivel actual: {getNotificationLabel(notificationHistory[0].notificationNumber)}
-                    </span>
-                  )}
+                  {(() => {
+                    const currentValid = notificationHistory.find((item) => !item.voided)
+                    return currentValid && (
+                      <span className="rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-black text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                        Nivel actual: {getNotificationLabel(currentValid.notificationNumber)}
+                      </span>
+                    )
+                  })()}
                 </div>
 
                 <div className="mt-3 space-y-2">
@@ -1372,7 +1529,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                       El alumno aún no tiene notificaciones registradas.
                     </div>
                   ) : notificationHistory.map((item) => {
-                    const previewData = buildNotificationDataFromNotification(historyStudent, item)
+                    const previewData = item.voided ? null : buildNotificationDataFromNotification(historyStudent, item)
                     return (
                       <button
                         key={item.id}
@@ -1383,11 +1540,19 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                           setNotificationPreviewData(previewData)
                           setHistoryStudent(null)
                         }}
-                        className="flex w-full flex-col gap-1 rounded-xl border border-slate-200 px-4 py-3 text-left transition-colors dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between enabled:hover:border-brand-gold enabled:hover:bg-brand-gold/10 disabled:cursor-not-allowed disabled:opacity-60"
+                        className={`flex w-full flex-col gap-1 rounded-xl border px-4 py-3 text-left transition-colors sm:flex-row sm:items-center sm:justify-between disabled:cursor-not-allowed ${item.voided ? 'border-slate-200 bg-slate-50 opacity-70 dark:border-slate-800 dark:bg-slate-900/40' : 'border-slate-200 dark:border-slate-800 enabled:hover:border-brand-gold enabled:hover:bg-brand-gold/10 disabled:opacity-60'}`}
                       >
                         <div>
-                          <p className="font-black">{getNotificationLabel(item.notificationNumber)}</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">Registro #{item.id}{!previewData && ' · sin ficha vinculada'}</p>
+                          <p className={`font-black ${item.voided ? 'line-through decoration-slate-400' : ''}`}>
+                            {getNotificationLabel(item.notificationNumber)}
+                            {item.voided && (
+                              <span className="ml-2 rounded-md bg-slate-200 px-1.5 py-0.5 text-[10px] font-black no-underline text-slate-600 dark:bg-slate-700 dark:text-slate-300">ANULADA</span>
+                            )}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Registro #{item.id}{!item.voided && !previewData && ' · sin ficha vinculada'}</p>
+                          {item.voided && item.voidedReason && (
+                            <p className="mt-1 max-w-md text-xs italic text-slate-500 dark:text-slate-400">{item.voidedReason}</p>
+                          )}
                         </div>
                         <div className="flex items-center gap-3">
                           <p className="text-sm font-bold text-slate-600 dark:text-slate-300">
@@ -1400,23 +1565,31 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                   })}
                 </div>
               </div>
-            </section>
-          </div>
+            </motion.section>
+          </motion.div>
         )
-      })()}
+      })()}</AnimatePresence>
 
 
-      {whatsAppStudent && (() => {
+      <AnimatePresence>{whatsAppStudent && (() => {
         const options = getWhatsAppOptions(whatsAppStudent)
         const normalizedOk = isValidPeruWhatsApp(whatsAppStudent.guardianPhone)
         return (
-          <div
+          <motion.div
             className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-4 backdrop-blur-[1px] dark:bg-black/70"
             onMouseDown={() => setWhatsAppStudent(null)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
           >
-            <section
+            <motion.section
               className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 text-slate-950 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 sm:p-6"
               onMouseDown={(event) => event.stopPropagation()}
+              initial={{ scale: 0.96, opacity: 0, y: 12 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.97, opacity: 0, y: 8 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 32 }}
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -1507,10 +1680,10 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                   <Send className="mr-2" size={18} /> {openingWhatsApp ? 'Abriendo...' : 'Abrir WhatsApp'}
                 </Button>
               </div>
-            </section>
-          </div>
+            </motion.section>
+          </motion.div>
         )
-      })()}
+      })()}</AnimatePresence>
 
       <AlertCenter
         open={alertsOpen}
@@ -1560,6 +1733,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         refreshKey={realtimeState.revision}
       />
 
+      <Cobranza open={cobranzaOpen} onClose={() => setCobranzaOpen(false)} />
+
       <LiveTvPanel
         open={tvPanelOpen}
         onClose={() => setTvPanelOpen(false)}
@@ -1584,11 +1759,22 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         now={now}
       />
 
-      {settingsOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/45 backdrop-blur-[1px] dark:bg-black/55" onMouseDown={() => setSettingsOpen(false)}>
-          <aside
+      <AnimatePresence>{settingsOpen && (
+        <motion.div
+          className="fixed inset-0 z-50 flex justify-end bg-slate-950/45 backdrop-blur-[1px] dark:bg-black/55"
+          onMouseDown={() => setSettingsOpen(false)}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <motion.aside
             className="h-full w-full max-w-md overflow-y-auto border-l border-slate-200 bg-white p-6 text-slate-950 shadow-2xl transition-colors dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
             onMouseDown={(event) => event.stopPropagation()}
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ type: 'spring', stiffness: 340, damping: 34 }}
           >
             <div className="flex items-center justify-between">
               <div>
@@ -1723,9 +1909,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 <RotateCcw className="mr-2" size={17} /> Restablecer preferencias
               </Button>
             </div>
-          </aside>
-        </div>
-      )}
+          </motion.aside>
+        </motion.div>
+      )}</AnimatePresence>
     </main>
   )
 }
