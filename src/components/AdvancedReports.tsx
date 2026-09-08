@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { BarChart3, CalendarDays, Download, FileSpreadsheet, FileText, RefreshCw, TriangleAlert, Users, X } from 'lucide-react'
+import { BarChart3, CalendarDays, Check, Download, FileSpreadsheet, FileText, RefreshCw, TriangleAlert, Users, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
-import { getAdvancedReport, exportAdvancedReportExcel, exportAdvancedReportPdf, type AdvancedReport } from '@/services/reportService'
+import { getAdvancedReport, exportAdvancedReportExcel, exportAdvancedReportPdf, type AdvancedReport, type ReportExportFilters } from '@/services/reportService'
 import type { Classroom } from '@/types'
 
 type Props = {
@@ -50,6 +50,14 @@ export default function AdvancedReports({ open, onClose, classrooms, refreshKey 
   const [detailTab, setDetailTab] = useState<DetailTab>('ATTENDANCE')
   const [attendanceStatusFilter, setAttendanceStatusFilter] = useState<'ALL' | 'ON_TIME' | 'LATE'>('ALL')
   const [activeMetric, setActiveMetric] = useState<string | null>(null)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportFilters, setExportFilters] = useState<ReportExportFilters>({
+    late: true,
+    onTime: false,
+    incidents: true,
+    notifications: true,
+    repeatOffenders: true,
+  })
   const detailsRef = useRef<HTMLDivElement | null>(null)
   const repeatOffendersRef = useRef<HTMLDivElement | null>(null)
 
@@ -108,6 +116,19 @@ export default function AdvancedReports({ open, onClose, classrooms, refreshKey 
 
   const maxViolation = Math.max(1, ...(report?.violations.map((item) => item.total) ?? [1]))
   const maxTrend = Math.max(1, ...(report?.dailyTrend.flatMap((item) => [item.onTime, item.late, item.incidents]) ?? [1]))
+  const selectedExportCount = Object.values(exportFilters).filter(Boolean).length
+
+  function toggleExportFilter(key: keyof ReportExportFilters) {
+    setExportFilters((current) => ({ ...current, [key]: !current[key] }))
+  }
+
+  function selectAllExportFilters() {
+    setExportFilters({ late: true, onTime: true, incidents: true, notifications: true, repeatOffenders: true })
+  }
+
+  function clearExportFilters() {
+    setExportFilters({ late: false, onTime: false, incidents: false, notifications: false, repeatOffenders: false })
+  }
 
   return (
     <AnimatePresence>{open && (
@@ -143,7 +164,7 @@ export default function AdvancedReports({ open, onClose, classrooms, refreshKey 
 
           {report && (
             <>
-              <div className="mt-5 flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => exportAdvancedReportPdf(report)}><FileText className="mr-2" size={17} />PDF</Button><Button variant="outline" onClick={() => exportAdvancedReportExcel(report)}><FileSpreadsheet className="mr-2" size={17} />Excel</Button></div>
+              <div className="mt-5 flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => setExportOpen(true)}><Download className="mr-2" size={17} />Configurar descarga</Button></div>
 
               <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
                 <Card className="p-4"><p className="text-xs text-slate-500 dark:text-slate-400">Alumnos</p><p className="mt-1 text-2xl font-black">{report.summary.totalStudents}</p></Card>
@@ -175,6 +196,67 @@ export default function AdvancedReports({ open, onClose, classrooms, refreshKey 
               <Card className="mt-4 p-5"><div className="flex items-center gap-2"><CalendarDays size={18} /><h3 className="font-black">Evolución diaria</h3></div><p className="mt-1 text-xs text-slate-500">Verde: a tiempo · Ámbar: tardanzas · Rojo: incidencias.</p><div className="mt-6 overflow-x-auto"><div className="flex min-w-max items-end gap-3" style={{ height: 190 }}>{report.dailyTrend.map((item) => <div key={item.date} className="flex h-full w-14 flex-col justify-end"><div className="flex flex-1 items-end justify-center gap-1"><div title={`A tiempo: ${item.onTime}`} className="w-3 rounded-t bg-emerald-500" style={{ height: `${Math.max(item.onTime ? 4 : 0, (item.onTime / maxTrend) * 135)}px` }} /><div title={`Tardanzas: ${item.late}`} className="w-3 rounded-t bg-amber-500" style={{ height: `${Math.max(item.late ? 4 : 0, (item.late / maxTrend) * 135)}px` }} /><div title={`Incidencias: ${item.incidents}`} className="w-3 rounded-t bg-rose-500" style={{ height: `${Math.max(item.incidents ? 4 : 0, (item.incidents / maxTrend) * 135)}px` }} /></div><p className="mt-2 text-center text-[10px] text-slate-500">{prettyDate(item.date)}</p></div>)}</div></div></Card>
 
               <Card ref={detailsRef} className="mt-4 overflow-hidden"><div className="border-b border-slate-200 p-4 dark:border-slate-800"><div className="flex flex-wrap items-center gap-2">{([['ATTENDANCE', `Asistencia (${report.attendanceDetails.length})`], ['INCIDENTS', `Incidencias (${report.incidentDetails.length})`], ['NOTIFICATIONS', `Notificaciones (${report.notificationDetails.length})`]] as const).map(([id, label]) => <button key={id} onClick={() => { setDetailTab(id); setActiveMetric(null) }} className={`rounded-xl px-3 py-2 text-xs font-black ${detailTab === id ? 'bg-slate-950 text-white dark:bg-white dark:text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>{label}</button>)}{detailTab === 'ATTENDANCE' && attendanceStatusFilter !== 'ALL' && <button onClick={() => setAttendanceStatusFilter('ALL')} className="rounded-xl bg-brand-gold/15 px-3 py-2 text-xs font-black text-brand-navy dark:text-brand-gold">Filtrando: {attendanceStatusFilter === 'ON_TIME' ? 'A tiempo' : 'Tardanzas'} ✕</button>}</div></div><div className="max-h-[430px] overflow-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="sticky top-0 bg-slate-100 text-xs uppercase text-slate-500 dark:bg-slate-900"><tr><th className="px-4 py-3">Alumno</th><th className="px-4 py-3">Aula</th><th className="px-4 py-3">Fecha</th>{detailTab === 'ATTENDANCE' ? <><th className="px-4 py-3">Hora</th><th className="px-4 py-3">Estado</th></> : detailTab === 'INCIDENTS' ? <><th className="px-4 py-3">Incumplimientos</th><th className="px-4 py-3">Observación</th></> : <><th className="px-4 py-3">N°</th><th className="px-4 py-3">Tipo</th></>}</tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{detailTab === 'ATTENDANCE' && report.attendanceDetails.filter((item) => attendanceStatusFilter === 'ALL' || item.status === attendanceStatusFilter).map((item, i) => <tr key={`${item.studentName}-${item.date}-${i}`}><td className="px-4 py-3 font-semibold">{item.studentName}</td><td className="px-4 py-3">{item.classroom}</td><td className="px-4 py-3">{item.date}</td><td className="px-4 py-3">{item.time}</td><td className="px-4 py-3">{item.status === 'LATE' ? 'Tardanza' : 'A tiempo'}</td></tr>)}{detailTab === 'INCIDENTS' && report.incidentDetails.map((item, i) => <tr key={`${item.studentName}-${item.date}-${i}`}><td className="px-4 py-3 font-semibold">{item.studentName}</td><td className="px-4 py-3">{item.classroom}</td><td className="px-4 py-3">{item.date}</td><td className="px-4 py-3">{item.violations}</td><td className="max-w-xs px-4 py-3">{item.observation || '—'}</td></tr>)}{detailTab === 'NOTIFICATIONS' && report.notificationDetails.map((item, i) => <tr key={`${item.studentName}-${item.date}-${i}`}><td className="px-4 py-3 font-semibold">{item.studentName}</td><td className="px-4 py-3">{item.classroom}</td><td className="px-4 py-3">{item.date}</td><td className="px-4 py-3 font-black">{item.notificationNumber}</td><td className="px-4 py-3">{item.notificationType}</td></tr>)}</tbody></table></div></Card>
+
+              <AnimatePresence>
+                {exportOpen && (
+                  <motion.div
+                    className="fixed inset-0 z-[80] grid place-items-center bg-slate-950/60 p-4 backdrop-blur-sm"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    <motion.div
+                      className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-900"
+                      initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Exportación personalizada</p>
+                          <h3 className="mt-1 text-xl font-black">¿Qué quieres descargar?</h3>
+                          <p className="mt-1 text-sm text-slate-500">Combina uno o varios tipos de información del periodo y aula seleccionados.</p>
+                        </div>
+                        <Button variant="ghost" onClick={() => setExportOpen(false)} aria-label="Cerrar"><X size={20} /></Button>
+                      </div>
+
+                      <div className="mt-5 flex flex-wrap gap-2">
+                        <button type="button" onClick={selectAllExportFilters} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black dark:bg-slate-800">Seleccionar todo</button>
+                        <button type="button" onClick={clearExportFilters} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-600 dark:bg-slate-800 dark:text-slate-300">Limpiar</button>
+                        <span className="ml-auto self-center text-xs font-bold text-slate-400">{selectedExportCount} seleccionados</span>
+                      </div>
+
+                      <div className="mt-4 space-y-2">
+                        {([
+                          ['late', 'Alumnos con tardanza', 'Solo ingresos marcados como tardanza'],
+                          ['onTime', 'Alumnos a tiempo', 'Solo ingresos dentro del horario'],
+                          ['incidents', 'Incidencias', 'Incumplimientos de presentación y conducta'],
+                          ['notifications', 'Notificaciones', 'Notificaciones generadas durante el periodo'],
+                          ['repeatOffenders', 'Reincidencias', 'Alumnos con mayor recurrencia'],
+                        ] as const).map(([key, label, description]) => (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => toggleExportFilter(key)}
+                            className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${exportFilters[key] ? 'border-brand-gold bg-brand-gold/5' : 'border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60'}`}
+                          >
+                            <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg border ${exportFilters[key] ? 'border-brand-gold bg-brand-gold text-brand-navy' : 'border-slate-300 dark:border-slate-700'}`}>
+                              {exportFilters[key] && <Check size={16} />}
+                            </span>
+                            <span className="min-w-0"><span className="block text-sm font-black">{label}</span><span className="block text-xs text-slate-500">{description}</span></span>
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                        <Button variant="outline" onClick={() => setExportOpen(false)}>Cancelar</Button>
+                        <Button disabled={selectedExportCount === 0} onClick={() => { exportAdvancedReportPdf(report, exportFilters); setExportOpen(false) }}><FileText className="mr-2" size={16} />PDF</Button>
+                        <Button disabled={selectedExportCount === 0} onClick={() => { exportAdvancedReportExcel(report, exportFilters); setExportOpen(false) }}><FileSpreadsheet className="mr-2" size={16} />Excel</Button>
+                      </div>
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </>
           )}
         </div>

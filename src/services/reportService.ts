@@ -59,6 +59,14 @@ export type NotificationDetail = {
   observation: string
 }
 
+export type ReportExportFilters = {
+  late: boolean
+  onTime: boolean
+  incidents: boolean
+  notifications: boolean
+  repeatOffenders: boolean
+}
+
 export type AdvancedReport = {
   from: string
   to: string
@@ -246,27 +254,41 @@ export async function getAdvancedReport(from: string, to: string, classroomId: s
   return { from, to, classroomId, summary, violations, repeatOffenders, ...details }
 }
 
+function getExportData(report: AdvancedReport, filters: ReportExportFilters) {
+  const attendanceDetails = report.attendanceDetails.filter((row) =>
+    row.status === 'LATE' ? filters.late : filters.onTime,
+  )
+
+  return {
+    attendanceDetails,
+    incidentDetails: filters.incidents ? report.incidentDetails : [],
+    notificationDetails: filters.notifications ? report.notificationDetails : [],
+    repeatOffenders: filters.repeatOffenders ? report.repeatOffenders : [],
+  }
+}
+
 function safeFilenamePart(value: string) {
   return value.replace(/[^a-zA-Z0-9-_]/g, '-')
 }
 
-export function exportAdvancedReportExcel(report: AdvancedReport) {
+export function exportAdvancedReportExcel(report: AdvancedReport, filters: ReportExportFilters = { late: true, onTime: true, incidents: true, notifications: true, repeatOffenders: true }) {
+  const exportData = getExportData(report, filters)
   const workbook = XLSX.utils.book_new()
   const summaryRows = [
     ['Reporte Tesla', spreadsheetSafeText(`${report.from} a ${report.to}`)],
     ['Total alumnos', report.summary.totalStudents],
-    ['Ingresos', report.summary.totalEntries],
-    ['A tiempo', report.summary.onTime],
-    ['Tardanzas', report.summary.late],
-    ['Incidencias', report.summary.presentationIncidents],
-    ['Notificaciones', report.summary.notifications],
-    ['Reincidentes', report.summary.repeatOffenders],
+    ['Ingresos', exportData.attendanceDetails.length],
+    ['A tiempo', exportData.attendanceDetails.filter((r) => r.status === 'ON_TIME').length],
+    ['Tardanzas', exportData.attendanceDetails.filter((r) => r.status === 'LATE').length],
+    ['Incidencias', exportData.incidentDetails.length],
+    ['Notificaciones', exportData.notificationDetails.length],
+    ['Reincidentes', exportData.repeatOffenders.length],
   ]
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(summaryRows), 'Resumen')
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(report.attendanceDetails.map((r) => spreadsheetSafeObject({ Alumno: r.studentName, Aula: r.classroom, Fecha: r.date, Hora: r.time, Estado: r.status === 'LATE' ? 'Tardanza' : 'A tiempo' }))), 'Asistencia')
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(report.incidentDetails.map((r) => spreadsheetSafeObject({ Alumno: r.studentName, Aula: r.classroom, Fecha: r.date, Incumplimientos: r.violations, Observacion: r.observation }))), 'Incidencias')
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(report.notificationDetails.map((r) => spreadsheetSafeObject({ Alumno: r.studentName, Aula: r.classroom, Fecha: r.date, Numero: r.notificationNumber, Tipo: r.notificationType, Observacion: r.observation }))), 'Notificaciones')
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(report.repeatOffenders.map((r) => spreadsheetSafeObject({ Alumno: r.studentName, Notificaciones: r.notificationCount }))), 'Reincidencias')
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportData.attendanceDetails.map((r) => spreadsheetSafeObject({ Alumno: r.studentName, Aula: r.classroom, Fecha: r.date, Hora: r.time, Estado: r.status === 'LATE' ? 'Tardanza' : 'A tiempo' }))), 'Asistencia')
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportData.incidentDetails.map((r) => spreadsheetSafeObject({ Alumno: r.studentName, Aula: r.classroom, Fecha: r.date, Incumplimientos: r.violations, Observacion: r.observation }))), 'Incidencias')
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportData.notificationDetails.map((r) => spreadsheetSafeObject({ Alumno: r.studentName, Aula: r.classroom, Fecha: r.date, Numero: r.notificationNumber, Tipo: r.notificationType, Observacion: r.observation }))), 'Notificaciones')
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportData.repeatOffenders.map((r) => spreadsheetSafeObject({ Alumno: r.studentName, Notificaciones: r.notificationCount }))), 'Reincidencias')
   XLSX.writeFile(workbook, `Reporte-Tesla-${safeFilenamePart(report.from)}-${safeFilenamePart(report.to)}.xlsx`)
 }
 
@@ -281,12 +303,13 @@ function addPdfHeader(doc: jsPDF, title: string, subtitle: string) {
   doc.line(14, 26, 196, 26)
 }
 
-export function exportAdvancedReportPdf(report: AdvancedReport) {
+export function exportAdvancedReportPdf(report: AdvancedReport, filters: ReportExportFilters = { late: true, onTime: true, incidents: true, notifications: true, repeatOffenders: true }) {
+  const exportData = getExportData(report, filters)
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
   addPdfHeader(doc, 'IEPr Nikola Tesla - Reporte avanzado', `Periodo: ${report.from} al ${report.to}`)
   const metrics = [
-    ['Total alumnos', report.summary.totalStudents], ['Ingresos', report.summary.totalEntries], ['A tiempo', report.summary.onTime],
-    ['Tardanzas', report.summary.late], ['Incidencias', report.summary.presentationIncidents], ['Notificaciones', report.summary.notifications], ['Reincidentes', report.summary.repeatOffenders],
+    ['Total alumnos', report.summary.totalStudents], ['Ingresos', exportData.attendanceDetails.length], ['A tiempo', exportData.attendanceDetails.filter((r) => r.status === 'ON_TIME').length],
+    ['Tardanzas', exportData.attendanceDetails.filter((r) => r.status === 'LATE').length], ['Incidencias', exportData.incidentDetails.length], ['Notificaciones', exportData.notificationDetails.length], ['Reincidentes', exportData.repeatOffenders.length],
   ] as const
   let y = 34
   doc.setFontSize(9)
@@ -299,19 +322,25 @@ export function exportAdvancedReportPdf(report: AdvancedReport) {
     doc.setFont('helvetica', 'normal'); doc.text(String(value), x + 55, yy)
   })
   y += 44
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text('Incumplimientos por tipo', 14, y)
-  y += 6; doc.setFontSize(8.5)
-  report.violations.forEach((item) => { doc.setFont('helvetica', 'normal'); doc.text(item.label, 16, y); doc.text(String(item.total), 110, y); y += 5 })
-  y += 5
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text('Alumnos con más reincidencias', 14, y)
-  y += 6; doc.setFontSize(8.5)
-  report.repeatOffenders.slice(0, 10).forEach((item, index) => { doc.setFont('helvetica', 'normal'); doc.text(`${index + 1}. ${item.studentName}`, 16, y); doc.text(String(item.notificationCount), 150, y); y += 5 })
+  if (filters.incidents) {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text('Incumplimientos por tipo', 14, y)
+    y += 6; doc.setFontSize(8.5)
+    report.violations.forEach((item) => { doc.setFont('helvetica', 'normal'); doc.text(item.label, 16, y); doc.text(String(item.total), 110, y); y += 5 })
+    y += 5
+  }
+  if (filters.repeatOffenders) {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text('Alumnos con más reincidencias', 14, y)
+    y += 6; doc.setFontSize(8.5)
+    exportData.repeatOffenders.slice(0, 10).forEach((item, index) => { doc.setFont('helvetica', 'normal'); doc.text(`${index + 1}. ${item.studentName}`, 16, y); doc.text(String(item.notificationCount), 150, y); y += 5 })
+  }
 
-  doc.addPage()
-  addPdfHeader(doc, 'Detalle de asistencia', `${report.from} al ${report.to}`)
-  y = 33
-  doc.setFontSize(7.5)
-  for (const row of report.attendanceDetails) {
+  if (exportData.attendanceDetails.length > 0) {
+    doc.addPage()
+    addPdfHeader(doc, 'Detalle de asistencia', `${report.from} al ${report.to}`)
+    y = 33
+    doc.setFontSize(7.5)
+  }
+  for (const row of exportData.attendanceDetails) {
     if (y > 282) { doc.addPage(); addPdfHeader(doc, 'Detalle de asistencia', `${report.from} al ${report.to}`); y = 33 }
     doc.text(row.date, 14, y)
     doc.text(row.time, 38, y)
@@ -320,5 +349,38 @@ export function exportAdvancedReportPdf(report: AdvancedReport) {
     doc.text(row.classroom.slice(0, 28), 152, y)
     y += 4.5
   }
+
+  if (filters.incidents && exportData.incidentDetails.length > 0) {
+    doc.addPage()
+    addPdfHeader(doc, 'Detalle de incidencias', `${report.from} al ${report.to}`)
+    y = 33
+    doc.setFontSize(7.5)
+    for (const row of exportData.incidentDetails) {
+      if (y > 282) { doc.addPage(); addPdfHeader(doc, 'Detalle de incidencias', `${report.from} al ${report.to}`); y = 33 }
+      doc.text(row.date, 14, y)
+      doc.text(row.studentName.slice(0, 40), 38, y)
+      doc.text(row.classroom.slice(0, 28), 116, y)
+      doc.text(row.violations.slice(0, 38), 14, y + 4)
+      if (row.observation) doc.text(row.observation.slice(0, 70), 14, y + 8)
+      y += row.observation ? 12 : 8
+    }
+  }
+
+  if (filters.notifications && exportData.notificationDetails.length > 0) {
+    doc.addPage()
+    addPdfHeader(doc, 'Detalle de notificaciones', `${report.from} al ${report.to}`)
+    y = 33
+    doc.setFontSize(7.5)
+    for (const row of exportData.notificationDetails) {
+      if (y > 282) { doc.addPage(); addPdfHeader(doc, 'Detalle de notificaciones', `${report.from} al ${report.to}`); y = 33 }
+      doc.text(row.date, 14, y)
+      doc.text(`N° ${row.notificationNumber}`, 38, y)
+      doc.text(row.studentName.slice(0, 48), 65, y)
+      doc.text(row.notificationType.slice(0, 30), 145, y)
+      if (row.observation) { doc.text(row.observation.slice(0, 90), 14, y + 4); y += 4 }
+      y += 5
+    }
+  }
+
   doc.save(`Reporte-Tesla-${safeFilenamePart(report.from)}-${safeFilenamePart(report.to)}.pdf`)
 }

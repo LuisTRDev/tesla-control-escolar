@@ -139,6 +139,15 @@ export default function LiveTvPanel({
 
     const onTime = todayAttendance.filter((record) => record.status === 'ON_TIME').length
     const late = todayAttendance.filter((record) => record.status === 'LATE').length
+    const lateStudents = todayAttendance
+      .filter((record) => record.status === 'LATE')
+      .map((record) => ({
+        record,
+        student: studentById.get(record.studentId),
+      }))
+      .filter((item): item is { record: AttendanceRecord; student: Student } => Boolean(item.student))
+      .sort((a, b) => a.record.time.localeCompare(b.record.time) || a.student.lastName.localeCompare(b.student.lastName))
+
     const enteredStudentIds = new Set(todayAttendance.map((record) => record.studentId))
 
     return {
@@ -151,6 +160,7 @@ export default function LiveTvPanel({
       enrichedIncidents,
       topTypes,
       topStudents,
+      lateStudents,
       classroomById,
     }
   }, [attendanceRecords, classrooms, presentationRecords, students, today])
@@ -230,6 +240,38 @@ export default function LiveTvPanel({
           </TvCard>
 
           <div className="space-y-5">
+            <TvCard
+              title="Alumnos con tardanza"
+              subtitle={`${data.lateStudents.length} registrados hoy · lista completa`}
+              icon={<Clock3 size={20} />}
+              strong
+            >
+              <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
+                {data.lateStudents.length === 0 ? (
+                  <Empty text="No hay tardanzas registradas hoy." />
+                ) : data.lateStudents.map(({ record, student }, index) => {
+                  const classroom = data.classroomById.get(student.classroomId)
+                  return (
+                    <div
+                      key={record.id ?? `${student.id}-${record.date}-${record.time}`}
+                      className="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-2xl border border-amber-400/15 bg-amber-500/[.06] p-3"
+                    >
+                      <span className="grid h-8 w-8 place-items-center rounded-lg bg-amber-500/15 text-sm font-black text-amber-300">
+                        {index + 1}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black">{student.firstName} {student.lastName}</p>
+                        <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500">
+                          {classroom ? `${classroom.grade} ${classroom.section} · ${classroom.level}` : 'Aula'}
+                        </p>
+                      </div>
+                      <span className="font-mono text-lg font-black tabular-nums text-amber-300">{record.time}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </TvCard>
+
             <TvCard title="Top incidencias" subtitle="Tipos más repetidos hoy" icon={<TrendingUp size={20} />}>
               <div className="space-y-4">
                 {data.topTypes.length === 0 ? <Empty text="Sin datos todavía." /> : data.topTypes.map((item) => (

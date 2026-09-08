@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ArrowLeft, BarChart3, ChevronDown, Clock3, Shirt, Users, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -89,9 +89,19 @@ export default function Dashboard({
   const [period, setPeriod] = useState<'TODAY' | 'MONTH'>('TODAY')
   type DrillCategory = 'ALL' | 'ON_TIME' | 'LATE' | 'ATTENDANCE_PENDING' | 'NON_COMPLIANT' | 'PRESENTATION_PENDING'
   const [drill, setDrill] = useState<DrillCategory | null>(null)
+  const [dashboardScope, setDashboardScope] = useState<'ALL' | string>(classroom.id)
   const monthPrefix = today.slice(0, 7)
   const inPeriod = (date: string) => period === 'TODAY' ? date === today : date.startsWith(monthPrefix)
-  const classroomStudents = students.filter((student) => student.classroomId === classroom.id)
+  useEffect(() => {
+    setDashboardScope((current) => current === 'ALL' ? 'ALL' : classroom.id)
+  }, [classroom.id])
+
+  const classroomStudents = dashboardScope === 'ALL'
+    ? students
+    : students.filter((student) => student.classroomId === dashboardScope)
+  const scopeLabel = dashboardScope === 'ALL'
+    ? 'Todo el colegio'
+    : `${classroom.grade} ${classroom.section} · ${classroom.level}`
   const studentIds = new Set(classroomStudents.map((student) => student.id))
   const todayAttendance = attendanceRecords.filter((record) => inPeriod(record.date) && studentIds.has(record.studentId))
   const todayPresentation = presentationRecords.filter((record) => inPeriod(record.date) && studentIds.has(record.studentId))
@@ -133,7 +143,7 @@ export default function Dashboard({
     .filter((item) => item.record)
 
   const drillMeta: Record<DrillCategory, { title: string; empty: string }> = {
-    ALL: { title: 'Alumnos del aula', empty: 'Esta aula no tiene alumnos registrados.' },
+    ALL: { title: dashboardScope === 'ALL' ? 'Alumnos de todo el colegio' : 'Alumnos del aula', empty: dashboardScope === 'ALL' ? 'No hay alumnos registrados en el colegio.' : 'Esta aula no tiene alumnos registrados.' },
     ON_TIME: { title: 'Alumnos a tiempo', empty: 'Nadie marcó ingreso a tiempo en este periodo.' },
     LATE: { title: 'Alumnos con tardanza', empty: 'No hay tardanzas registradas en este periodo.' },
     ATTENDANCE_PENDING: { title: 'Alumnos con asistencia pendiente', empty: 'Todos los alumnos ya tienen asistencia registrada.' },
@@ -179,7 +189,8 @@ export default function Dashboard({
 
   function changeClassroomAndReset(id: string) {
     setDrill(null)
-    onClassroomChange(id)
+    setDashboardScope(id)
+    if (id !== 'ALL') onClassroomChange(id)
   }
 
   function changePeriodAndReset(value: 'TODAY' | 'MONTH') {
@@ -197,7 +208,7 @@ export default function Dashboard({
               <p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-slate-400">
                 <BarChart3 size={15} /> Dashboard {period === 'TODAY' ? 'diario' : 'mensual'}
               </p>
-              <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950 dark:text-slate-100">Métricas por aula</h2>
+              <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950 dark:text-slate-100">{dashboardScope === 'ALL' ? 'Métricas generales del colegio' : 'Métricas por aula'}</h2>
               <p className="mt-1 text-sm capitalize text-slate-500 dark:text-slate-400">{formatDate(now)} · {formatTime(now)}</p>
             </div>
 
@@ -212,10 +223,11 @@ export default function Dashboard({
                 <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Aula</span>
                 <div className="relative">
                   <select
-                    value={classroom.id}
+                    value={dashboardScope}
                     onChange={(event) => changeClassroomAndReset(event.target.value)}
                     className="h-11 w-full appearance-none rounded-xl border border-slate-300 bg-white px-3 pr-9 text-sm font-bold text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                   >
+                    <option value="ALL">Todo el colegio</option>
                     {classrooms.map((item) => (
                       <option key={item.id} value={item.id}>{item.grade} {item.section} · {item.level}</option>
                     ))}
@@ -254,7 +266,7 @@ export default function Dashboard({
                     </Button>
                     <div>
                       <h3 className="font-black">{drillMeta[drill].title}</h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">{classroom.grade} {classroom.section} · {classroom.level}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{scopeLabel}</p>
                     </div>
                   </div>
                   <div className="mt-4 max-h-[50vh] space-y-2 overflow-y-auto pr-1">
