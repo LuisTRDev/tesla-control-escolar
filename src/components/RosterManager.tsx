@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Ban, Link2, Pencil, Plus, RotateCcw, Search, Star, Trash2, Unlink, UserPlus, Users, X } from 'lucide-react'
+import { ArrowRightLeft, Ban, CheckSquare, Link2, Pencil, Plus, RotateCcw, Search, Square, Star, Trash2, Unlink, UserPlus, Users, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
@@ -14,6 +14,7 @@ import {
   deleteStudent,
   getRosterGuardians,
   linkGuardian,
+  moveStudentsToClassroom,
   reactivateStudent,
   setPrimaryGuardian,
   unlinkGuardian,
@@ -113,7 +114,8 @@ function StudentEditor({ studentId, classrooms, students, guardians, defaultClas
     firstName: student?.firstName ?? '',
     lastName: student?.lastName ?? '',
     dni: student?.dni ?? '',
-    classroomId: student?.classroomId || defaultClassroomId,
+    // Un alumno existente sin aula se muestra sin aula (no se le asigna una en silencio).
+    classroomId: student ? student.classroomId : defaultClassroomId,
   }))
   const [saving, setSaving] = useState(false)
   const [linkMode, setLinkMode] = useState<'existing' | 'new'>('existing')
@@ -213,10 +215,17 @@ function StudentEditor({ studentId, classrooms, students, guardians, defaultClas
         <Field label="DNI"><Input inputMode="numeric" maxLength={8} value={form.dni} onChange={(e) => setForm({ ...form, dni: e.target.value.replace(/\D/g, '') })} placeholder="8 dígitos" /></Field>
         <Field label="Aula *">
           <select className={selectClass} value={form.classroomId} onChange={(e) => setForm({ ...form, classroomId: e.target.value })}>
+            {!form.classroomId && <option value="" disabled>— Selecciona un aula —</option>}
             {classrooms.map((c) => <option key={c.id} value={c.id}>{c.grade} {c.section} · {c.level}</option>)}
           </select>
         </Field>
       </div>
+      {student && form.classroomId !== student.classroomId && form.classroomId && (
+        <p className="mt-3 flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+          <ArrowRightLeft size={14} className="shrink-0" />
+          Cambiará de aula: {classroomLabel(classrooms, student.classroomId)} → {classroomLabel(classrooms, form.classroomId)}. Su historial se conserva. Pulsa "Guardar cambios".
+        </p>
+      )}
       <div className="mt-4 flex justify-end">
         <Button variant="default" disabled={saving} onClick={() => void saveStudent()}>{student ? 'Guardar cambios' : 'Registrar alumno'}</Button>
       </div>
@@ -416,6 +425,12 @@ export default function RosterManager({ open, onClose, classrooms, students, def
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [editing, setEditing] = useState<Editing>(null)
+  const toast = useToast()
+  // Modo "Cambiar aula": selección de varios alumnos para moverlos juntos.
+  const [selecting, setSelecting] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  const [moveTarget, setMoveTarget] = useState('')
+  const [moving, setMoving] = useState(false)
 
   const loadGuardians = useCallback(async () => {
     setError('')
@@ -438,7 +453,7 @@ export default function RosterManager({ open, onClose, classrooms, students, def
 
   const query = search.trim().toLowerCase()
   const studentsInClassroom = useMemo(() => students
-    .filter((s) => classroomFilter === 'ALL' || s.classroomId === classroomFilter),
+    .filter((s) => classroomFilter === 'ALL' || (classroomFilter === 'NONE' ? !s.classroomId : s.classroomId === classroomFilter)),
   [students, classroomFilter])
   const filteredStudents = useMemo(() => studentsInClassroom
     .filter((s) => linkFilter === 'ALL'
@@ -453,6 +468,52 @@ export default function RosterManager({ open, onClose, classrooms, students, def
     .sort((a, b) => Number(a.students.length > 0) - Number(b.students.length > 0)),
   [guardians, linkFilter, query])
   const withoutGuardian = students.filter(missingGuardian).length
+  const withoutClassroom = students.filter((s) => !s.classroomId).length
+  const allVisibleSelected = filteredStudents.length > 0 && filteredStudents.every((s) => selected.has(s.id))
+
+  function stopSelecting() {
+    setSelecting(false)
+    setSelected(new Set())
+    setMoveTarget('')
+  }
+
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAllVisible() {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      for (const s of filteredStudents) {
+        if (allVisibleSelected) next.delete(s.id)
+        else next.add(s.id)
+      }
+      return next
+    })
+  }
+
+  async function moveSelected() {
+    const ids = [...selected]
+    if (!moveTarget) { toast.error('Elige el aula de destino.'); return }
+    const target = classroomLabel(classrooms, moveTarget)
+    if (!window.confirm(`¿Mover ${ids.length} alumno(s) a ${target}? Su historial se conserva.`)) return
+    setMoving(true)
+    try {
+      await moveStudentsToClassroom(ids, moveTarget)
+      await refreshAll()
+      toast.success('Aula actualizada', `${ids.length} alumno(s) movidos a ${target}.`)
+      stopSelecting()
+    } catch (err) {
+      toast.error('No se pudo cambiar el aula', errorText(err))
+    } finally {
+      setMoving(false)
+    }
+  }
   const linkCounts: Record<LinkFilter, number> = tab === 'students'
     ? { ALL: studentsInClassroom.length, WITHOUT: studentsInClassroom.filter(missingGuardian).length, WITH: studentsInClassroom.filter((s) => !isInactive(s) && hasGuardian(s)).length, INACTIVE: studentsInClassroom.filter(isInactive).length }
     : { ALL: guardians.length, WITHOUT: guardians.filter((g) => g.students.length === 0).length, WITH: guardians.filter((g) => g.students.length > 0).length, INACTIVE: 0 }
@@ -480,14 +541,22 @@ export default function RosterManager({ open, onClose, classrooms, students, def
                   {withoutGuardian > 0 && (
                     <> · <button type="button" onClick={() => { setTab('students'); setClassroomFilter('ALL'); setLinkFilter('WITHOUT') }} className="font-black text-red-600 underline-offset-2 hover:underline dark:text-red-400">{withoutGuardian} sin apoderado</button></>
                   )}
+                  {withoutClassroom > 0 && (
+                    <> · <button type="button" onClick={() => { setTab('students'); setClassroomFilter('NONE'); setLinkFilter('ALL') }} className="font-black text-red-600 underline-offset-2 hover:underline dark:text-red-400">{withoutClassroom} sin aula</button></>
+                  )}
                 </p>
               </div>
               <Button variant="ghost" onClick={onClose} aria-label="Cerrar"><X size={20} /></Button>
             </div>
             <div className="mt-4 flex gap-2">
               <Button variant={tab === 'students' ? 'default' : 'outline'} onClick={() => setTab('students')}>Alumnos</Button>
-              <Button variant={tab === 'guardians' ? 'default' : 'outline'} onClick={() => setTab('guardians')}>Apoderados</Button>
-              <Button variant="default" className="ml-auto" onClick={() => setEditing({ kind: tab === 'students' ? 'student' : 'guardian', id: null })}>
+              <Button variant={tab === 'guardians' ? 'default' : 'outline'} onClick={() => { stopSelecting(); setTab('guardians') }}>Apoderados</Button>
+              {tab === 'students' && (
+                <Button variant={selecting ? 'default' : 'outline'} className="ml-auto" title="Asignar o reasignar el aula de varios alumnos" onClick={() => (selecting ? stopSelecting() : setSelecting(true))}>
+                  <ArrowRightLeft size={16} className="mr-1.5" />{selecting ? 'Terminar' : 'Cambiar aula'}
+                </Button>
+              )}
+              <Button variant="default" className={tab === 'students' ? '' : 'ml-auto'} onClick={() => setEditing({ kind: tab === 'students' ? 'student' : 'guardian', id: null })}>
                 <Plus size={16} className="mr-1.5" />{tab === 'students' ? 'Nuevo alumno' : 'Nuevo apoderado'}
               </Button>
             </div>
@@ -502,6 +571,7 @@ export default function RosterManager({ open, onClose, classrooms, students, def
               {tab === 'students' && (
                 <select className={`${selectClass} sm:w-56`} value={classroomFilter} onChange={(e) => setClassroomFilter(e.target.value)}>
                   <option value="ALL">Todas las aulas</option>
+                  {withoutClassroom > 0 && <option value="NONE">⚠ Sin aula ({withoutClassroom})</option>}
                   {classrooms.map((c) => <option key={c.id} value={c.id}>{c.grade} {c.section} · {c.level}</option>)}
                 </select>
               )}
@@ -524,14 +594,35 @@ export default function RosterManager({ open, onClose, classrooms, students, def
             {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">{error}</div>}
             {loading && <p className="mt-4 text-sm text-slate-500">Cargando...</p>}
 
+            {tab === 'students' && selecting && (
+              <div className="mt-4 rounded-2xl border border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+                <p className="text-sm font-black">Cambiar aula</p>
+                <p className="mt-1 text-xs text-slate-500">Marca los alumnos (puedes usar el buscador y los filtros), elige el aula de destino y pulsa Mover.</p>
+                <div className="mt-3 grid items-center gap-3 sm:grid-cols-[auto_1fr_auto]">
+                  <button type="button" onClick={toggleAllVisible} disabled={filteredStudents.length === 0} className="flex items-center gap-2 text-sm font-bold disabled:opacity-50">
+                    {allVisibleSelected ? <CheckSquare size={18} /> : <Square size={18} />}
+                    {allVisibleSelected ? 'Quitar visibles' : `Marcar visibles (${filteredStudents.length})`}
+                  </button>
+                  <select className={selectClass} value={moveTarget} onChange={(e) => setMoveTarget(e.target.value)}>
+                    <option value="" disabled>— Aula de destino —</option>
+                    {classrooms.map((c) => <option key={c.id} value={c.id}>{c.grade} {c.section} · {c.level}</option>)}
+                  </select>
+                  <Button variant="default" disabled={moving || selected.size === 0 || !moveTarget} onClick={() => void moveSelected()}>
+                    <ArrowRightLeft size={16} className="mr-2" />Mover{selected.size > 0 && ` (${selected.size})`}
+                  </Button>
+                </div>
+              </div>
+            )}
+
             <div className="mt-4 max-h-[58vh] space-y-2 overflow-y-auto pr-1">
               {tab === 'students' ? (
                 filteredStudents.length === 0 ? <p className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700">No hay alumnos para este filtro.</p>
                 : filteredStudents.map((s) => (
-                  <button key={s.id} type="button" onClick={() => setEditing({ kind: 'student', id: s.id })} className={`flex w-full items-center justify-between gap-3 rounded-2xl border p-4 text-left transition-colors ${isInactive(s) ? 'border-slate-200 bg-slate-100 text-slate-500 hover:border-slate-400 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-500' : hasGuardian(s) ? 'border-slate-200 bg-white hover:border-brand-gold dark:border-slate-800 dark:bg-slate-900' : 'border-red-500 bg-red-50 motion-safe:animate-blinkRed dark:bg-red-950/30'}`}>
-                    <div className="min-w-0">
+                  <button key={s.id} type="button" aria-pressed={selecting ? selected.has(s.id) : undefined} onClick={() => (selecting ? toggleSelected(s.id) : setEditing({ kind: 'student', id: s.id }))} className={`flex w-full items-center justify-between gap-3 rounded-2xl border p-4 text-left transition-colors ${selecting && selected.has(s.id) ? 'ring-2 ring-slate-900 dark:ring-slate-100 ' : ''}${isInactive(s) ? 'border-slate-200 bg-slate-100 text-slate-500 hover:border-slate-400 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-500' : hasGuardian(s) ? 'border-slate-200 bg-white hover:border-brand-gold dark:border-slate-800 dark:bg-slate-900' : 'border-red-500 bg-red-50 motion-safe:animate-blinkRed dark:bg-red-950/30'}`}>
+                    {selecting && (selected.has(s.id) ? <CheckSquare size={20} className="shrink-0" /> : <Square size={20} className="shrink-0 text-slate-400" />)}
+                    <div className="min-w-0 flex-1">
                       <p className="truncate font-black">{s.lastName}, {s.firstName}</p>
-                      <p className="truncate text-xs text-slate-500">{classroomLabel(classrooms, s.classroomId)}{s.dni && ` · DNI ${s.dni}`}</p>
+                      <p className={`truncate text-xs ${s.classroomId ? 'text-slate-500' : 'font-black text-red-600 dark:text-red-400'}`}>{s.classroomId ? classroomLabel(classrooms, s.classroomId) : '⚠ Sin aula'}{s.dni && ` · DNI ${s.dni}`}</p>
                       {isInactive(s) ? (
                         <p className="mt-1 inline-flex max-w-full items-center gap-1 rounded-full bg-slate-200 px-2 py-0.5 text-xs font-black text-slate-600 dark:bg-slate-800 dark:text-slate-400"><Ban size={12} className="shrink-0" /><span className="truncate">{inactiveLabel(s)}</span></p>
                       ) : (
@@ -540,7 +631,7 @@ export default function RosterManager({ open, onClose, classrooms, students, def
                         </p>
                       )}
                     </div>
-                    <Pencil size={16} className="shrink-0 text-slate-400" />
+                    {!selecting && <Pencil size={16} className="shrink-0 text-slate-400" />}
                   </button>
                 ))
               ) : (
@@ -567,7 +658,7 @@ export default function RosterManager({ open, onClose, classrooms, students, def
                 classrooms={classrooms}
                 students={students}
                 guardians={guardians}
-                defaultClassroomId={classroomFilter === 'ALL' ? defaultClassroomId : classroomFilter}
+                defaultClassroomId={classroomFilter === 'ALL' || classroomFilter === 'NONE' ? defaultClassroomId : classroomFilter}
                 onSaved={refreshAll}
                 onCreated={(id) => setEditing({ kind: 'student', id })}
                 onDeleted={() => setEditing(null)}

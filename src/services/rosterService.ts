@@ -52,6 +52,7 @@ function validateStudent(input: StudentInput) {
   if (!firstName) throw new Error('Ingresa los nombres del alumno.')
   if (!lastName) throw new Error('Ingresa los apellidos del alumno.')
   if (dni && !DNI_PATTERN.test(dni)) throw new Error('El DNI del alumno debe tener 8 dígitos.')
+  if (!input.classroomId) throw new Error('Selecciona el aula del alumno.')
   return {
     first_name: firstName,
     last_name: lastName,
@@ -107,6 +108,16 @@ export async function updateStudent(studentId: string, input: StudentInput): Pro
   requireOnline()
   const payload = validateStudent(input)
   const { error } = await supabase.from('students').update(payload).eq('id', positiveInteger(studentId, 'Alumno'))
+  if (error) throw friendlyError(error)
+}
+
+/** Asigna o reasigna el aula de uno o varios alumnos (ej. cambio de sección o paso de año). */
+export async function moveStudentsToClassroom(studentIds: string[], classroomId: string): Promise<void> {
+  requireOnline()
+  if (studentIds.length === 0) throw new Error('Selecciona al menos un alumno.')
+  if (!classroomId) throw new Error('Selecciona el aula de destino.')
+  const ids = studentIds.map((id) => positiveInteger(id, 'Alumno'))
+  const { error } = await supabase.from('students').update({ classroom_id: positiveInteger(classroomId, 'Aula') }).in('id', ids)
   if (error) throw friendlyError(error)
 }
 
