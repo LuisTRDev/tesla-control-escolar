@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { reportError } from '@/lib/security'
 import { useToast } from '@/lib/toast'
 import { AnimatePresence, motion } from 'framer-motion'
 import { resetTour } from '@/components/OnboardingTour'
@@ -160,7 +161,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       setEntryLimit(limit)
       setToleranceSettings(tolerance)
     } catch (error) {
-      console.error(error); setDataError(error instanceof Error ? error.message : 'No se pudieron cargar los datos locales/remotos.')
+      reportError('Attendance', error); setDataError(error instanceof Error ? error.message : 'No se pudieron cargar los datos locales/remotos.')
     } finally { if (showLoading) setLoadingData(false) }
   }, [])
 
@@ -320,7 +321,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       const name = student ? `${student.firstName} ${student.lastName}` : 'Alumno'
       if (rec.status === 'LATE') toast.warning(`${name} — Tardanza`, `Hora registrada: ${rec.time}`)
       else toast.success(`${name} — A tiempo`, `Hora registrada: ${rec.time}`)
-    } catch(error){ console.error(error); setDataError(error instanceof Error?error.message:'No se pudo registrar la entrada.'); toast.error('No se pudo registrar la entrada', error instanceof Error?error.message:undefined) }
+    } catch(error){ reportError('Attendance', error); setDataError(error instanceof Error?error.message:'No se pudo registrar la entrada.'); toast.error('No se pudo registrar la entrada', error instanceof Error?error.message:undefined) }
   }
 
   async function markExit(studentId: string) {
@@ -332,7 +333,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       setRecords((curr) => [...curr.filter((r) => !(r.studentId === studentId && r.date === today)), updated])
       playConfirmation()
     } catch (error) {
-      console.error(error)
+      reportError('Attendance', error)
       setDataError(error instanceof Error ? error.message : 'No se pudo registrar la salida.')
     }
   }
@@ -374,7 +375,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       setEditingAttendanceTime('')
       playConfirmation()
     } catch (error) {
-      console.error(error)
+      reportError('Attendance', error)
       setDataError(
         error instanceof Error
           ? error.message
@@ -393,18 +394,18 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       setPresentationRecords((r) => r.filter((x) => x.date !== today))
       setNotifications((items) => items.filter((item) => item.date !== today))
     }
-    catch(error){ console.error(error); setDataError(error instanceof Error?error.message:'No se pudo reiniciar el día.') }
+    catch(error){ reportError('Attendance', error); setDataError(error instanceof Error?error.message:'No se pudo reiniciar el día.') }
   }
   function changeClassroom(classroomId:string){ const selected=classrooms.find((i)=>i.id===classroomId); if(!selected)return; setQuery('');setFilter('ALL');setPresentationFilter('ALL');onClassroomChange(selected); if(preferences.rememberClassroom)updatePreferences({...preferences,lastClassroomId:selected.id}) }
   async function updateEntryLimit(value:string){
     setEntryLimit(value)
     try { await saveEntryLimit(value) }
-    catch(error){ console.error(error); setDataError(error instanceof Error?error.message:'No se pudo actualizar la hora límite.') }
+    catch(error){ reportError('Attendance', error); setDataError(error instanceof Error?error.message:'No se pudo actualizar la hora límite.') }
   }
   async function updateTolerance(next: ToleranceSettings){
     setToleranceSettings(next)
     try { await saveToleranceSettings(next) }
-    catch(error){ console.error(error); setDataError(error instanceof Error?error.message:'No se pudo actualizar la tolerancia.') }
+    catch(error){ reportError('Attendance', error); setDataError(error instanceof Error?error.message:'No se pudo actualizar la tolerancia.') }
   }
   function openPresentation(student:Student){
     const existing=todayPresentationRecords.find((i)=>i.studentId===student.id)
@@ -460,14 +461,14 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
           const notification = await ensureNotificationForPresentation(saved)
           setNotifications((curr) => [notification, ...curr.filter((item) => item.id !== notification.id)])
         } catch (notificationError) {
-          console.error(notificationError)
+          reportError('Attendance', notificationError)
           setDataError(notificationError instanceof Error
             ? `La presentación se guardó, pero no se pudo registrar la reincidencia: ${notificationError.message}`
             : 'La presentación se guardó, pero no se pudo registrar la reincidencia.')
         }
       }
     }
-    catch(error){console.error(error);setDataError(error instanceof Error?error.message:'No se pudo guardar la presentación.')}
+    catch(error){reportError('Attendance', error);setDataError(error instanceof Error?error.message:'No se pudo guardar la presentación.')}
   }
   const hasSelectedViolation=presentationDraft.hairstyleViolation||presentationDraft.uniformUsageViolation||presentationDraft.nonInstitutionalGarment||presentationDraft.lateEntryViolation||presentationDraft.inappropriateConductViolation
   const presentationSaveDisabled=!presentationDraft.status||(presentationDraft.status==='NON_COMPLIANT'&&!hasSelectedViolation)
@@ -569,7 +570,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       const data = buildNotificationData(student)
       if (data) setNotificationPreviewData(data)
     } catch (error) {
-      console.error(error)
+      reportError('Attendance', error)
       setDataError(error instanceof Error ? error.message : 'No se pudo registrar la notificación.')
     }
   }
@@ -690,7 +691,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       })
       setWhatsAppStudent(null)
     } catch (error) {
-      console.error(error)
+      reportError('Attendance', error)
       setWhatsAppError(error instanceof Error ? error.message : 'No se pudo abrir WhatsApp.')
     } finally {
       setOpeningWhatsApp(false)

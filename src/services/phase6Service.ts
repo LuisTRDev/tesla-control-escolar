@@ -92,7 +92,7 @@ export async function getAlerts(params?: {
   if (error) throw error
 
   return (data ?? [])
-    .map((row: Record<string, any>) => {
+    .map((row: Record<string, unknown>) => {
       const student = studentMap.get(String(row.student_id))
       const classroom = student ? classroomMap.get(student.classroomId) : undefined
       return {
@@ -167,7 +167,7 @@ export async function getStudentCaseFile(studentId: string): Promise<StudentCase
 
   const raw = (data ?? {}) as Record<string, unknown>
   const presentation = Array.isArray(raw.presentation) ? raw.presentation as Array<Record<string, unknown>> : []
-  const controlIds = presentation.map((row: Record<string, any>) => Number(row.id)).filter(Number.isFinite)
+  const controlIds = presentation.map((row: Record<string, unknown>) => Number(row.id)).filter(Number.isFinite)
   const violationsByControl: Record<string, string[]> = {}
 
   if (controlIds.length) {
@@ -205,7 +205,7 @@ export async function getAuditLogs(limit = 100): Promise<AuditLogRecord[]> {
   // `audit_logs.user_id` es el uuid de auth.uid(); el nombre real vive en
   // `profiles`, así que se cruza aparte (no hay FK directa entre ambas).
   const userIds = Array.from(
-    new Set(rows.map((row: Record<string, any>) => row.user_id).filter((id: unknown): id is string => typeof id === 'string')),
+    new Set(rows.map((row: Record<string, unknown>) => row.user_id).filter((id: unknown): id is string => typeof id === 'string')),
   )
 
   const namesById = new Map<string, string>()
@@ -220,7 +220,7 @@ export async function getAuditLogs(limit = 100): Promise<AuditLogRecord[]> {
     }
   }
 
-  return rows.map((row: Record<string, any>) => ({
+  return rows.map((row: Record<string, unknown>) => ({
     id: String(row.id),
     userId: row.user_id == null ? null : String(row.user_id),
     userName: row.user_id == null ? null : namesById.get(String(row.user_id)) ?? null,
@@ -247,8 +247,8 @@ export async function getSmartInsights(classroomId: string | null): Promise<Smar
   const studentsResult = await supabase.from('students').select('id, classroom_id')
   if (studentsResult.error) throw studentsResult.error
   const studentIds = (studentsResult.data ?? [])
-    .filter((row: Record<string, any>) => !classroomId || String(row.classroom_id) === classroomId)
-    .map((row: Record<string, any>) => Number(row.id))
+    .filter((row: Record<string, unknown>) => !classroomId || String(row.classroom_id) === classroomId)
+    .map((row: Record<string, unknown>) => Number(row.id))
 
   if (!studentIds.length) return [{ id: 'empty', tone: 'info', title: 'Sin alumnos', detail: 'No hay alumnos para analizar en este alcance.' }]
 
@@ -266,10 +266,10 @@ export async function getSmartInsights(classroomId: string | null): Promise<Smar
   const alerts = alertsResult.data ?? []
 
   const between = (value: string, from: string, to: string) => value >= from && value <= to
-  const currentLate = attendance.filter((row: Record<string, any>) => row.status === 'LATE' && between(row.date, currentFrom, currentTo)).length
-  const previousLate = attendance.filter((row: Record<string, any>) => row.status === 'LATE' && between(row.date, previousFrom, previousTo)).length
-  const currentIncidents = presentation.filter((row: Record<string, any>) => row.status === 'NON_COMPLIANT' && between(row.date, currentFrom, currentTo)).length
-  const previousIncidents = presentation.filter((row: Record<string, any>) => row.status === 'NON_COMPLIANT' && between(row.date, previousFrom, previousTo)).length
+  const currentLate = attendance.filter((row: Record<string, unknown>) => row.status === 'LATE' && between(String(row.date), currentFrom, currentTo)).length
+  const previousLate = attendance.filter((row: Record<string, unknown>) => row.status === 'LATE' && between(String(row.date), previousFrom, previousTo)).length
+  const currentIncidents = presentation.filter((row: Record<string, unknown>) => row.status === 'NON_COMPLIANT' && between(String(row.date), currentFrom, currentTo)).length
+  const previousIncidents = presentation.filter((row: Record<string, unknown>) => row.status === 'NON_COMPLIANT' && between(String(row.date), previousFrom, previousTo)).length
   const lateDelta = percentChange(currentLate, previousLate)
   const incidentDelta = percentChange(currentIncidents, previousIncidents)
 

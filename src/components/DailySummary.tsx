@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { reportError } from '@/lib/security'
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Bell, CalendarCheck2, CheckCircle2, Clock3, Sparkles, TriangleAlert, Users, X } from 'lucide-react'
@@ -41,7 +42,7 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
       ])
       setSummary(summaryData); setInsights(insightData); setClosed(closure)
     } catch (err) {
-      console.error(err); setError(err instanceof Error ? err.message : 'No se pudo generar el resumen diario.')
+      reportError('DailySummary', err); setError(err instanceof Error ? err.message : 'No se pudo generar el resumen diario.')
     } finally { if (!silent) setLoading(false) }
   }
 
@@ -53,7 +54,7 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
     if (!window.confirm(`¿Cerrar la asistencia de ${classroom?.grade ?? ''} ${classroom?.section ?? ''}? Los alumnos sin ingreso quedarán registrados como alertas de ausencia.`)) return
     setClosing(true); setError('')
     try { await closeClassroomAttendance(classroomId, today); await load() }
-    catch (err) { console.error(err); setError(err instanceof Error ? err.message : 'No se pudo cerrar la asistencia.') }
+    catch (err) { reportError('DailySummary', err); setError(err instanceof Error ? err.message : 'No se pudo cerrar la asistencia.') }
     finally { setClosing(false) }
   }
 

@@ -43,7 +43,41 @@ export type HistoricalImportRecord = {
 
 export type HistoricalRecordInput = Omit<HistoricalImportRecord, 'id' | 'createdAt'>
 
-function mapBatch(row: any): HistoricalImportBatch {
+type DbBatchRow = {
+  id: number | string
+  name: string | null
+  file_name: string | null
+  source_type: HistoricalSourceType
+  status: HistoricalBatchStatus
+  total_records: number | null
+  imported_records: number | null
+  failed_records: number | null
+  notes: string | null
+  storage_path: string | null
+  created_at: string
+  completed_at: string | null
+}
+
+type DbRecordRow = {
+  id: number | string
+  batch_id: number | string
+  student_id: number | string | null
+  record_type: HistoricalRecordType
+  record_date: string | null
+  record_time: string | null
+  student_name_raw: string | null
+  classroom_raw: string | null
+  violation_type: string | null
+  observation: string | null
+  notification_number: number | null
+  raw_data: Record<string, unknown> | null
+  confidence: number | string | null
+  review_status: HistoricalReviewStatus
+  error_message: string | null
+  created_at: string
+}
+
+function mapBatch(row: DbBatchRow): HistoricalImportBatch {
   return {
     id: String(row.id),
     name: row.name ?? '',
@@ -60,7 +94,7 @@ function mapBatch(row: any): HistoricalImportBatch {
   }
 }
 
-function mapRecord(row: any): HistoricalImportRecord {
+function mapRecord(row: DbRecordRow): HistoricalImportRecord {
   return {
     id: String(row.id),
     batchId: String(row.batch_id),

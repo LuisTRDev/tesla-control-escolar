@@ -31,6 +31,12 @@ export type MonthlyHistoryEntry = {
   paidAt: string | null
 }
 
+type DbGuardianRow = { id: number | string; full_name: string | null; dni: string | null; phone: string | null }
+type DbClassroomRef = { grade: string | null; section: string | null }
+type DbStudentRef = { id: number | string; first_name: string | null; last_name: string | null; classrooms: DbClassroomRef | DbClassroomRef[] | null }
+type DbGuardianLink = { guardian_id: number | string; students: DbStudentRef | DbStudentRef[] | null }
+type DbPaymentRow = { id: number | string; guardian_id: number | string; amount: number | string | null; due_date: string | null; paid: boolean | null; paid_at: string | null; notes: string | null }
+
 export function computeDebtStatus(paid: boolean, dueDate: string, today: string = toDateKey()): GuardianDebtStatus {
   if (paid) return 'AL_DIA'
   if (dueDate < today) return 'MOROSO'
@@ -60,7 +66,7 @@ export async function getPensionStatusForMonth(year: number, month: number): Pro
   const fallbackDue = lastDayOfMonth(year, month)
 
   const studentsByGuardian = new Map<string, { id: string; name: string; classroom: string }[]>()
-  for (const row of (links ?? []) as Record<string, any>[]) {
+  for (const row of (links ?? []) as unknown as DbGuardianLink[]) {
     const gid = String(row.guardian_id)
     const rawStudent = Array.isArray(row.students) ? row.students[0] : row.students
     if (!rawStudent) continue
@@ -75,12 +81,12 @@ export async function getPensionStatusForMonth(year: number, month: number): Pro
     studentsByGuardian.set(gid, list)
   }
 
-  const paymentByGuardian = new Map<string, Record<string, any>>()
-  for (const row of (payments ?? []) as Record<string, any>[]) {
+  const paymentByGuardian = new Map<string, DbPaymentRow>()
+  for (const row of (payments ?? []) as DbPaymentRow[]) {
     paymentByGuardian.set(String(row.guardian_id), row)
   }
 
-  return ((guardians ?? []) as Record<string, any>[]).map((g) => {
+  return ((guardians ?? []) as DbGuardianRow[]).map((g) => {
     const id = String(g.id)
     const payment = paymentByGuardian.get(id)
     const paid = payment?.paid ?? false

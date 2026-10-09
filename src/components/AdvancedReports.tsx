@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { reportError } from '@/lib/security'
 import { AnimatePresence, motion } from 'framer-motion'
 import { BarChart3, CalendarDays, Check, Download, FileSpreadsheet, FileText, RefreshCw, TriangleAlert, Users, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -77,7 +78,7 @@ export default function AdvancedReports({ open, onClose, classrooms, refreshKey 
     try {
       setReport(await getAdvancedReport(from, to, classroomId === 'ALL' ? null : classroomId))
     } catch (err) {
-      console.error(err)
+      reportError('AdvancedReports', err)
       setError(err instanceof Error ? err.message : 'No se pudo generar el reporte.')
     } finally {
       if (!silent) setLoading(false)

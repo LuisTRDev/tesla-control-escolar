@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { reportError } from '@/lib/security'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useToast } from '@/lib/toast'
 import { Bell, BookOpen, CheckCircle2, Filter, MessageCircle, RefreshCw, TriangleAlert, X } from 'lucide-react'
@@ -44,7 +45,7 @@ export default function AlertCenter({ open, onClose, classrooms, currentClassroo
     try {
       setAlerts(await getAlerts({ status, classroomId: classroomId === 'ALL' ? null : classroomId }))
     } catch (err) {
-      console.error(err)
+      reportError('AlertCenter', err)
       setError(err instanceof Error ? err.message : 'No se pudieron cargar las alertas.')
     } finally {
       setLoading(false)
@@ -66,7 +67,7 @@ export default function AlertCenter({ open, onClose, classrooms, currentClassroo
       await load()
       toast.success('Alerta resuelta')
     } catch (err) {
-      console.error(err)
+      reportError('AlertCenter', err)
       setError(err instanceof Error ? err.message : 'No se pudo resolver la alerta.')
       toast.error('No se pudo resolver la alerta')
     }

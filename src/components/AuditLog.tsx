@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { reportError } from '@/lib/security'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Activity, RefreshCw, Search, ShieldCheck, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -17,7 +18,7 @@ export default function AuditLog({ open, onClose, refreshKey = 0 }: Props) {
   const [entity,setEntity]=useState('ALL')
   const [loading,setLoading]=useState(false)
   const [error,setError]=useState('')
-  async function load(silent=false){if(!silent)setLoading(true);setError('');try{setLogs(await getAuditLogs(150))}catch(err){console.error(err);setError(err instanceof Error?err.message:'No se pudo cargar la auditoría.')}finally{if(!silent)setLoading(false)}}
+  async function load(silent=false){if(!silent)setLoading(true);setError('');try{setLogs(await getAuditLogs(150))}catch(err){reportError('AuditLog', err);setError(err instanceof Error?err.message:'No se pudo cargar la auditoría.')}finally{if(!silent)setLoading(false)}}
   useEffect(()=>{if(open)void load()},[open])
   useEffect(()=>{if(open&&refreshKey>0)void load(true)},[refreshKey])
   const filtered=useMemo(()=>logs.filter((item)=>{if(entity!=='ALL'&&item.entityType!==entity)return false;const text=`${item.action} ${item.entityType} ${item.entityId??''} ${item.userName??''} ${item.userId??''}`.toLowerCase();return text.includes(query.toLowerCase())}),[logs,query,entity])

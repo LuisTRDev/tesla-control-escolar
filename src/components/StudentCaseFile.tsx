@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { reportError } from '@/lib/security'
 import { Bell, BookOpen, CheckCircle2, Clock3, Download, FileText, MessageCircle, ShieldAlert, TriangleAlert, X } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 import { Button } from '@/components/ui/Button'
@@ -42,7 +43,7 @@ export default function StudentCaseFile({ student, classroom, onClose, onOpenWha
   useEffect(() => {
     if (!student) { setData(null); return }
     setLoading(true); setError('')
-    getStudentCaseFile(student.id).then(setData).catch((err) => { console.error(err); setError(err instanceof Error ? err.message : 'No se pudo cargar el expediente.') }).finally(() => setLoading(false))
+    getStudentCaseFile(student.id).then(setData).catch((err) => { reportError('StudentCaseFile', err); setError(err instanceof Error ? err.message : 'No se pudo cargar el expediente.') }).finally(() => setLoading(false))
   }, [student?.id])
 
   const metrics = useMemo(() => {
