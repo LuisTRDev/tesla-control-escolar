@@ -28,6 +28,11 @@ export type Student = {
   dni?: string
   accessAuthorized?: boolean
   accessNote?: string
+  /** false = inhabilitado (abandono, suspensión...): conserva historial pero no se marca asistencia. */
+  isActive?: boolean
+  inactiveReason?: string
+  inactiveNote?: string
+  inactiveSince?: string
 }
 
 export type AttendanceStatus = 'ON_TIME' | 'LATE'

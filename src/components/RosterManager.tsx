@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Link2, Pencil, Plus, Search, Star, Unlink, UserPlus, Users, X } from 'lucide-react'
+import { Ban, Link2, Pencil, Plus, RotateCcw, Search, Star, Trash2, Unlink, UserPlus, Users, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { useToast } from '@/lib/toast'
 import {
+  INACTIVE_REASONS,
   RELATIONSHIP_OPTIONS,
   createGuardian,
   createStudent,
+  deactivateStudent,
+  deleteStudent,
   getRosterGuardians,
   linkGuardian,
+  reactivateStudent,
   setPrimaryGuardian,
   unlinkGuardian,
   updateGuardian,
@@ -18,7 +22,10 @@ import {
   type GuardianInput,
   type RosterGuardian,
   type StudentInput,
+  type StudentStatusInput,
 } from '@/services/rosterService'
+import { toDateKey } from '@/lib/dates'
+import { inactiveLabel, isInactive } from '@/lib/studentStatus'
 import type { Classroom, Student } from '@/types'
 
 type Props = {
@@ -32,7 +39,7 @@ type Props = {
 }
 
 type Tab = 'students' | 'guardians'
-type LinkFilter = 'ALL' | 'WITHOUT' | 'WITH'
+type LinkFilter = 'ALL' | 'WITHOUT' | 'WITH' | 'INACTIVE'
 type Editing = { kind: 'student'; id: string | null } | { kind: 'guardian'; id: string | null } | null
 
 const selectClass = 'h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100'
@@ -42,6 +49,10 @@ function classroomLabel(classrooms: Classroom[], id: string) {
   const c = classrooms.find((item) => item.id === id)
   return c ? `${c.grade} ${c.section} · ${c.level}` : 'Sin aula'
 }
+
+const hasGuardian = (s: Student) => (s.guardians ?? []).length > 0
+// Un inhabilitado no necesita apoderado: no debe parpadear en rojo.
+const missingGuardian = (s: Student) => !isInactive(s) && !hasGuardian(s)
 
 function errorText(error: unknown) {
   return error instanceof Error ? error.message : 'No se pudo guardar el cambio.'
@@ -85,7 +96,7 @@ function Panel({ title, subtitle, onClose, children }: { title: string; subtitle
   )
 }
 
-function StudentEditor({ studentId, classrooms, students, guardians, defaultClassroomId, onSaved, onCreated, onClose }: {
+function StudentEditor({ studentId, classrooms, students, guardians, defaultClassroomId, onSaved, onCreated, onDeleted, onClose }: {
   studentId: string | null
   classrooms: Classroom[]
   students: Student[]
@@ -93,6 +104,7 @@ function StudentEditor({ studentId, classrooms, students, guardians, defaultClas
   defaultClassroomId: string
   onSaved: () => Promise<void>
   onCreated: (id: string) => void
+  onDeleted: () => void
   onClose: () => void
 }) {
   const toast = useToast()
@@ -110,6 +122,8 @@ function StudentEditor({ studentId, classrooms, students, guardians, defaultClas
   const [newGuardian, setNewGuardian] = useState<GuardianInput>(EMPTY_GUARDIAN)
   const [relationship, setRelationship] = useState(RELATIONSHIP_OPTIONS[0])
   const [isPrimary, setIsPrimary] = useState(false)
+  const [statusForm, setStatusForm] = useState<StudentStatusInput | null>(null)
+  const [deleteText, setDeleteText] = useState<string | null>(null)
 
   const linked = useMemo(() => student?.guardians ?? [], [student])
   const matches = useMemo(() => {
@@ -168,6 +182,27 @@ function StudentEditor({ studentId, classrooms, students, guardians, defaultClas
       await linkGuardian(studentId, guardianId, relationship, isPrimary)
     }, 'Apoderado registrado y vinculado')
     if (ok) { setNewGuardian(EMPTY_GUARDIAN); setIsPrimary(false); setLinkMode('existing') }
+  }
+
+  async function confirmDeactivate() {
+    if (!studentId || !statusForm) return
+    const ok = await run(() => deactivateStudent(studentId, statusForm), 'Alumno inhabilitado')
+    if (ok) setStatusForm(null)
+  }
+
+  async function confirmDelete() {
+    if (!student) return
+    setSaving(true)
+    try {
+      await deleteStudent(student.id)
+      await onSaved()
+      toast.success('Alumno eliminado', `${student.lastName}, ${student.firstName} y su historial fueron borrados.`)
+      onDeleted()
+    } catch (error) {
+      toast.error('No se pudo eliminar', errorText(error))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -241,6 +276,85 @@ function StudentEditor({ studentId, classrooms, students, guardians, defaultClas
               </label>
               <Button variant="default" disabled={saving} onClick={() => void addLink()}>Vincular</Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {student && (
+        <div className="mt-6 border-t border-slate-200 pt-5 dark:border-slate-800">
+          <p className="text-sm font-black">Estado del alumno</p>
+          {isInactive(student) ? (
+            <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-slate-300 bg-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-700 dark:bg-slate-900">
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase tracking-widest text-slate-500">Inhabilitado{student.inactiveSince && ` desde ${student.inactiveSince}`}</p>
+                <p className="mt-1 text-sm font-bold text-slate-700 dark:text-slate-200">{inactiveLabel(student)}</p>
+              </div>
+              <Button variant="outline" disabled={saving} onClick={() => { if (window.confirm(`¿Reactivar a ${student.firstName} ${student.lastName}? Volverá a aparecer en asistencia.`)) void run(() => reactivateStudent(student.id), 'Alumno reactivado') }}>
+                <RotateCcw size={16} className="mr-2" />Reactivar
+              </Button>
+            </div>
+          ) : statusForm ? (
+            <div className="mt-3 rounded-2xl bg-slate-100 p-4 dark:bg-slate-900">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Motivo *">
+                  <select className={selectClass} value={statusForm.reason} onChange={(e) => setStatusForm({ ...statusForm, reason: e.target.value })}>
+                    {INACTIVE_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </Field>
+                <Field label="Desde"><Input type="date" value={statusForm.since} onChange={(e) => setStatusForm({ ...statusForm, since: e.target.value })} /></Field>
+                <div className="sm:col-span-2">
+                  <Field label={statusForm.reason === 'Otro' ? 'Detalle *' : 'Detalle (opcional)'}>
+                    <Input value={statusForm.note} maxLength={300} onChange={(e) => setStatusForm({ ...statusForm, note: e.target.value })} placeholder="Ej. Suspensión de 5 días por resolución directoral N° 012" />
+                  </Field>
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-slate-500">Se verá en gris en asistencia y no se podrá marcar. Su historial se conserva y puedes reactivarlo cuando quieras.</p>
+              <div className="mt-3 flex justify-end gap-2">
+                <Button variant="ghost" disabled={saving} onClick={() => setStatusForm(null)}>Cancelar</Button>
+                <Button variant="default" disabled={saving} onClick={() => void confirmDeactivate()}><Ban size={16} className="mr-2" />Inhabilitar</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-slate-500">Activo. Si abandonó, está suspendido o se trasladó, inhabilítalo en vez de eliminarlo.</p>
+              <Button variant="outline" disabled={saving} onClick={() => setStatusForm({ reason: INACTIVE_REASONS[0], note: '', since: toDateKey() })}>
+                <Ban size={16} className="mr-2" />Inhabilitar alumno
+              </Button>
+            </div>
+          )}
+
+          <div className="mt-6 rounded-2xl border border-red-300 p-4 dark:border-red-900/70">
+            <p className="text-sm font-black text-red-700 dark:text-red-400">Eliminar alumno</p>
+            {deleteText === null ? (
+              <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-slate-500">Borra al alumno y todo su historial de forma permanente. No se puede deshacer.</p>
+                <Button variant="outline" className="border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40" disabled={saving} onClick={() => setDeleteText('')}>
+                  <Trash2 size={16} className="mr-2" />Eliminar
+                </Button>
+              </div>
+            ) : (
+              <div className="mt-3 rounded-xl bg-red-50 p-4 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-200">
+                <p className="font-black">⚠ Acción permanente sobre datos sensibles</p>
+                <p className="mt-2">Se eliminará a <b>{student.lastName}, {student.firstName}</b>{student.dni && ` (DNI ${student.dni})`} junto con:</p>
+                <ul className="mt-1 list-disc pl-5">
+                  <li>Su historial de asistencia, salidas y control de presentación.</li>
+                  <li>Sus notificaciones, alertas y demás registros asociados.</li>
+                  <li>Sus vínculos con apoderados (los apoderados no se borran).</li>
+                </ul>
+                <p className="mt-2">Si dejó el colegio o está suspendido, usa <b>Inhabilitar</b>: conserva el historial.</p>
+                <div className="mt-3">
+                  <Field label="Escribe ELIMINAR para confirmar">
+                    <Input value={deleteText} autoFocus onChange={(e) => setDeleteText(e.target.value)} placeholder="ELIMINAR" />
+                  </Field>
+                </div>
+                <div className="mt-3 flex justify-end gap-2">
+                  <Button variant="ghost" disabled={saving} onClick={() => setDeleteText(null)}>Cancelar</Button>
+                  <Button variant="default" className="bg-red-600 text-white hover:bg-red-700 dark:bg-red-600 dark:text-white dark:hover:bg-red-700" disabled={saving || deleteText.trim().toUpperCase() !== 'ELIMINAR'} onClick={() => void confirmDelete()}>
+                    <Trash2 size={16} className="mr-2" />Eliminar definitivamente
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -323,28 +437,29 @@ export default function RosterManager({ open, onClose, classrooms, students, def
   }, [onChanged, loadGuardians])
 
   const query = search.trim().toLowerCase()
-  const hasGuardian = (s: Student) => (s.guardians ?? []).length > 0
   const studentsInClassroom = useMemo(() => students
     .filter((s) => classroomFilter === 'ALL' || s.classroomId === classroomFilter),
   [students, classroomFilter])
   const filteredStudents = useMemo(() => studentsInClassroom
-    .filter((s) => linkFilter === 'ALL' || (linkFilter === 'WITH') === hasGuardian(s))
+    .filter((s) => linkFilter === 'ALL'
+      || (linkFilter === 'INACTIVE' ? isInactive(s) : !isInactive(s) && (linkFilter === 'WITH') === hasGuardian(s)))
     .filter((s) => !query || `${s.firstName} ${s.lastName} ${s.dni ?? ''} ${s.guardianName}`.toLowerCase().includes(query))
-    // Los que faltan completar van primero para que no se pierdan en la lista.
-    .sort((a, b) => Number(hasGuardian(a)) - Number(hasGuardian(b))),
+    // Los que faltan completar van primero para que no se pierdan en la lista; los inhabilitados, al final.
+    .sort((a, b) => Number(!missingGuardian(a)) - Number(!missingGuardian(b)) || Number(isInactive(a)) - Number(isInactive(b))),
   [studentsInClassroom, linkFilter, query])
   const filteredGuardians = useMemo(() => guardians
     .filter((g) => linkFilter === 'ALL' || (linkFilter === 'WITH') === (g.students.length > 0))
     .filter((g) => !query || `${g.fullName} ${g.dni} ${g.phone}`.toLowerCase().includes(query))
     .sort((a, b) => Number(a.students.length > 0) - Number(b.students.length > 0)),
   [guardians, linkFilter, query])
-  const withoutGuardian = students.filter((s) => !hasGuardian(s)).length
-  const linkCounts = tab === 'students'
-    ? { ALL: studentsInClassroom.length, WITHOUT: studentsInClassroom.filter((s) => !hasGuardian(s)).length, WITH: studentsInClassroom.filter(hasGuardian).length }
-    : { ALL: guardians.length, WITHOUT: guardians.filter((g) => g.students.length === 0).length, WITH: guardians.filter((g) => g.students.length > 0).length }
+  const withoutGuardian = students.filter(missingGuardian).length
+  const linkCounts: Record<LinkFilter, number> = tab === 'students'
+    ? { ALL: studentsInClassroom.length, WITHOUT: studentsInClassroom.filter(missingGuardian).length, WITH: studentsInClassroom.filter((s) => !isInactive(s) && hasGuardian(s)).length, INACTIVE: studentsInClassroom.filter(isInactive).length }
+    : { ALL: guardians.length, WITHOUT: guardians.filter((g) => g.students.length === 0).length, WITH: guardians.filter((g) => g.students.length > 0).length, INACTIVE: 0 }
   const linkFilterLabels: Record<LinkFilter, string> = tab === 'students'
-    ? { ALL: 'Todos', WITHOUT: 'Sin apoderado', WITH: 'Con apoderado' }
-    : { ALL: 'Todos', WITHOUT: 'Sin alumno', WITH: 'Con alumno' }
+    ? { ALL: 'Todos', WITHOUT: 'Sin apoderado', WITH: 'Con apoderado', INACTIVE: 'Inhabilitados' }
+    : { ALL: 'Todos', WITHOUT: 'Sin alumno', WITH: 'Con alumno', INACTIVE: '' }
+  const linkFilterOptions: LinkFilter[] = tab === 'students' ? ['ALL', 'WITHOUT', 'WITH', 'INACTIVE'] : ['ALL', 'WITHOUT', 'WITH']
 
   return (
     <AnimatePresence>{open && (
@@ -393,7 +508,7 @@ export default function RosterManager({ open, onClose, classrooms, students, def
             </div>
 
             <div className="mt-3 flex flex-wrap gap-2">
-              {(['ALL', 'WITHOUT', 'WITH'] as LinkFilter[]).map((value) => {
+              {linkFilterOptions.map((value) => {
                 const active = linkFilter === value
                 const tone = value === 'WITHOUT'
                   ? active ? 'border-red-500 bg-red-500 text-white' : 'border-red-300 text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40'
@@ -413,13 +528,17 @@ export default function RosterManager({ open, onClose, classrooms, students, def
               {tab === 'students' ? (
                 filteredStudents.length === 0 ? <p className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700">No hay alumnos para este filtro.</p>
                 : filteredStudents.map((s) => (
-                  <button key={s.id} type="button" onClick={() => setEditing({ kind: 'student', id: s.id })} className={`flex w-full items-center justify-between gap-3 rounded-2xl border p-4 text-left transition-colors ${hasGuardian(s) ? 'border-slate-200 bg-white hover:border-brand-gold dark:border-slate-800 dark:bg-slate-900' : 'border-red-500 bg-red-50 motion-safe:animate-blinkRed dark:bg-red-950/30'}`}>
+                  <button key={s.id} type="button" onClick={() => setEditing({ kind: 'student', id: s.id })} className={`flex w-full items-center justify-between gap-3 rounded-2xl border p-4 text-left transition-colors ${isInactive(s) ? 'border-slate-200 bg-slate-100 text-slate-500 hover:border-slate-400 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-500' : hasGuardian(s) ? 'border-slate-200 bg-white hover:border-brand-gold dark:border-slate-800 dark:bg-slate-900' : 'border-red-500 bg-red-50 motion-safe:animate-blinkRed dark:bg-red-950/30'}`}>
                     <div className="min-w-0">
                       <p className="truncate font-black">{s.lastName}, {s.firstName}</p>
                       <p className="truncate text-xs text-slate-500">{classroomLabel(classrooms, s.classroomId)}{s.dni && ` · DNI ${s.dni}`}</p>
-                      <p className={`truncate text-xs ${hasGuardian(s) ? 'text-slate-500' : 'font-black text-red-600 dark:text-red-400'}`}>
-                        {hasGuardian(s) ? (s.guardians ?? []).map((g) => `${g.fullName} (${g.relationship || '—'})`).join(' · ') : '⚠ Falta vincular apoderado'}
-                      </p>
+                      {isInactive(s) ? (
+                        <p className="mt-1 inline-flex max-w-full items-center gap-1 rounded-full bg-slate-200 px-2 py-0.5 text-xs font-black text-slate-600 dark:bg-slate-800 dark:text-slate-400"><Ban size={12} className="shrink-0" /><span className="truncate">{inactiveLabel(s)}</span></p>
+                      ) : (
+                        <p className={`truncate text-xs ${hasGuardian(s) ? 'text-slate-500' : 'font-black text-red-600 dark:text-red-400'}`}>
+                          {hasGuardian(s) ? (s.guardians ?? []).map((g) => `${g.fullName} (${g.relationship || '—'})`).join(' · ') : '⚠ Falta vincular apoderado'}
+                        </p>
+                      )}
                     </div>
                     <Pencil size={16} className="shrink-0 text-slate-400" />
                   </button>
@@ -451,6 +570,7 @@ export default function RosterManager({ open, onClose, classrooms, students, def
                 defaultClassroomId={classroomFilter === 'ALL' ? defaultClassroomId : classroomFilter}
                 onSaved={refreshAll}
                 onCreated={(id) => setEditing({ kind: 'student', id })}
+                onDeleted={() => setEditing(null)}
                 onClose={() => setEditing(null)}
               />
             )}

@@ -10,6 +10,12 @@ const K = {
   presentation: (from: string, to: string) => `presentation:${from}:${to}`,
 }
 
+const STUDENT_STATUS_COLUMNS = `
+        is_active,
+        inactive_reason,
+        inactive_note,
+        inactive_since,`
+
 type DbClassroom = { id: number | string; grade: string; section: string; level: string; tutor_name: string | null }
 type DbGuardian = {
   id: number | string
@@ -30,6 +36,10 @@ type DbStudent = {
   dni: string | null
   access_authorized: boolean | null
   access_note: string | null
+  is_active?: boolean | null
+  inactive_reason?: string | null
+  inactive_note?: string | null
+  inactive_since?: string | null
   student_guardians: DbStudentGuardian[] | null
 }
 type DbAttendance = { id: number | string; student_id: number | string; date: string; entry_time: string; status: AttendanceStatus; exit_time?: string | null; exit_recorded_at?: string | null; exit_recorded_by?: string | null; entry_recorded_at?: string | null; entry_recorded_by?: string | null; entry_source?: string | null; exit_source?: string | null }
@@ -91,7 +101,7 @@ export async function getClassrooms(): Promise<Classroom[]> {
 
 export async function getStudents(): Promise<Student[]> {
   try {
-    const { data, error } = await supabase
+    const select = (statusColumns: string) => supabase
       .from('students')
       .select(`
         id,
@@ -100,7 +110,7 @@ export async function getStudents(): Promise<Student[]> {
         last_name,
         dni,
         access_authorized,
-        access_note,
+        access_note,${statusColumns}
         student_guardians (
           relationship,
           is_primary,
@@ -114,9 +124,12 @@ export async function getStudents(): Promise<Student[]> {
       `)
       .order('last_name', { ascending: true })
 
+    let { data, error } = await select(STUDENT_STATUS_COLUMNS)
+    // 42703 = columna inexistente: phase10_student_status.sql aún no se ejecutó.
+    if (error?.code === '42703') ({ data, error } = await select(''))
     if (error) throw error
 
-    const mapped = ((data ?? []) as DbStudent[]).map((row) => {
+    const mapped = ((data ?? []) as unknown as DbStudent[]).map((row) => {
       const relationRows = (row.student_guardians ?? []).map((relation) => {
         const rawGuardian = relation.guardians
         const guardian = Array.isArray(rawGuardian) ? rawGuardian[0] : rawGuardian
@@ -155,6 +168,11 @@ export async function getStudents(): Promise<Student[]> {
 
         accessNote:
           row.access_note ?? '',
+
+        isActive: row.is_active !== false,
+        inactiveReason: row.inactive_reason ?? '',
+        inactiveNote: row.inactive_note ?? '',
+        inactiveSince: row.inactive_since ?? '',
 
         guardianName:
           guardian?.fullName ??

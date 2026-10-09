@@ -7,7 +7,7 @@ import Cobranza from '@/components/Cobranza'
 import RosterManager from '@/components/RosterManager'
 import { isAdminRole } from '@/services/rosterService'
 import {
-  Check, ChevronDown, ClipboardCheck, Clock3, Download, Edit3, FileText,
+  Ban, Check, ChevronDown, ClipboardCheck, Clock3, Download, Edit3, FileText,
   Menu, Monitor, Moon, RotateCcw, Search, Settings2, Shirt, Sun, TriangleAlert, Volume2, X, BookOpen, MessageCircle, Send, Bell, CalendarCheck2, FolderOpen, LogOut, Users,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -42,6 +42,7 @@ import {
 } from '@/lib/notification'
 import { getCurrentTime, getPreferences, getTodayKey, resetPreferences, savePreferences, type UserPreferences } from '@/lib/storage'
 import { monthRangeKeys } from '@/lib/dates'
+import { inactiveLabel, isActiveStudent, isInactive } from '@/lib/studentStatus'
 import {
   deleteAttendanceForDate, deletePresentationForDate, getAttendanceRange, getEntryLimit, getPresentationRange, getStudents,
   registerAttendance, registerBulkAttendance, registerExitAttendance, saveEntryLimit, savePresentation as savePresentationRemote,
@@ -247,7 +248,13 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     try { const AudioCtx=window.AudioContext || (window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext; if(!AudioCtx)return; const ctx=new AudioCtx(); const osc=ctx.createOscillator(); const gain=ctx.createGain(); osc.frequency.value=720; gain.gain.setValueAtTime(.05,ctx.currentTime); gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.12); osc.connect(gain); gain.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime+.12) } catch { /* El sonido es opcional: se ignora si el navegador lo bloquea. */ }
   }
 
-  const classroomStudents = useMemo(() => students.filter((student)=>student.classroomId===classroom.id), [students,classroom.id])
+  // Los inhabilitados (abandono, suspensión...) no cuentan en asistencia; se listan aparte en gris.
+  const activeStudents = useMemo(() => students.filter(isActiveStudent), [students])
+  const classroomStudents = useMemo(() => activeStudents.filter((student)=>student.classroomId===classroom.id), [activeStudents,classroom.id])
+  const inactiveClassroomStudents = useMemo(() => students.filter((student)=>student.classroomId===classroom.id&&isInactive(student)), [students,classroom.id])
+  const visibleInactiveStudents = filter==='ALL'&&presentationFilter==='ALL'
+    ? inactiveClassroomStudents.filter((student)=>`${student.firstName} ${student.lastName}`.toLowerCase().includes(query.toLowerCase()))
+    : []
   const todayRecords = records.filter((r)=>r.date===today)
   const todayPresentationRecords = presentationRecords.filter((r)=>r.date===today)
   const classroomRecords=todayRecords.filter((r)=>classroomStudents.some((s)=>s.id===r.studentId))
@@ -314,6 +321,10 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     const existing = todayRecords.find((item) => item.studentId === studentId)
     if (existing) return
     const student = students.find((s) => s.id === studentId)
+    if (student && isInactive(student)) {
+      toast.error(`${student.firstName} ${student.lastName} está inhabilitado`, inactiveLabel(student))
+      return
+    }
     try {
       const rec=await registerAttendance(studentId,entryLimit,today,getCurrentTime(),toleranceSettings)
       setRecords((curr)=>[...curr.filter((r)=>!(r.studentId===studentId&&r.date===today)),rec])
@@ -864,6 +875,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
           <Card className="p-4">
             <p className="text-xs text-slate-500 dark:text-slate-400">Alumnos</p>
             <p className="mt-1 text-2xl font-black">{classroomStudents.length}</p>
+            {inactiveClassroomStudents.length > 0 && <p className="text-xs text-slate-400">+{inactiveClassroomStudents.length} inhabilitado{inactiveClassroomStudents.length !== 1 ? 's' : ''}</p>}
           </Card>
           <Card className="p-4">
             <p className="text-xs text-slate-500 dark:text-slate-400">A tiempo</p>
@@ -1053,7 +1065,21 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
             )
           })}
 
-          {filtered.length === 0 && (
+          {visibleInactiveStudents.map((student) => (
+            <Card key={student.id} aria-disabled="true" title="Alumno inhabilitado: no se puede marcar" className="cursor-not-allowed select-none border-dashed bg-slate-100 p-4 opacity-70 grayscale dark:bg-slate-900/50 sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <h3 className="font-bold text-slate-500 line-through decoration-slate-400/60 dark:text-slate-400">{student.firstName} {student.lastName}</h3>
+                  <p className="mt-1 text-sm text-slate-400">{classroom.grade} {classroom.section} · {classroom.level}{student.inactiveSince && ` · desde ${student.inactiveSince}`}</p>
+                </div>
+                <span className="inline-flex max-w-full items-center gap-2 rounded-xl border border-slate-300 bg-slate-200 px-3 py-2 text-sm font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  <Ban size={16} className="shrink-0" /><span className="truncate">Inhabilitado: {inactiveLabel(student)}</span>
+                </span>
+              </div>
+            </Card>
+          ))}
+
+          {filtered.length === 0 && visibleInactiveStudents.length === 0 && (
             <div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">No hay alumnos que coincidan con estos filtros.</div>
           )}
         </div>
@@ -1213,7 +1239,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         open={quickModeOpen}
         onClose={() => setQuickModeOpen(false)}
         classrooms={classrooms}
-        students={students}
+        students={activeStudents}
         records={todayRecords}
         onMark={mark}
         onExit={markExit}
@@ -1748,7 +1774,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       <LiveTvPanel
         open={tvPanelOpen}
         onClose={() => setTvPanelOpen(false)}
-        students={students}
+        students={activeStudents}
         classrooms={classrooms}
         attendanceRecords={records}
         presentationRecords={presentationRecords}
@@ -1762,7 +1788,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         onClose={() => setDashboardOpen(false)}
         onClassroomChange={changeClassroom}
         classrooms={classrooms}
-        students={students}
+        students={activeStudents}
         attendanceRecords={records}
         presentationRecords={presentationRecords}
         today={today}

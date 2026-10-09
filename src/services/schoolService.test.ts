@@ -93,4 +93,25 @@ describe('getStudents (mapeo alumno ↔ apoderados)', () => {
     const [student] = await getStudents()
     expect(student.accessAuthorized).toBe(true)
   })
+
+  it('mapea el estado inhabilitado con su motivo', async () => {
+    studentRows.push({
+      id: 4, classroom_id: 1, first_name: 'Diego', last_name: 'Salas', dni: null,
+      access_authorized: null, access_note: null, student_guardians: null,
+      is_active: false, inactive_reason: 'Suspensión', inactive_note: '5 días', inactive_since: '2026-10-09',
+    })
+
+    const [student] = await getStudents()
+    expect(student).toMatchObject({ isActive: false, inactiveReason: 'Suspensión', inactiveNote: '5 días', inactiveSince: '2026-10-09' })
+  })
+
+  it('sin columna is_active (fase 10 sin ejecutar) el alumno queda activo', async () => {
+    studentRows.push({
+      id: 5, classroom_id: 1, first_name: 'Ana', last_name: 'Ríos', dni: null,
+      access_authorized: null, access_note: null, student_guardians: null,
+    })
+
+    const [student] = await getStudents()
+    expect(student.isActive).toBe(true)
+  })
 })

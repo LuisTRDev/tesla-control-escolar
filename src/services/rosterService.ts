@@ -18,6 +18,10 @@ export type RosterGuardian = {
 export type StudentInput = { firstName: string; lastName: string; dni: string; classroomId: string }
 export type GuardianInput = { fullName: string; dni: string; phone: string }
 
+export const INACTIVE_REASONS = ['Abandono', 'Suspensión', 'Traslado', 'Retiro voluntario', 'Expulsión', 'Otro']
+
+export type StudentStatusInput = { reason: string; note: string; since: string }
+
 export const RELATIONSHIP_OPTIONS = ['Madre', 'Padre', 'Tutor legal', 'Abuelo(a)', 'Tío(a)', 'Hermano(a)', 'Otro']
 
 const DNI_PATTERN = /^\d{8}$/
@@ -31,6 +35,7 @@ function friendlyError(error: unknown): Error {
   const message = error instanceof Error ? error.message : typeof error === 'object' && error && 'message' in error ? String((error as { message: unknown }).message) : ''
   const text = message.toLowerCase()
   if (text.includes('row-level security') || text.includes('permission denied')) return new Error('No tienes permisos de administrador para modificar el padrón.')
+  if (text.includes('is_active') || text.includes('admin_delete_student')) return new Error('Falta ejecutar supabase/phase10_student_status.sql en Supabase.')
   if (text.includes('duplicate key')) return new Error('Ya existe un registro con esos datos (DNI o vínculo duplicado).')
   if (text.includes('fetch') || text.includes('network')) return new Error('Sin conexión con el servidor. Esta acción requiere Internet.')
   return new Error(message ? cleanSingleLine(message, 220) : 'No se pudo guardar el cambio.')
@@ -102,6 +107,40 @@ export async function updateStudent(studentId: string, input: StudentInput): Pro
   requireOnline()
   const payload = validateStudent(input)
   const { error } = await supabase.from('students').update(payload).eq('id', positiveInteger(studentId, 'Alumno'))
+  if (error) throw friendlyError(error)
+}
+
+/** Inhabilita al alumno: se conserva su historial pero no se puede marcar asistencia. */
+export async function deactivateStudent(studentId: string, input: StudentStatusInput): Promise<void> {
+  requireOnline()
+  const reason = cleanSingleLine(input.reason, 40)
+  if (!reason) throw new Error('Indica el motivo (abandono, suspensión, etc.).')
+  const note = cleanSingleLine(input.note, 300)
+  if (reason === 'Otro' && !note) throw new Error('Describe el motivo en el detalle.')
+  const { error } = await supabase.from('students').update({
+    is_active: false,
+    inactive_reason: reason,
+    inactive_note: note || null,
+    inactive_since: input.since || null,
+  }).eq('id', positiveInteger(studentId, 'Alumno'))
+  if (error) throw friendlyError(error)
+}
+
+export async function reactivateStudent(studentId: string): Promise<void> {
+  requireOnline()
+  const { error } = await supabase.from('students').update({
+    is_active: true,
+    inactive_reason: null,
+    inactive_note: null,
+    inactive_since: null,
+  }).eq('id', positiveInteger(studentId, 'Alumno'))
+  if (error) throw friendlyError(error)
+}
+
+/** Borrado definitivo del alumno y todo su historial (RPC admin_delete_student, solo ADMIN). */
+export async function deleteStudent(studentId: string): Promise<void> {
+  requireOnline()
+  const { error } = await supabase.rpc('admin_delete_student', { p_student_id: positiveInteger(studentId, 'Alumno') })
   if (error) throw friendlyError(error)
 }
 

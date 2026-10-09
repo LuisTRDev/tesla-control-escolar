@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { BadgeCheck, Clock3, DoorOpen, IdCard, Search, ShieldAlert, Smartphone, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { inactiveLabel, isInactive } from '@/lib/studentStatus'
 import type { AttendanceRecord, Classroom, Student } from '@/types'
 
 type Props = {
@@ -28,7 +29,8 @@ export default function PdaMode({ open, onClose, students, classrooms, records, 
   const [busy, setBusy] = useState<'ENTRY' | 'EXIT' | null>(null)
   const classroomMap = useMemo(() => new Map(classrooms.map((room) => [room.id, room])), [classrooms])
   const record = selected ? records.find((item) => item.studentId === selected.id) : undefined
-  const authorized = selected?.accessAuthorized !== false
+  const inactive = selected ? isInactive(selected) : false
+  const authorized = !inactive && selected?.accessAuthorized !== false
   const android = androidMajor()
 
   useEffect(() => {
@@ -91,8 +93,8 @@ export default function PdaMode({ open, onClose, students, classrooms, records, 
               </div>
 
               <div className={`mt-5 rounded-2xl p-4 ${authorized ? 'bg-emerald-500/10 text-emerald-200' : 'bg-red-500/10 text-red-200'}`}>
-                <p className="text-xs font-black uppercase tracking-widest">{authorized ? 'AUTORIZADO' : 'NO AUTORIZADO'}</p>
-                <p className="mt-1 text-sm">{selected.accessNote || (authorized ? 'Sin restricciones de acceso registradas.' : 'Acceso bloqueado por configuración del alumno.')}</p>
+                <p className="text-xs font-black uppercase tracking-widest">{inactive ? 'ALUMNO INHABILITADO' : authorized ? 'AUTORIZADO' : 'NO AUTORIZADO'}</p>
+                <p className="mt-1 text-sm">{inactive ? inactiveLabel(selected) : selected.accessNote ||(authorized ? 'Sin restricciones de acceso registradas.' : 'Acceso bloqueado por configuración del alumno.')}</p>
               </div>
 
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
