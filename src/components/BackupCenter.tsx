@@ -5,6 +5,7 @@ import { DatabaseBackup, Download, HardDrive, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { exportOfflineState } from '@/lib/offlineDb'
+import { toDateKey } from '@/lib/dates'
 
 type Props = { open: boolean; onClose: () => void; online: boolean }
 
@@ -29,7 +30,7 @@ export default function BackupCenter({ open, onClose, online }: Props) {
         if (error) throw error
         backup[table] = data ?? []
       }
-      downloadJson(backup, `tesla-backup-${new Date().toISOString().slice(0,10)}.json`)
+      downloadJson(backup, `tesla-backup-${toDateKey()}.json`)
       setMessage('Copia lógica descargada correctamente.')
       toast.success('Copia descargada', 'El archivo JSON se guardó en tu dispositivo.')
     } catch (error) { setMessage(error instanceof Error ? error.message : 'No se pudo generar la copia.'); toast.error('No se pudo generar la copia') }
@@ -38,7 +39,7 @@ export default function BackupCenter({ open, onClose, online }: Props) {
 
   async function exportLocalBackup() {
     const state = await exportOfflineState()
-    downloadJson({ generatedAt:new Date().toISOString(), ...state }, `tesla-offline-${new Date().toISOString().slice(0,10)}.json`)
+    downloadJson({ generatedAt:new Date().toISOString(), ...state }, `tesla-offline-${toDateKey()}.json`)
     toast.success('Estado offline exportado')
   }
 

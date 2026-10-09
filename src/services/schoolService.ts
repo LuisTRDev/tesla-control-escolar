@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { trimTime } from '@/lib/dates'
 import { enqueueOperation, getSnapshot, listPendingOperations, setSnapshot } from '@/lib/offlineDb'
 import type { AttendanceRecord, AttendanceStatus, Classroom, Guardian, PresentationRecord, Student } from '@/types'
 
@@ -34,8 +35,6 @@ type DbStudent = {
 type DbAttendance = { id: number | string; student_id: number | string; date: string; entry_time: string; status: AttendanceStatus; exit_time?: string | null; exit_recorded_at?: string | null; exit_recorded_by?: string | null; entry_recorded_at?: string | null; entry_recorded_by?: string | null; entry_source?: string | null; exit_source?: string | null }
 type DbViolation = { violation_type: string }
 type DbPresentation = { id: number | string; student_id: number | string; date: string; status: 'COMPLIANT' | 'NON_COMPLIANT'; other_description: string | null; checked_at: string | null; presentation_violations?: DbViolation[] | null }
-
-function trimTime(value?: string | null) { return (value ?? '').slice(0, 5) }
 
 /** Suma minutos a un horario "HH:MM" y devuelve otro "HH:MM" (recorta a 23:59, no da la vuelta al día siguiente). */
 function addMinutesToTime(time: string, minutes: number): string {

@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/Card'
 import { getStudentCaseFile, type StudentCaseFile as CaseFile } from '@/services/phase6Service'
 import type { Classroom, Student } from '@/types'
 import { getAlertTypeLabel, getNotificationTypeLabel } from '@/lib/displayLabels'
+import { addDaysToKey, toDateKey } from '@/lib/dates'
 import { AnimatedCounter } from '@/components/ui/AnimatedCounter'
 import { ConfettiBurst } from '@/components/ui/ConfettiBurst'
 
@@ -134,17 +135,15 @@ export default function StudentCaseFile({ student, classroom, onClose, onOpenWha
   const status = metrics.openAlerts > 0 || metrics.notifications >= 3 ? 'Seguimiento' : 'Regular'
 
   function applyTodayFilter() {
-    const today = new Date().toISOString().slice(0, 10)
+    const today = toDateKey()
     setFromDate(today)
     setToDate(today)
   }
 
   function applyLast7DaysFilter() {
-    const today = new Date()
-    const from = new Date(today)
-    from.setDate(today.getDate() - 6)
-    setFromDate(from.toISOString().slice(0, 10))
-    setToDate(today.toISOString().slice(0, 10))
+    const today = toDateKey()
+    setFromDate(addDaysToKey(today, -6))
+    setToDate(today)
   }
 
   function clearDateFilter() {

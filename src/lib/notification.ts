@@ -1,6 +1,7 @@
 import Docxtemplater from 'docxtemplater'
 import PizZip from 'pizzip'
 import { jsPDF } from 'jspdf'
+import { toDateKey } from '@/lib/dates'
 import type { AttendanceRecord, Classroom, PresentationRecord, Student } from '@/types'
 
 export const MAX_NOTIFICATIONS_PER_PAGE = 3
@@ -37,8 +38,7 @@ function individualFilename(student: Student, ext: string) {
 }
 
 function multiFilename(ext: string) {
-  const date = new Date().toISOString().slice(0, 10)
-  return `Multinotificacion-Reglamento-${date}.${ext}`
+  return `Multinotificacion-Reglamento-${toDateKey()}.${ext}`
 }
 
 function dateParts(date: string) {
@@ -47,7 +47,7 @@ function dateParts(date: string) {
 }
 
 function sourceDate(data: NotificationPrintData) {
-  return data.presentation?.date ?? data.attendance?.date ?? new Date().toISOString().slice(0, 10)
+  return data.presentation?.date ?? data.attendance?.date ?? toDateKey()
 }
 
 function reasons(data: NotificationPrintData): ReasonState {

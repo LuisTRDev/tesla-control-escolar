@@ -4,6 +4,7 @@ import { BarChart3, CalendarDays, Check, Download, FileSpreadsheet, FileText, Re
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { getAdvancedReport, exportAdvancedReportExcel, exportAdvancedReportPdf, type AdvancedReport, type ReportExportFilters } from '@/services/reportService'
+import { addDaysToKey, monthRangeKeys, toDateKey } from '@/lib/dates'
 import type { Classroom } from '@/types'
 
 type Props = {
@@ -16,22 +17,15 @@ type Props = {
 type Preset = 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM'
 type DetailTab = 'ATTENDANCE' | 'INCIDENTS' | 'NOTIFICATIONS'
 
-function iso(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
 function presetRange(preset: Preset) {
   const now = new Date()
-  if (preset === 'TODAY') return { from: iso(now), to: iso(now) }
+  const today = toDateKey(now)
+  if (preset === 'TODAY') return { from: today, to: today }
   if (preset === 'WEEK') {
-    const start = new Date(now)
-    const day = (now.getDay() + 6) % 7
-    start.setDate(now.getDate() - day)
-    return { from: iso(start), to: iso(now) }
+    const daysSinceMonday = (now.getDay() + 6) % 7
+    return { from: addDaysToKey(today, -daysSinceMonday), to: today }
   }
-  const start = new Date(now.getFullYear(), now.getMonth(), 1)
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-  return { from: iso(start), to: iso(end) }
+  return monthRangeKeys(now)
 }
 
 function prettyDate(value: string) {

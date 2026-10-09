@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { useToast } from '@/lib/toast'
 import {
+  computeDebtStatus,
   getGuardianPaymentHistory,
   getPensionStatusForMonth,
   setPensionNotes,
@@ -220,15 +221,7 @@ export default function Cobranza({ open, onClose }: Props) {
   }, [guardians, search, statusFilter])
 
   function updateGuardian(updated: GuardianMonth) {
-    const today = new Date().toISOString().slice(0, 10)
-    let status: GuardianDebtStatus = 'AL_DIA'
-    if (!updated.paid) {
-      if (updated.dueDate < today) status = 'MOROSO'
-      else {
-        const limit = new Date(today); limit.setDate(limit.getDate() + 5)
-        status = updated.dueDate <= limit.toISOString().slice(0, 10) ? 'POR_VENCER' : 'AL_DIA'
-      }
-    }
+    const status = computeDebtStatus(updated.paid, updated.dueDate)
     setGuardians((curr) => curr.map((g) => (g.guardianId === updated.guardianId ? { ...updated, status } : g)))
   }
 

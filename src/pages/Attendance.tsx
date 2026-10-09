@@ -40,6 +40,7 @@ import {
   type NotificationPrintData,
 } from '@/lib/notification'
 import { getCurrentTime, getPreferences, getTodayKey, resetPreferences, savePreferences, type UserPreferences } from '@/lib/storage'
+import { monthRangeKeys } from '@/lib/dates'
 import {
   deleteAttendanceForDate, deletePresentationForDate, getAttendanceRange, getEntryLimit, getPresentationRange, getStudents,
   registerAttendance, registerBulkAttendance, registerExitAttendance, saveEntryLimit, savePresentation as savePresentationRemote,
@@ -84,11 +85,6 @@ const emptyPresentationDraft: PresentationDraft = { status: null, hairstyleViola
 function getViolationCount(record?: PresentationRecord) {
   if (!record || record.status !== 'NON_COMPLIANT') return 0
   return [record.hairstyleViolation, record.uniformUsageViolation, record.nonInstitutionalGarment, record.lateEntryViolation, record.inappropriateConductViolation].filter(Boolean).length
-}
-function monthRange() {
-  const now = new Date(); const y = now.getFullYear(); const m = now.getMonth();
-  const fmt=(d:Date)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-  return { from: fmt(new Date(y,m,1)), to: fmt(new Date(y,m+1,0)) }
 }
 
 export default function Attendance({ userName, userRole, classrooms, classroom, onClassroomChange, onLogout }: Props) {
@@ -148,7 +144,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const reloadData = useCallback(async (showLoading = true) => {
     if (showLoading) setLoadingData(true); setDataError('')
     try {
-      const range = monthRange()
+      const range = monthRangeKeys()
       const [studentData, attendanceData, presentationData, notificationData, limit, tolerance] = await Promise.all([
         getStudents(),
         getAttendanceRange(range.from, range.to),

@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { addDaysToKey, lastDayOfMonthKey as lastDayOfMonth, toDateKey } from '@/lib/dates'
 
 export type GuardianDebtStatus = 'AL_DIA' | 'POR_VENCER' | 'MOROSO'
 
@@ -30,19 +31,10 @@ export type MonthlyHistoryEntry = {
   paidAt: string | null
 }
 
-function lastDayOfMonth(year: number, month: number): string {
-  // month es 1-12; day 0 del mes siguiente = último día del mes actual
-  const d = new Date(year, month, 0)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-export function computeDebtStatus(paid: boolean, dueDate: string, today: string): GuardianDebtStatus {
+export function computeDebtStatus(paid: boolean, dueDate: string, today: string = toDateKey()): GuardianDebtStatus {
   if (paid) return 'AL_DIA'
   if (dueDate < today) return 'MOROSO'
-  const dueSoonLimit = new Date(today)
-  dueSoonLimit.setDate(dueSoonLimit.getDate() + DUE_SOON_DAYS)
-  const limitStr = dueSoonLimit.toISOString().slice(0, 10)
-  return dueDate <= limitStr ? 'POR_VENCER' : 'AL_DIA'
+  return dueDate <= addDaysToKey(today, DUE_SOON_DAYS) ? 'POR_VENCER' : 'AL_DIA'
 }
 
 /**
@@ -64,7 +56,7 @@ export async function getPensionStatusForMonth(year: number, month: number): Pro
   if (lError) throw lError
   if (pError) throw pError
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = toDateKey()
   const fallbackDue = lastDayOfMonth(year, month)
 
   const studentsByGuardian = new Map<string, { id: string; name: string; classroom: string }[]>()

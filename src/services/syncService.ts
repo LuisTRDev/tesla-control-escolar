@@ -1,12 +1,11 @@
 import { supabase } from '@/lib/supabase'
+import { trimTime } from '@/lib/dates'
 import { listPendingOperations, removePendingOperation, setMeta, updatePendingOperation, type SyncQueueItem } from '@/lib/offlineDb'
 import { cleanText, positiveInteger, safeUserMessage, validIsoDate, validTime } from '@/lib/security'
 import { ensureNotificationForLateAttendance, ensureNotificationForPresentation } from '@/services/notificationService'
 import type { AttendanceRecord, AttendanceStatus, PresentationRecord } from '@/types'
 
 export type SyncResult = { sent: number; failed: number; remaining: number }
-
-function trimTime(value?: string | null) { return (value ?? '').slice(0, 5) }
 
 function validatedAttendance(item: SyncQueueItem) {
   const p = item.payload

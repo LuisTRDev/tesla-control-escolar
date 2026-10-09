@@ -2,6 +2,8 @@ import { jsPDF } from 'jspdf'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 import { spreadsheetSafeObject, spreadsheetSafeText } from '@/lib/csvSecurity'
+import { addDaysToKey } from '@/lib/dates'
+import { toNumber as n } from '@/lib/utils'
 
 export type ReportSummary = {
   totalStudents: number
@@ -97,22 +99,13 @@ const violationLabels: Record<string, string> = {
   OTHER: 'Otro',
 }
 
-function n(value: unknown) {
-  return Number(value ?? 0)
-}
-
 function formatClassroom(grade?: string, section?: string, level?: string) {
   return [grade, section].filter(Boolean).join(' ') + (level ? ` · ${level}` : '')
 }
 
 function isoDatesBetween(from: string, to: string) {
   const dates: string[] = []
-  const current = new Date(`${from}T12:00:00`)
-  const end = new Date(`${to}T12:00:00`)
-  while (current <= end) {
-    dates.push(current.toISOString().slice(0, 10))
-    current.setDate(current.getDate() + 1)
-  }
+  for (let current = from; current <= to; current = addDaysToKey(current, 1)) dates.push(current)
   return dates
 }
 
