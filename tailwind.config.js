@@ -20,6 +20,8 @@ export default {
         popIn: { '0%': { opacity: '0', transform: 'scale(.85)' }, '60%': { opacity: '1', transform: 'scale(1.04)' }, '100%': { transform: 'scale(1)' } },
         confettiFall: { '0%': { transform: 'translateY(-10px) rotate(0deg)', opacity: '1' }, '100%': { transform: 'translateY(120px) rotate(280deg)', opacity: '0' } },
         pulseRing: { '0%': { boxShadow: '0 0 0 0 rgba(240,180,41,.55)' }, '100%': { boxShadow: '0 0 0 10px rgba(240,180,41,0)' } },
+        // Alerta de datos incompletos: el borde late en rojo sin bajar la opacidad del contenido.
+        blinkRed: { '0%, 100%': { borderColor: 'rgba(239,68,68,1)', boxShadow: '0 0 0 3px rgba(239,68,68,.35)' }, '50%': { borderColor: 'rgba(239,68,68,.25)', boxShadow: '0 0 0 0 rgba(239,68,68,0)' } },
       },
       animation: {
         shimmer: 'shimmer 1.6s infinite',
@@ -28,6 +30,7 @@ export default {
         popIn: 'popIn .35s cubic-bezier(.2,.8,.25,1) forwards',
         confettiFall: 'confettiFall 900ms ease-out forwards',
         pulseRing: 'pulseRing 1.4s ease-out infinite',
+        blinkRed: 'blinkRed 1.1s ease-in-out infinite',
       },
     }
   },

@@ -3,6 +3,8 @@ import { useToast } from '@/lib/toast'
 import { AnimatePresence, motion } from 'framer-motion'
 import { resetTour } from '@/components/OnboardingTour'
 import Cobranza from '@/components/Cobranza'
+import RosterManager from '@/components/RosterManager'
+import { isAdminRole } from '@/services/rosterService'
 import {
   Check, ChevronDown, BarChart3, CalendarDays, ClipboardCheck, Clock3, Download, Edit3, FileText,
   Menu, Monitor, Moon, RotateCcw, Search, Settings2, Shirt, Sun, TriangleAlert, Volume2, X, BookOpen, MessageCircle, Send, Bell, CalendarCheck2, FolderOpen, LogOut, Users,
@@ -106,6 +108,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [dashboardOpen, setDashboardOpen] = useState(false)
   const [reportsOpen, setReportsOpen] = useState(false)
   const [cobranzaOpen, setCobranzaOpen] = useState(false)
+  const [rosterOpen, setRosterOpen] = useState(false)
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [dailySummaryOpen, setDailySummaryOpen] = useState(false)
   const [auditOpen, setAuditOpen] = useState(false)
@@ -706,7 +709,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         userName={userName}
         userRole={userRole}
         formattedDate={formattedDate}
-        active={tvPanelOpen ? 'tv' : historicalImportOpen ? 'historical' : backupOpen ? 'backup' : quickModeOpen ? 'quick' : auditOpen ? 'audit' : dailySummaryOpen ? 'summary' : alertsOpen ? 'alerts' : cobranzaOpen ? 'cobranza' : reportsOpen ? 'reports' : dashboardOpen ? 'dashboard' : 'home'}
+        active={rosterOpen ? 'roster' : tvPanelOpen ? 'tv' : historicalImportOpen ? 'historical' : backupOpen ? 'backup' : quickModeOpen ? 'quick' : auditOpen ? 'audit' : dailySummaryOpen ? 'summary' : alertsOpen ? 'alerts' : cobranzaOpen ? 'cobranza' : reportsOpen ? 'reports' : dashboardOpen ? 'dashboard' : 'home'}
         onHome={() => { setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false); setCobranzaOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
         onDashboard={() => { setDashboardOpen(true); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false); setCobranzaOpen(false) }}
         onReports={() => { setReportsOpen(true); setDashboardOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false); setCobranzaOpen(false) }}
@@ -720,6 +723,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         onTvPanel={() => setTvPanelOpen(true)}
         onBackups={() => setBackupOpen(true)}
         onHistoricalImport={() => setHistoricalImportOpen(true)}
+        onRoster={isAdminRole(userRole) ? () => setRosterOpen(true) : undefined}
         online={syncState.online}
         pendingSync={syncState.pending}
         onSettings={() => setSettingsOpen(true)}
@@ -1734,6 +1738,15 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       />
 
       <Cobranza open={cobranzaOpen} onClose={() => setCobranzaOpen(false)} />
+
+      <RosterManager
+        open={rosterOpen}
+        onClose={() => setRosterOpen(false)}
+        classrooms={classrooms}
+        students={students}
+        defaultClassroomId={classroom.id}
+        onChanged={() => reloadData(false)}
+      />
 
       <LiveTvPanel
         open={tvPanelOpen}
