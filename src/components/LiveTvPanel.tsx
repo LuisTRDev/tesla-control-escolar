@@ -311,7 +311,6 @@ export default function LiveTvPanel({
   }
 
   const activeKinds = new Set(layout.map((item) => item.kind))
-  const maxType = Math.max(1, ...data.topTypes.map((item) => item.count))
 
   return (
     <AnimatePresence>

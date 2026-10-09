@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useToast } from '@/lib/toast'
 import * as XLSX from 'xlsx'
 import {
-  Archive, Check, ChevronDown, FileArchive, FileSpreadsheet, FileText, Image as ImageIcon,
+  Archive, Check, FileArchive,
   Link2, Loader2, Plus, RefreshCw, Search, Trash2, Upload, X, XCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'

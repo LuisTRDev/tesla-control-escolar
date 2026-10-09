@@ -1,4 +1,5 @@
 // Evita que Excel/LibreOffice interpreten datos provenientes de usuarios como fórmulas.
+// eslint-disable-next-line no-control-regex -- se filtran caracteres de control a propósito
 const FORMULA_PREFIX = /^[\s\u0000-\u001F]*[=+\-@]/
 
 export function spreadsheetSafeText(value: unknown): string {

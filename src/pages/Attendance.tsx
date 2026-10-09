@@ -6,7 +6,7 @@ import Cobranza from '@/components/Cobranza'
 import RosterManager from '@/components/RosterManager'
 import { isAdminRole } from '@/services/rosterService'
 import {
-  Check, ChevronDown, BarChart3, CalendarDays, ClipboardCheck, Clock3, Download, Edit3, FileText,
+  Check, ChevronDown, ClipboardCheck, Clock3, Download, Edit3, FileText,
   Menu, Monitor, Moon, RotateCcw, Search, Settings2, Shirt, Sun, TriangleAlert, Volume2, X, BookOpen, MessageCircle, Send, Bell, CalendarCheck2, FolderOpen, LogOut, Users,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -243,7 +243,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   function updatePreferences(next: UserPreferences) { setPreferences(savePreferences(next)) }
   function playConfirmation() {
     if (!preferences.soundEnabled) return
-    try { const AudioCtx=window.AudioContext || (window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext; if(!AudioCtx)return; const ctx=new AudioCtx(); const osc=ctx.createOscillator(); const gain=ctx.createGain(); osc.frequency.value=720; gain.gain.setValueAtTime(.05,ctx.currentTime); gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.12); osc.connect(gain); gain.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime+.12) } catch {}
+    try { const AudioCtx=window.AudioContext || (window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext; if(!AudioCtx)return; const ctx=new AudioCtx(); const osc=ctx.createOscillator(); const gain=ctx.createGain(); osc.frequency.value=720; gain.gain.setValueAtTime(.05,ctx.currentTime); gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.12); osc.connect(gain); gain.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime+.12) } catch { /* El sonido es opcional: se ignora si el navegador lo bloquea. */ }
   }
 
   const classroomStudents = useMemo(() => students.filter((student)=>student.classroomId===classroom.id), [students,classroom.id])
