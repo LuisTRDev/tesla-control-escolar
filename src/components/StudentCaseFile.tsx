@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/Card'
 import { getStudentCaseFile, type StudentCaseFile as CaseFile } from '@/services/phase6Service'
 import { getStudentDayHistory, type StudentDayHistory } from '@/services/dayStatusService'
 import type { Classroom, Student } from '@/types'
-import { getAlertTypeLabel, getNotificationTypeLabel } from '@/lib/displayLabels'
+import { entryTimeLabel, getAlertTypeLabel, getNotificationTypeLabel } from '@/lib/displayLabels'
 import { addDaysToKey, toDateKey } from '@/lib/dates'
 import { AnimatedCounter } from '@/components/ui/AnimatedCounter'
 import { ConfettiBurst } from '@/components/ui/ConfettiBurst'
@@ -75,10 +75,10 @@ export default function StudentCaseFile({ student, classroom, onClose, onOpenWha
       const late = s(row.status) === 'LATE'
       const justification = history?.justifiedLate.get(s(row.id))
       if (late && justification !== undefined) {
-        items.push({ id:`a-${s(row.id)}`, date:s(row.date), title:'Tardanza justificada', detail:`Hora: ${s(row.entry_time).slice(0,5) || '—'} · ${justification || 'Sin motivo'}`, tone:'info' })
+        items.push({ id:`a-${s(row.id)}`, date:s(row.date), title:'Tardanza justificada', detail:`Hora: ${entryTimeLabel(s(row.entry_time))} · ${justification || 'Sin motivo'}`, tone:'info' })
         continue
       }
-      items.push({ id:`a-${s(row.id)}`, date:s(row.date), title: late ? 'Tardanza' : 'Ingreso a tiempo', detail:`Hora: ${s(row.entry_time).slice(0,5) || '—'}`, tone: late ? 'warning' : 'ok' })
+      items.push({ id:`a-${s(row.id)}`, date:s(row.date), title: late ? 'Tardanza' : 'Ingreso a tiempo', detail:`Hora: ${entryTimeLabel(s(row.entry_time))}`, tone: late ? 'warning' : 'ok' })
     }
     for (const row of history?.absences ?? []) {
       const title = row.status === 'JUSTIFIED' ? 'Falta justificada' : row.status === 'PERMISSION' ? 'Inasistencia con permiso' : 'Falta'

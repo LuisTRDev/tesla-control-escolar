@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { getSnapshot, setSnapshot } from '@/lib/offlineDb'
+import { lateEntryObservation } from '@/lib/displayLabels'
 import type { AttendanceRecord, NotificationRecord, NotificationType, PresentationRecord } from '@/types'
 
 type DbNotification = {
@@ -245,14 +246,14 @@ export async function ensureNotificationForLateAttendance(record: AttendanceReco
   // se registra una alerta de reincidencia y se devuelve la última notificación.
   const notificationNumber = await getNextNotificationNumberOrAlert(
     record.studentId,
-    `El alumno superó las 3 notificaciones. Nueva tardanza el ${record.date} a las ${record.time}.`,
+    `El alumno superó las 3 notificaciones. Nueva tardanza el ${record.date}${record.time ? ` a las ${record.time}` : ' (sin hora)'}.`,
   )
   if (notificationNumber === null) {
     const latest = await getLatestNotification(record.studentId)
     if (latest) return latest
     throw new Error('El alumno alcanzó el máximo de notificaciones y no se encontró una notificación previa para mostrar.')
   }
-  const observation = `Tardanza en el ingreso. Hora registrada: ${record.time}.`
+  const observation = lateEntryObservation(record.time)
   const { data, error } = await supabase
     .from('notifications')
     .insert({

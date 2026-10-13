@@ -80,7 +80,7 @@ export default function JustifyDialog({ target, userName, onClose, onLateSaved, 
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-sky-700 dark:text-sky-300"><ShieldCheck size={15} /> Justificación</p>
-                <h3 className="mt-1 text-xl font-black">{target.kind === 'LATE' ? `Tardanza de las ${target.record.time}` : `Falta del ${new Date(target.absence.date + 'T12:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'long' })}`}</h3>
+                <h3 className="mt-1 text-xl font-black">{target.kind === 'LATE' ? (target.record.time ? `Tardanza de las ${target.record.time}` : 'Tardanza sin hora') : `Falta del ${new Date(target.absence.date + 'T12:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'long' })}`}</h3>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{target.student.lastName}, {target.student.firstName}</p>
               </div>
               <Button variant="ghost" disabled={saving} onClick={onClose} aria-label="Cerrar"><X size={20} /></Button>

@@ -32,7 +32,8 @@ function validatedAttendance(item: SyncQueueItem) {
   const source = String(p.source ?? 'WEB') as 'WEB' | 'PDA' | 'MANUAL'
   const deviceLabel = cleanText(p.deviceLabel, 120)
   if (!validIsoDate(date)) throw new Error('Fecha de asistencia inválida en la cola local.')
-  if (!validTime(time)) throw new Error('Hora de asistencia inválida en la cola local.')
+  // Hora vacía = tardanza marcada sin hora.
+  if (time ? !validTime(time) : status !== 'LATE') throw new Error('Hora de asistencia inválida en la cola local.')
   if (status !== 'ON_TIME' && status !== 'LATE') throw new Error('Estado de asistencia inválido en la cola local.')
   return { studentId, date, time: time.slice(0, 5), status, source, deviceLabel }
 }
@@ -102,7 +103,7 @@ async function syncAttendance(item: SyncQueueItem, counter: { conflicts: number 
   const payload = {
     student_id: recordInput.studentId,
     date: recordInput.date,
-    entry_time: recordInput.time,
+    entry_time: recordInput.time || null,
     status: recordInput.status,
     entry_source: recordInput.source,
     entry_recorded_at: new Date().toISOString(),

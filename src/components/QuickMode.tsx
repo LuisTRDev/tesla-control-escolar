@@ -8,6 +8,8 @@ import { studentMatches } from '@/lib/search'
 import { isTypingTarget, pickEnterTarget } from '@/lib/shortcuts'
 import type { AttendanceRecord, Classroom, Student } from '@/types'
 import { useWakeLock } from '@/lib/nativeFeatures'
+import { entryTimeLabel } from '@/lib/displayLabels'
+import { LateNoTimeBanner, LateNoTimeSwitch } from '@/components/attendance/LateNoTimeSwitch'
 
 type Props = {
   open: boolean
@@ -20,6 +22,8 @@ type Props = {
   online: boolean
   entryLimit: string
   onBulkMark: (studentIds: string[]) => Promise<void>
+  lateNoTime: boolean
+  onLateNoTimeChange: (value: boolean) => void
 }
 
 type StatusFilter = 'ALL' | 'PENDING' | 'MARKED' | 'LATE'
@@ -33,7 +37,7 @@ const statusFilters: Array<{ id: StatusFilter; label: string }> = [
 
 const byName = (a: Student, b: Student) => a.lastName.localeCompare(b.lastName, 'es') || a.firstName.localeCompare(b.firstName, 'es')
 
-export default function QuickMode({ open, onClose, classrooms, students, records, onMark, onExit, online, entryLimit, onBulkMark }: Props) {
+export default function QuickMode({ open, onClose, classrooms, students, records, onMark, onExit, online, entryLimit, onBulkMark, lateNoTime, onLateNoTimeChange }: Props) {
   const [query, setQuery] = useState('')
   // Pantalla siempre encendida mientras se usa (hora de ingreso, pantalla del patio).
   useWakeLock(open)
@@ -192,6 +196,7 @@ export default function QuickMode({ open, onClose, classrooms, students, records
             {classrooms.map((c) => <option key={c.id} value={c.id}>{c.grade} {c.section} · {c.level}</option>)}
           </select>
           <div className="flex gap-2 overflow-x-auto md:col-span-2">
+            <LateNoTimeSwitch active={lateNoTime} onChange={onLateNoTimeChange} className="h-11 sm:h-11" />
             {statusFilters.map((item) => (
               <Button key={item.id} variant={statusFilter === item.id ? 'default' : 'outline'} className="h-11 shrink-0 whitespace-nowrap" onClick={() => setStatusFilter(item.id)}>
                 {item.label}{item.id === 'PENDING' && counts.pending > 0 ? ` (${counts.pending})` : ''}
@@ -201,6 +206,7 @@ export default function QuickMode({ open, onClose, classrooms, students, records
               <Users className="mr-2" size={16}/> Resto a tiempo
             </Button>
           </div>
+          {lateNoTime && <div className="md:col-span-2"><LateNoTimeBanner active={lateNoTime} onChange={onLateNoTimeChange} /></div>}
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:p-4">
@@ -225,7 +231,7 @@ export default function QuickMode({ open, onClose, classrooms, students, records
                       </div>
                       <div className="flex gap-2">
                         <div className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-black sm:min-w-36 sm:flex-none ${record.status==='ON_TIME'?'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300':'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'}`}>
-                          {record.status==='ON_TIME'?<Check size={16}/>:<TriangleAlert size={16}/>} {record.time} · {record.status==='ON_TIME'?'A tiempo':'Tardanza'}
+                          {record.status==='ON_TIME'?<Check size={16}/>:<TriangleAlert size={16}/>} {entryTimeLabel(record.time)} · {record.status==='ON_TIME'?'A tiempo':'Tardanza'}
                         </div>
                         {onExit && (
                           <Button variant="outline" className="h-11 flex-1 sm:flex-none" disabled={Boolean(record.exitTime) || exitingId===student.id} onClick={async()=>{setExitingId(student.id);try{await onExit(student.id)}finally{setExitingId(null)}}}>

@@ -10,6 +10,7 @@ import { reportError } from '@/lib/security'
 import { getAuthorizedPickups, registerEarlyExit, saveAuthorizedPickup } from '@/services/dayStatusService'
 import type { AttendanceRecord, EarlyExit, Student } from '@/types'
 import { friendlyError } from '@/lib/errorMessages'
+import { entryTimeLabel } from '@/lib/displayLabels'
 
 type Person = { key: string; fullName: string; dni: string; relationship: string; source: 'Apoderado' | 'Autorizado' }
 
@@ -93,7 +94,7 @@ export default function EarlyExitDialog({ student, attendance, today, userName, 
               <div>
                 <p className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-orange-700 dark:text-orange-300"><DoorOpen size={15} /> Salida anticipada</p>
                 <h3 className="mt-1 text-xl font-black">{student.lastName}, {student.firstName}</h3>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Hora de salida: {getCurrentTime()} {attendance ? `· ingresó ${attendance.time}` : '· sin marca de ingreso hoy'}</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Hora de salida: {getCurrentTime()} {attendance ? `· ingresó ${entryTimeLabel(attendance.time)}` : '· sin marca de ingreso hoy'}</p>
               </div>
               <Button variant="ghost" disabled={saving} onClick={onClose} aria-label="Cerrar"><X size={20} /></Button>
             </div>

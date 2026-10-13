@@ -31,6 +31,10 @@ describe('calculateStatus', () => {
     expect(calculateStatus('07:46', '07:45')).toBe('LATE')
   })
 
+  it('sin hora (tardanza sin hora) siempre es tardanza', () => {
+    expect(calculateStatus('', '07:45', { enabled: true, minutes: 10 })).toBe('LATE')
+  })
+
   it('la tolerancia activa extiende el límite', () => {
     const tolerance = { enabled: true, minutes: 10 }
     expect(calculateStatus('07:55', '07:45', tolerance)).toBe('ON_TIME')

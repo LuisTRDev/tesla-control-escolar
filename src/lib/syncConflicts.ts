@@ -13,6 +13,8 @@ export type TimeResolution = 'KEEP_REMOTE' | 'USE_LOCAL'
 export function resolveEarliestTime(remoteTime: string | null | undefined, localTime: string): TimeResolution {
   const remote = (remoteTime ?? '').slice(0, 5)
   if (!remote) return 'USE_LOCAL'
+  // Una marca sin hora (tardanza sin hora) nunca reemplaza a una con hora conocida.
+  if (!localTime) return 'KEEP_REMOTE'
   return localTime.slice(0, 5) < remote ? 'USE_LOCAL' : 'KEEP_REMOTE'
 }
 

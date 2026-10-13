@@ -43,6 +43,19 @@ beforeEach(() => {
 })
 
 describe('flushSyncQueue — entradas', () => {
+  it('sincroniza una tardanza sin hora con entry_time vacío', async () => {
+    state.queue = [entry('', 'LATE')]
+    const result = await flushSyncQueue()
+    expect(result).toMatchObject({ sent: 1, failed: 0 })
+    expect(fake.rows('attendance')[0]).toMatchObject({ student_id: 1, entry_time: null, status: 'LATE' })
+  })
+
+  it('rechaza una entrada sin hora que no sea tardanza', async () => {
+    state.queue = [entry('', 'ON_TIME')]
+    const result = await flushSyncQueue()
+    expect(result.failed).toBe(1)
+  })
+
   it('envía una entrada pendiente y la quita de la cola', async () => {
     state.queue = [entry('07:40')]
     const result = await flushSyncQueue()

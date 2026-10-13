@@ -2,6 +2,7 @@ import Docxtemplater from 'docxtemplater'
 import PizZip from 'pizzip'
 import { jsPDF } from 'jspdf'
 import { toDateKey } from '@/lib/dates'
+import { lateEntryObservation } from '@/lib/displayLabels'
 import { MAX_NOTIFICATIONS_PER_PAGE, type NotificationPrintData } from '@/lib/notificationTypes'
 import type { Student } from '@/types'
 
@@ -57,7 +58,7 @@ function reasons(data: NotificationPrintData): ReasonState {
 function observation(data: NotificationPrintData) {
   const explicit = data.presentation?.observation?.trim()
   if (explicit) return explicit
-  if (data.attendance?.status === 'LATE') return `Tardanza en el ingreso. Hora registrada: ${data.attendance.time}.`
+  if (data.attendance?.status === 'LATE') return lateEntryObservation(data.attendance.time)
   return ''
 }
 

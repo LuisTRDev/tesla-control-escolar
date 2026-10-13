@@ -1,8 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Trash2, X } from 'lucide-react'
+import { TimerOff, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
+import { entryTimeLabel } from '@/lib/displayLabels'
 import type { AttendanceRecord, Student } from '@/types'
 
 type Props = {
@@ -14,11 +15,13 @@ type Props = {
   saving: boolean
   onClose: () => void
   onSave: () => void
+  /** Deja la marca como tardanza sin hora. */
+  onSaveWithoutTime: () => void
   onDelete: () => void
 }
 
 /** Corrige la hora de ingreso o borra una marca hecha por error. */
-export default function AttendanceEditDialog({ record, student, time, onTimeChange, entryLimit, saving, onClose, onSave, onDelete }: Props) {
+export default function AttendanceEditDialog({ record, student, time, onTimeChange, entryLimit, saving, onClose, onSave, onSaveWithoutTime, onDelete }: Props) {
   return (
     <AnimatePresence>{record && (
       <motion.div
@@ -53,7 +56,12 @@ export default function AttendanceEditDialog({ record, student, time, onTimeChan
                 Hora de ingreso
                 <Input className="mt-2 h-12 text-lg font-bold" type="time" value={time} onChange={(event) => onTimeChange(event.target.value)} disabled={saving} />
               </label>
-              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Hora actual: {record.time || '—'} · Límite: {entryLimit}</p>
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Hora actual: {entryTimeLabel(record.time)} · Límite: {entryLimit}</p>
+              {record.time && (
+                <Button variant="outline" className="mt-3 w-full" disabled={saving} onClick={onSaveWithoutTime}>
+                  <TimerOff className="mr-2" size={17} /> No sé la hora: dejar como tardanza sin hora
+                </Button>
+              )}
             </div>
 
             <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">

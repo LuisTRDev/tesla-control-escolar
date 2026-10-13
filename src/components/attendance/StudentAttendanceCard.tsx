@@ -122,7 +122,7 @@ export default function StudentAttendanceCard({ student, classroom, record, pres
 
   // ---- Acciones secundarias (hoja "Más" en celular, en línea en PC) ----
   const actions: SheetAction[] = []
-  if (record) actions.push({ key: 'edit', label: 'Editar ingreso', description: `Registrado a las ${record.time}`, icon: <Edit3 size={19} />, onSelect: () => openAttendanceEdit(record) })
+  if (record) actions.push({ key: 'edit', label: 'Editar ingreso', description: record.time ? `Registrado a las ${record.time}` : 'Tardanza sin hora', icon: <Edit3 size={19} />, onSelect: () => openAttendanceEdit(record) })
   if (dayStatusEnabled && lateUnjustified && record) actions.push({ key: 'justify-late', label: 'Justificar tardanza', icon: <ShieldCheck size={19} />, tone: 'sky', onSelect: () => onJustifyLate(student, record) })
   if (absence?.status === 'UNJUSTIFIED') actions.push({ key: 'justify-absence', label: 'Justificar falta', icon: <ShieldCheck size={19} />, tone: 'sky', onSelect: () => onJustifyAbsence(student, absence) })
   if (canEarlyExit) actions.push({ key: 'early-exit', label: 'Salida anticipada', description: 'Retiro antes de la hora, con quién lo recoge', icon: <DoorOpen size={19} />, tone: 'orange', onSelect: () => onEarlyExit(student) })

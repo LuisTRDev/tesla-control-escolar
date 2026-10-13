@@ -26,6 +26,7 @@ import PresentationDialog from '@/components/attendance/PresentationDialog'
 import SettingsPanel from '@/components/attendance/SettingsPanel'
 import StudentHistoryModal from '@/components/attendance/StudentHistoryModal'
 import WhatsAppDialog from '@/components/attendance/WhatsAppDialog'
+import { LateNoTimeBanner, LateNoTimeSwitch, useLateNoTimeMode } from '@/components/attendance/LateNoTimeSwitch'
 import JustifyDialog, { type JustifyTarget } from '@/components/attendance/JustifyDialog'
 import PermissionDialog from '@/components/attendance/PermissionDialog'
 import EarlyExitDialog from '@/components/attendance/EarlyExitDialog'
@@ -163,6 +164,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [bulkAttendanceSelected, setBulkAttendanceSelected] = useState<Set<string>>(new Set())
   const [bulkAttendanceSaving, setBulkAttendanceSaving] = useState(false)
   const [historyStudent, setHistoryStudent] = useState<Student | null>(null)
+  const [lateNoTime, setLateNoTime] = useLateNoTimeMode()
   const [whatsAppStudent, setWhatsAppStudent] = useState<Student | null>(null)
   const [whatsAppType, setWhatsAppType] = useState<WhatsAppMessageType>('LATE')
   const [whatsAppMessage, setWhatsAppMessage] = useState('')
@@ -546,7 +548,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     try {
       const schedule = scheduleForStudent(studentId)
       const latePermission = findPermission(todayPermissions, studentId, today, 'LATE')
-      const rec=await registerAttendance(studentId,schedule.entryLimit,today,getCurrentTime(),schedule.tolerance, latePermission ? { reason: `Permiso: ${latePermission.reason}`, byName: userName } : undefined)
+      const rec=await registerAttendance(studentId,schedule.entryLimit,today,lateNoTime ? '' : getCurrentTime(),schedule.tolerance, latePermission ? { reason: `Permiso: ${latePermission.reason}`, byName: userName } : undefined)
       setRecords((curr)=>[...curr.filter((r)=>!(r.studentId===studentId&&r.date===today)),rec])
       feedback(rec.status === 'LATE' && !rec.justified ? 'late' : 'ok')
       if (absenceByStudent.has(studentId)) setDayStatus((curr) => ({ ...curr, absences: curr.absences.filter((a) => !(a.studentId === studentId && a.date === today)) }))
@@ -554,7 +556,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       // Sin diálogo de confirmación: un toque marca y el aviso permite deshacer durante 5 s.
       toast.show({
         title: `${name} — ${rec.status === 'LATE' ? (rec.justified ? 'Tardanza con permiso' : 'Tardanza') : 'A tiempo'}`,
-        description: `Hora registrada: ${rec.time}`,
+        description: rec.time ? `Hora registrada: ${rec.time}` : 'Sin hora registrada',
         variant: rec.status === 'LATE' ? 'warning' : 'success',
         duration: 5000,
         action: { label: 'Deshacer', onClick: () => void undoMark(rec, name) },
@@ -596,12 +598,13 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     setDataError('')
   }
 
-  async function saveAttendanceEdit() {
+  /** `withoutTime`: deja la marca como tardanza sin hora (la hora registrada no era la real). */
+  async function saveAttendanceEdit(withoutTime = false) {
     if (!editingAttendance) return
 
-    const newTime = editingAttendanceTime.trim()
+    const newTime = withoutTime ? '' : editingAttendanceTime.trim()
 
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(newTime)) {
+    if (!withoutTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(newTime)) {
       setDataError('Ingresa una hora válida en formato HH:MM.')
       return
     }
@@ -1256,6 +1259,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
           </div>
 
           <div className="no-scrollbar -mx-4 flex min-w-0 items-center gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+            <LateNoTimeSwitch active={lateNoTime} onChange={setLateNoTime} />
             <div className="flex shrink-0 gap-2">
               {attendanceFilters.map((item) => (
                 <Button
@@ -1282,6 +1286,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
             </label>
           </div>
         </div>
+
+        {lateNoTime && <div className="mt-3"><LateNoTimeBanner active={lateNoTime} onChange={setLateNoTime} /></div>}
 
         <div className="mt-3 space-y-3 sm:mt-5">
           {filtered.map((student, index) => {
@@ -1371,6 +1377,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         saving={savingAttendanceEdit}
         onClose={() => setEditingAttendance(null)}
         onSave={() => void saveAttendanceEdit()}
+        onSaveWithoutTime={() => void saveAttendanceEdit(true)}
         onDelete={() => void deleteEditingAttendance()}
       />
 
@@ -1385,6 +1392,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         online={syncState.online}
         entryLimit={entryLimit}
         onBulkMark={bulkMarkStudents}
+        lateNoTime={lateNoTime}
+        onLateNoTimeChange={setLateNoTime}
       />
 
       <PdaMode

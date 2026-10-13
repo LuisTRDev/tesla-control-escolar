@@ -5,6 +5,7 @@ import { spreadsheetSafeObject, spreadsheetSafeText } from '@/lib/csvSecurity'
 import { addDaysToKey } from '@/lib/dates'
 import { toNumber as n } from '@/lib/utils'
 import { fetchAllPages } from '@/lib/paging'
+import { entryTimeLabel } from '@/lib/displayLabels'
 
 export type ReportSummary = {
   totalStudents: number
@@ -271,7 +272,7 @@ export function exportAdvancedReportExcel(report: AdvancedReport, filters: Repor
     ['Reincidentes', exportData.repeatOffenders.length],
   ]
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(summaryRows), 'Resumen')
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportData.attendanceDetails.map((r) => spreadsheetSafeObject({ Alumno: r.studentName, Aula: r.classroom, Fecha: r.date, Hora: r.time, Estado: r.status === 'LATE' ? 'Tardanza' : 'A tiempo' }))), 'Asistencia')
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportData.attendanceDetails.map((r) => spreadsheetSafeObject({ Alumno: r.studentName, Aula: r.classroom, Fecha: r.date, Hora: entryTimeLabel(r.time), Estado: r.status === 'LATE' ? 'Tardanza' : 'A tiempo' }))), 'Asistencia')
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportData.incidentDetails.map((r) => spreadsheetSafeObject({ Alumno: r.studentName, Aula: r.classroom, Fecha: r.date, Incumplimientos: r.violations, Observacion: r.observation }))), 'Incidencias')
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportData.notificationDetails.map((r) => spreadsheetSafeObject({ Alumno: r.studentName, Aula: r.classroom, Fecha: r.date, Numero: r.notificationNumber, Tipo: r.notificationType, Observacion: r.observation }))), 'Notificaciones')
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportData.repeatOffenders.map((r) => spreadsheetSafeObject({ Alumno: r.studentName, Notificaciones: r.notificationCount }))), 'Reincidencias')
@@ -329,7 +330,7 @@ export function exportAdvancedReportPdf(report: AdvancedReport, filters: ReportE
   for (const row of exportData.attendanceDetails) {
     if (y > 282) { doc.addPage(); addPdfHeader(doc, 'Detalle de asistencia', `${report.from} al ${report.to}`); y = 33 }
     doc.text(row.date, 14, y)
-    doc.text(row.time, 38, y)
+    doc.text(entryTimeLabel(row.time), 38, y)
     doc.text(row.status === 'LATE' ? 'Tardanza' : 'A tiempo', 54, y)
     doc.text(row.studentName.slice(0, 42), 82, y)
     doc.text(row.classroom.slice(0, 28), 152, y)

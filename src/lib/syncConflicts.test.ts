@@ -11,6 +11,10 @@ describe('resolveEarliestTime', () => {
     expect(resolveEarliestTime('07:40:00', '07:40')).toBe('KEEP_REMOTE')
   })
 
+  it('una tardanza sin hora no reemplaza una marca con hora', () => {
+    expect(resolveEarliestTime('08:10:00', '')).toBe('KEEP_REMOTE')
+  })
+
   it('sin hora en el servidor usa la local', () => {
     expect(resolveEarliestTime(null, '07:40')).toBe('USE_LOCAL')
     expect(resolveEarliestTime('', '07:40')).toBe('USE_LOCAL')

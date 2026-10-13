@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { trimTime } from '@/lib/dates'
+import { lateEntryObservation } from '@/lib/displayLabels'
 import { enqueueOperation, getSnapshot, listPendingOperations, removePendingOperationFor, setSnapshot } from '@/lib/offlineDb'
 import type { AttendanceRecord, AttendanceStatus, Classroom, Guardian, PresentationRecord, Student } from '@/types'
 import { fetchAllPages } from '@/lib/paging'
@@ -294,6 +295,8 @@ export async function saveEntryLimit(value: string): Promise<void> {
  * ON_TIME.
  */
 export function calculateStatus(time: string, entryLimit: string, tolerance?: ToleranceSettings): AttendanceStatus {
+  // Sin hora = tardanza marcada sin hora (el auxiliar no sabe a qué hora entró).
+  if (!time) return 'LATE'
   const effectiveLimit = tolerance?.enabled ? addMinutesToTime(entryLimit, tolerance.minutes) : entryLimit
   return time <= effectiveLimit ? 'ON_TIME' : 'LATE'
 }
@@ -334,7 +337,7 @@ export async function registerAttendance(studentId: string, entryLimit: string, 
     const justification: { justified?: boolean; justification_reason?: string; justified_by_name?: string; justified_at?: string } = status === 'LATE' && lateJustification
       ? { justified: true, justification_reason: lateJustification.reason, justified_by_name: lateJustification.byName, justified_at: new Date().toISOString() }
       : {}
-    const record: Record<string, unknown> = { student_id: Number(studentId), date, entry_time: time, status, ...justification }
+    const record: Record<string, unknown> = { student_id: Number(studentId), date, entry_time: time || null, status, ...justification }
     const { data, error } = await supabase.from('attendance').upsert(record, { onConflict: 'student_id,date', ignoreDuplicates: true }).select('id, student_id, date, entry_time, status, exit_time, exit_recorded_at, exit_recorded_by, entry_recorded_at, entry_recorded_by, entry_source, exit_source').maybeSingle()
     if (error) throw error
     if (!data) {
@@ -414,7 +417,8 @@ export async function updateAttendanceEntryTime(
     )
   }
 
-  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(newTime)) {
+  // Hora vacía = convertir la marca en tardanza sin hora.
+  if (newTime && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(newTime)) {
     throw new Error('La hora de ingreso no es válida.')
   }
 
@@ -424,7 +428,7 @@ export async function updateAttendanceEntryTime(
   const { data, error } = await supabase
     .from('attendance')
     .update({
-      entry_time: newTime,
+      entry_time: newTime || null,
       status,
     })
     .eq('id', attendanceId)
@@ -447,7 +451,7 @@ export async function updateAttendanceEntryTime(
       const { error: notificationError } = await supabase
         .from('notifications')
         .update({
-          observation: `Tardanza en el ingreso. Hora registrada: ${newTime}.`,
+          observation: lateEntryObservation(newTime),
         })
         .eq('id', lateNotification.id)
 
@@ -506,7 +510,8 @@ export async function recalculateAttendanceForDate(date: string, entryLimit: str
   if (!navigator.onLine) return
   const { data, error } = await supabase.from('attendance').select('id, entry_time').eq('date', date)
   if (error) throw error
-  await Promise.all((data ?? []).map(async (row: { id: number | string; entry_time: string }) => { const status = calculateStatus(trimTime(row.entry_time), entryLimit); const { error: updateError } = await supabase.from('attendance').update({ status }).eq('id', row.id); if (updateError) throw updateError }))
+  // Las tardanzas sin hora no se recalculan: siguen siendo tardanza.
+  await Promise.all((data ?? []).filter((row: { entry_time: string | null }) => row.entry_time).map(async (row: { id: number | string; entry_time: string }) => { const status = calculateStatus(trimTime(row.entry_time), entryLimit); const { error: updateError } = await supabase.from('attendance').update({ status }).eq('id', row.id); if (updateError) throw updateError }))
 }
 
 /**

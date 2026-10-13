@@ -4,6 +4,7 @@ import { ArrowLeft, BarChart3, ChevronDown, Clock3, Shirt, Users, X } from 'luci
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import type { AttendanceRecord, Classroom, PresentationRecord, Student } from '@/types'
+import { entryTimeLabel } from '@/lib/displayLabels'
 
 type Props = {
   open: boolean
@@ -159,12 +160,12 @@ export default function Dashboard({
         return classroomStudents
           .map((student) => ({ student, record: todayAttendance.find((r) => r.studentId === student.id && r.status === 'ON_TIME') }))
           .filter((item): item is { student: Student; record: AttendanceRecord } => Boolean(item.record))
-          .map(({ student, record }) => ({ student, detail: `Ingreso: ${record.time?.slice(0, 5) ?? '—'}` }))
+          .map(({ student, record }) => ({ student, detail: `Ingreso: ${entryTimeLabel(record.time)}` }))
       case 'LATE':
         return classroomStudents
           .map((student) => ({ student, record: todayAttendance.find((r) => r.studentId === student.id && r.status === 'LATE') }))
           .filter((item): item is { student: Student; record: AttendanceRecord } => Boolean(item.record))
-          .map(({ student, record }) => ({ student, detail: `Ingreso: ${record.time?.slice(0, 5) ?? '—'}` }))
+          .map(({ student, record }) => ({ student, detail: `Ingreso: ${entryTimeLabel(record.time)}` }))
       case 'ATTENDANCE_PENDING':
         return classroomStudents
           .filter((student) => !todayAttendance.some((r) => r.studentId === student.id))
