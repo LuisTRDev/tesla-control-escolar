@@ -20,6 +20,10 @@ const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
 /** Foto original aceptada antes de comprimir (las de celular pesan 3–12 MB). */
 const MAX_PHOTO_INPUT_BYTES = 25 * 1024 * 1024
 
+function formatBytes(bytes: number): string {
+  return bytes >= 1024 * 1024 ? (bytes / 1024 / 1024).toFixed(1).replace(".", ",") + " MB" : Math.round(bytes / 1024) + " KB"
+}
+
 type PgError = { code?: string; message?: string } | null
 
 /** Tabla o columna inexistente: el SQL de la fase todavía no se ejecutó. */
@@ -366,7 +370,8 @@ async function detectDocumentType(file: File): Promise<{ ext: string; mime: stri
   throw new Error('Solo se aceptan fotos (JPG, PNG, WEBP) o PDF.')
 }
 
-export async function uploadJustificationDocument(file: File, studentId: string): Promise<string> {
+/** `onInfo` recibe un resumen de la compresión de la foto (para mostrarlo al usuario). */
+export async function uploadJustificationDocument(file: File, studentId: string, onInfo?: (message: string) => void): Promise<string> {
   requireOnline('Adjuntar un documento')
   if (file.size <= 0) throw new Error('El archivo está vacío.')
   let type = await detectDocumentType(file)
@@ -378,6 +383,9 @@ export async function uploadJustificationDocument(file: File, studentId: string)
     if (file.size > MAX_PHOTO_INPUT_BYTES) throw new Error('La foto supera el límite de 25 MB.')
     const compressed = await compressImage(file)
     if (compressed) { body = compressed.blob; type = { ext: compressed.ext, mime: compressed.mime } }
+    onInfo?.(compressed
+      ? "Foto comprimida: " + formatBytes(file.size) + " → " + formatBytes(body.size)
+      : "La foto ya era liviana (" + formatBytes(file.size) + "): se subió sin cambios")
     if (body.size > MAX_DOCUMENT_BYTES) throw new Error('La foto sigue superando 5 MB después de comprimirla.')
   }
   const path = `${Number(studentId)}/${new Date().toISOString().slice(0, 10)}-${crypto.randomUUID()}.${type.ext}`

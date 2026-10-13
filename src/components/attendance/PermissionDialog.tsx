@@ -8,6 +8,7 @@ import { reportError } from '@/lib/security'
 import { JUSTIFICATION_REASONS, createPermission, deletePermission, uploadJustificationDocument } from '@/services/dayStatusService'
 import type { PermissionKind, Student, StudentPermission } from '@/types'
 import { friendlyError } from '@/lib/errorMessages'
+import { useToast } from '@/lib/toast'
 
 type Props = {
   student: Student | null
@@ -30,6 +31,7 @@ export default function PermissionDialog({ student, permissions, today, userName
   const [dateFrom, setDateFrom] = useState(today)
   const [dateTo, setDateTo] = useState(today)
   const [reason, setReason] = useState<string>(JUSTIFICATION_REASONS[0])
+  const toast = useToast()
   const [detail, setDetail] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
@@ -43,7 +45,7 @@ export default function PermissionDialog({ student, permissions, today, userName
     if (!student) return
     setSaving(true); setError('')
     try {
-      const documentPath = file ? await uploadJustificationDocument(file, student.id) : null
+      const documentPath = file ? await uploadJustificationDocument(file, student.id, (message) => toast.info(message)) : null
       await createPermission({ studentId: student.id, dateFrom, dateTo: kind === 'LATE' ? dateFrom : dateTo, kind, reason: [reason, detail.trim()].filter(Boolean).join(': '), documentPath, byName: userName })
       setDetail(''); setFile(null)
       onChanged()

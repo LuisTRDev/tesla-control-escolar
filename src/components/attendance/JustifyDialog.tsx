@@ -9,6 +9,7 @@ import {
 } from '@/services/dayStatusService'
 import type { AbsenceRecord, AttendanceRecord, Student } from '@/types'
 import { friendlyError } from '@/lib/errorMessages'
+import { useToast } from '@/lib/toast'
 
 export type JustifyTarget =
   | { kind: 'LATE'; student: Student; record: AttendanceRecord }
@@ -29,6 +30,7 @@ export default function JustifyDialog({ target, userName, onClose, onLateSaved, 
   const [file, setFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const toast = useToast()
 
   useEffect(() => { setReason(JUSTIFICATION_REASONS[0]); setDetail(''); setFile(null); setError('') }, [target])
 
@@ -41,7 +43,7 @@ export default function JustifyDialog({ target, userName, onClose, onLateSaved, 
     const fullReason = [reason, detail.trim()].filter(Boolean).join(': ')
     setSaving(true); setError('')
     try {
-      const documentPath = file ? await uploadJustificationDocument(file, target.student.id) : null
+      const documentPath = file ? await uploadJustificationDocument(file, target.student.id, (message) => toast.info(message)) : null
       const input = { reason: fullReason, documentPath, byName: userName }
       if (target.kind === 'LATE') onLateSaved(await justifyLate(target.record, input))
       else onAbsenceSaved(await justifyAbsence(target.absence, input))
