@@ -12,6 +12,7 @@ import { getAlertTypeLabel, getNotificationTypeLabel } from '@/lib/displayLabels
 import { addDaysToKey, toDateKey } from '@/lib/dates'
 import { AnimatedCounter } from '@/components/ui/AnimatedCounter'
 import { ConfettiBurst } from '@/components/ui/ConfettiBurst'
+import { friendlyError } from '@/lib/errorMessages'
 
 type Props = {
   student: Student | null
@@ -45,10 +46,11 @@ export default function StudentCaseFile({ student, classroom, onClose, onOpenWha
   useEffect(() => {
     if (!student) { setData(null); return }
     setLoading(true); setError('')
-    getStudentCaseFile(student.id).then(setData).catch((err) => { reportError('StudentCaseFile', err); setError(err instanceof Error ? err.message : 'No se pudo cargar el expediente.') }).finally(() => setLoading(false))
+    getStudentCaseFile(student.id).then(setData).catch((err) => { reportError('StudentCaseFile', err); setError(friendlyError(err, 'No se pudo cargar el expediente.')) }).finally(() => setLoading(false))
     // Faltas, permisos y salidas (Fase 14): si falla, el expediente se muestra igual sin ellos.
     setHistory(null)
     getStudentDayHistory(student.id).then(setHistory).catch((err) => reportError('StudentCaseFile', err))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recargar solo si cambia el alumno, no en cada nueva referencia del objeto
   }, [student?.id])
 
   const metrics = useMemo(() => {
@@ -214,7 +216,7 @@ export default function StudentCaseFile({ student, classroom, onClose, onOpenWha
                 <div className="flex flex-col gap-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <p className="text-xs font-black uppercase tracking-wider text-slate-400">Historial unificado</p>
+                      <p className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Historial unificado</p>
                       <h3 className="mt-1 text-lg font-black">Línea de tiempo</h3>
                     </div>
                     <span className="text-xs font-bold text-slate-500">{filteredTimeline.length} de {timeline.length} eventos</span>
@@ -239,7 +241,7 @@ export default function StudentCaseFile({ student, classroom, onClose, onOpenWha
                   </div>
 
                   <div className="max-h-[50vh] space-y-3 overflow-y-auto pr-1">
-                    {filteredTimeline.length===0?<p className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700">{timeline.length===0?'No hay eventos registrados.':'No hay eventos dentro del período seleccionado.'}</p>:filteredTimeline.map((item)=><div key={item.id} className="flex gap-3"><div className={`mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-xl ${item.tone==='ok'?'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300':item.tone==='danger'?'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300':item.tone==='warning'?'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300':'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300'}`}>{item.tone==='ok'?<CheckCircle2 size={17}/>:item.tone==='danger'?<Bell size={17}/>:item.tone==='warning'?<TriangleAlert size={17}/>:<Clock3 size={17}/>}</div><div className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"><div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><p className="font-black">{item.title}</p><p className="text-xs font-semibold text-slate-400">{dateTime(item.date)}</p></div><p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.detail}</p></div></div>)}
+                    {filteredTimeline.length===0?<p className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700">{timeline.length===0?'No hay eventos registrados.':'No hay eventos dentro del período seleccionado.'}</p>:filteredTimeline.map((item)=><div key={item.id} className="flex gap-3"><div className={`mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-xl ${item.tone==='ok'?'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300':item.tone==='danger'?'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300':item.tone==='warning'?'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300':'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300'}`}>{item.tone==='ok'?<CheckCircle2 size={17}/>:item.tone==='danger'?<Bell size={17}/>:item.tone==='warning'?<TriangleAlert size={17}/>:<Clock3 size={17}/>}</div><div className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"><div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><p className="font-black">{item.title}</p><p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{dateTime(item.date)}</p></div><p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.detail}</p></div></div>)}
                   </div>
                 </div>
               </Card>

@@ -8,6 +8,7 @@ import {
   type WhatsAppMessageType, type WhatsAppTemplates,
 } from '@/services/communicationService'
 import type { Student } from '@/types'
+import { friendlyError } from '@/lib/errorMessages'
 
 export type WhatsAppQueueItem = {
   key: string
@@ -83,7 +84,7 @@ export default function WhatsAppQueue({ open, onClose, items, today, currentClas
       await sendWhatsApp({ phone: next.student.guardianPhone, message: next.message })
       toggleSent(next.key, true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo abrir WhatsApp.')
+      setError(friendlyError(err, 'No se pudo abrir WhatsApp.'))
     }
   }
 
@@ -94,7 +95,7 @@ export default function WhatsAppQueue({ open, onClose, items, today, currentClas
       await onSaveTemplates(drafts)
       setSaveMessage('Plantillas guardadas.')
     } catch (err) {
-      setSaveMessage(err instanceof Error ? err.message : 'No se pudieron guardar las plantillas.')
+      setSaveMessage(friendlyError(err, 'No se pudieron guardar las plantillas.'))
     } finally {
       setSaving(false)
     }
@@ -168,7 +169,7 @@ export default function WhatsAppQueue({ open, onClose, items, today, currentClas
                   const done = sent.has(item.key)
                   return (
                     <div key={item.key} className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${done ? 'border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/50 dark:bg-emerald-950/20' : skipped.has(item.key) ? 'border-slate-200 opacity-60 dark:border-slate-800' : 'border-slate-200 dark:border-slate-800'}`}>
-                      <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full ${done ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400 dark:bg-slate-800'}`}>{done ? <Check size={15} /> : <MessageCircle size={14} />}</span>
+                      <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full ${done ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500 dark:text-slate-400 dark:bg-slate-800'}`}>{done ? <Check size={15} /> : <MessageCircle size={14} />}</span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-bold">{item.student.lastName}, {item.student.firstName}</p>
                         <p className="truncate text-xs text-slate-500 dark:text-slate-400">{item.classroomLabel} · {getWhatsAppTypeLabel(item.type)}{skipped.has(item.key) ? ' · saltado' : ''}</p>
@@ -201,7 +202,7 @@ export default function WhatsAppQueue({ open, onClose, items, today, currentClas
                   <select value={editType} onChange={(e) => setEditType(e.target.value as WhatsAppMessageType)} className="h-12 w-full appearance-none rounded-xl border border-slate-300 bg-white px-4 pr-10 text-sm font-semibold text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
                     {WHATSAPP_MESSAGE_TYPES.map((type) => <option key={type} value={type}>{getWhatsAppTypeLabel(type)}{drafts[type] ? ' · personalizada' : ''}</option>)}
                   </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-3.5 text-slate-400" size={20} />
+                  <ChevronDown className="pointer-events-none absolute right-3 top-3.5 text-slate-500 dark:text-slate-400" size={20} />
                 </div>
               </label>
 

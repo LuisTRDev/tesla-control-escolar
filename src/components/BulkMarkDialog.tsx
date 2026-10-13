@@ -87,7 +87,7 @@ export default function BulkMarkDialog({ open, onClose, students, selected, onSe
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-semibold">{student.lastName}, {student.firstName}</span>
-                      {room && <span className="block text-xs text-slate-400">{room.grade} {room.section} · {room.level}</span>}
+                      {room && <span className="block text-xs text-slate-500 dark:text-slate-400">{room.grade} {room.section} · {room.level}</span>}
                     </span>
                   </button>
                 )

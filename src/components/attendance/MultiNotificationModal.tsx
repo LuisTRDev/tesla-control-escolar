@@ -32,7 +32,7 @@ export default function MultiNotificationModal({ multiNotificationOpen, setMulti
         <motion.section className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-950 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100" onMouseDown={(event) => event.stopPropagation()} initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
           <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-800 sm:p-6">
             <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Impresión optimizada</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Impresión optimizada</p>
               <h2 className="mt-1 text-xl font-black">Multinotificación</h2>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Selecciona hasta 3 estudiantes. Se generará una hoja A4 vertical con una ficha de 210 × 99 mm por alumno.</p>
             </div>
@@ -53,7 +53,7 @@ export default function MultiNotificationModal({ multiNotificationOpen, setMulti
                 />
               </label>
               <div className="relative flex-1">
-                <Search className="absolute left-4 top-3.5 text-slate-400" size={20} />
+                <Search className="absolute left-4 top-3.5 text-slate-500 dark:text-slate-400" size={20} />
                 <Input className="pl-12" placeholder="Buscar por alumno, grado o aula..." value={notificationSearch} onChange={(event) => setNotificationSearch(event.target.value)} />
               </div>
               <div className={`rounded-xl px-4 py-2 text-sm font-black ${selectedNotificationIds.length === MAX_NOTIFICATIONS_PER_PAGE ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'}`}>

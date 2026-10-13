@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/Input'
 import { reportError } from '@/lib/security'
 import { deleteAuthorizedPickup, getAuthorizedPickups, saveAuthorizedPickup } from '@/services/dayStatusService'
 import type { AuthorizedPickup } from '@/types'
+import { friendlyError } from '@/lib/errorMessages'
 
 const EMPTY = { fullName: '', dni: '', relationship: '', phone: '' }
 
@@ -28,7 +29,7 @@ export default function AuthorizedPickupsSection({ studentId }: { studentId: str
   async function add() {
     setSaving(true); setError('')
     try { await saveAuthorizedPickup({ studentId, ...form }); setForm(EMPTY); await load() }
-    catch (err) { setError(err instanceof Error ? err.message : 'No se pudo guardar.') }
+    catch (err) { setError(friendlyError(err, 'No se pudo guardar.')) }
     finally { setSaving(false) }
   }
 
@@ -36,7 +37,7 @@ export default function AuthorizedPickupsSection({ studentId }: { studentId: str
     if (!window.confirm(`¿Quitar a ${row.fullName} de las personas autorizadas?`)) return
     setSaving(true); setError('')
     try { await deleteAuthorizedPickup(row.id); await load() }
-    catch (err) { setError(err instanceof Error ? err.message : 'No se pudo quitar.') }
+    catch (err) { setError(friendlyError(err, 'No se pudo quitar.')) }
     finally { setSaving(false) }
   }
 

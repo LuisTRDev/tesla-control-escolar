@@ -55,7 +55,7 @@ function DonutChart({ items, centerLabel }: { items: DonutItem[]; centerLabel: s
         <div className="absolute inset-[26px] grid place-items-center rounded-full bg-white text-center shadow-inner dark:bg-slate-900">
           <div>
             <p className="text-3xl font-black">{total}</p>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{centerLabel}</p>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{centerLabel}</p>
           </div>
         </div>
       </div>
@@ -205,7 +205,7 @@ export default function Dashboard({
         <div className="sticky top-0 z-10 rounded-t-3xl border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 sm:px-7">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-slate-400">
+              <p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                 <BarChart3 size={15} /> Dashboard {period === 'TODAY' ? 'diario' : 'mensual'}
               </p>
               <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950 dark:text-slate-100">{dashboardScope === 'ALL' ? 'Métricas generales del colegio' : 'Métricas por aula'}</h2>
@@ -232,7 +232,7 @@ export default function Dashboard({
                       <option key={item.id} value={item.id}>{item.grade} {item.section} · {item.level}</option>
                     ))}
                   </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-3 text-slate-400" size={18} />
+                  <ChevronDown className="pointer-events-none absolute right-3 top-3 text-slate-500 dark:text-slate-400" size={18} />
                 </div>
               </label>
               <Button variant="ghost" onClick={onClose} aria-label="Cerrar dashboard" className="h-11 px-3"><X size={20} /></Button>
@@ -242,12 +242,12 @@ export default function Dashboard({
 
         <div className="p-5 sm:p-7">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-            <button type="button" onClick={() => setDrill('ALL')} className="text-left"><Card className="p-4 transition-colors hover:border-brand-gold hover:bg-brand-gold/5"><p className="text-xs text-slate-500 dark:text-slate-400">Alumnos</p><p className="mt-1 text-2xl font-black">{classroomStudents.length}</p></Card></button>
-            <button type="button" onClick={() => setDrill('ON_TIME')} className="text-left"><Card className="p-4 transition-colors hover:border-brand-gold hover:bg-brand-gold/5"><p className="text-xs text-slate-500 dark:text-slate-400">A tiempo</p><p className="mt-1 text-2xl font-black text-emerald-700 dark:text-emerald-400">{onTime}</p></Card></button>
-            <button type="button" onClick={() => setDrill('LATE')} className="text-left"><Card className="p-4 transition-colors hover:border-brand-gold hover:bg-brand-gold/5"><p className="text-xs text-slate-500 dark:text-slate-400">Tardanzas</p><p className="mt-1 text-2xl font-black text-amber-700 dark:text-amber-400">{late}</p></Card></button>
-            <button type="button" onClick={() => setDrill('ATTENDANCE_PENDING')} className="text-left"><Card className="p-4 transition-colors hover:border-brand-gold hover:bg-brand-gold/5"><p className="text-xs text-slate-500 dark:text-slate-400">Pendientes</p><p className="mt-1 text-2xl font-black">{pending}</p></Card></button>
-            <button type="button" onClick={() => setDrill('NON_COMPLIANT')} className="text-left"><Card className="p-4 transition-colors hover:border-brand-gold hover:bg-brand-gold/5"><p className="text-xs text-slate-500 dark:text-slate-400">Incumplimientos</p><p className="mt-1 text-2xl font-black text-amber-700 dark:text-amber-400">{nonCompliant}</p></Card></button>
-            <button type="button" onClick={() => setDrill('PRESENTATION_PENDING')} className="text-left"><Card className="p-4 transition-colors hover:border-brand-gold hover:bg-brand-gold/5"><p className="text-xs text-slate-500 dark:text-slate-400">Sin revisar</p><p className="mt-1 text-2xl font-black">{presentationPending}</p></Card></button>
+            <button type="button" onClick={() => setDrill('ALL')} className="text-left"><Card className="p-4 transition-colors hover:border-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/30"><p className="text-xs text-slate-500 dark:text-slate-400">Alumnos</p><p className="mt-1 text-2xl font-black">{classroomStudents.length}</p></Card></button>
+            <button type="button" onClick={() => setDrill('ON_TIME')} className="text-left"><Card className="p-4 transition-colors hover:border-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/30"><p className="text-xs text-slate-500 dark:text-slate-400">A tiempo</p><p className="mt-1 text-2xl font-black text-emerald-700 dark:text-emerald-400">{onTime}</p></Card></button>
+            <button type="button" onClick={() => setDrill('LATE')} className="text-left"><Card className="p-4 transition-colors hover:border-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/30"><p className="text-xs text-slate-500 dark:text-slate-400">Tardanzas</p><p className="mt-1 text-2xl font-black text-amber-700 dark:text-amber-400">{late}</p></Card></button>
+            <button type="button" onClick={() => setDrill('ATTENDANCE_PENDING')} className="text-left"><Card className="p-4 transition-colors hover:border-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/30"><p className="text-xs text-slate-500 dark:text-slate-400">Pendientes</p><p className="mt-1 text-2xl font-black">{pending}</p></Card></button>
+            <button type="button" onClick={() => setDrill('NON_COMPLIANT')} className="text-left"><Card className="p-4 transition-colors hover:border-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/30"><p className="text-xs text-slate-500 dark:text-slate-400">Incumplimientos</p><p className="mt-1 text-2xl font-black text-amber-700 dark:text-amber-400">{nonCompliant}</p></Card></button>
+            <button type="button" onClick={() => setDrill('PRESENTATION_PENDING')} className="text-left"><Card className="p-4 transition-colors hover:border-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/30"><p className="text-xs text-slate-500 dark:text-slate-400">Sin revisar</p><p className="mt-1 text-2xl font-black">{presentationPending}</p></Card></button>
           </div>
 
           <AnimatePresence mode="wait">

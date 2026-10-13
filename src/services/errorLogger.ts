@@ -1,4 +1,6 @@
 import { supabase } from '@/lib/supabase'
+import { setErrorSink } from '@/lib/security'
+import { ERROR_HINTS, knownErrorHint } from '@/lib/errorMessages'
 
 export type ApplicationErrorContext = {
   module?: string
@@ -10,6 +12,8 @@ export type ApplicationErrorContext = {
 }
 
 let installed = false
+// phase15 crea log_client_error + tabla app_errors; sin ella se usa la RPC antigua.
+let clientErrorRpcAvailable = true
 let lastFingerprint = ''
 let lastFingerprintAt = 0
 
@@ -89,6 +93,21 @@ export async function logApplicationError(context: ApplicationErrorContext) {
   }
 
   try {
+    if (clientErrorRpcAvailable) {
+      const { error } = await supabase.rpc('log_client_error', {
+        p_module: payload.module,
+        p_action: payload.action,
+        p_message: payload.message.slice(0, 1000),
+        p_error_code: payload.error_code,
+        p_details: payload,
+      })
+      if (!error) return
+      if (knownErrorHint(error) !== ERROR_HINTS.missingSql) {
+        console.warn('[Tesla] No se pudo guardar el error en app_errors', error)
+        return
+      }
+      clientErrorRpcAvailable = false
+    }
     const { error } = await supabase.rpc('log_application_error', {
       p_module: payload.module,
       p_action: payload.action,
@@ -104,9 +123,24 @@ export async function logApplicationError(context: ApplicationErrorContext) {
   }
 }
 
+/** Errores esperables (sin Internet, sesión vencida) no son fallas de la app: no se registran. */
+function isExpectedError(error: unknown) {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true
+  const hint = knownErrorHint(error)
+  return hint === ERROR_HINTS.offline || hint === ERROR_HINTS.session
+}
+
 export function installGlobalErrorLogging() {
   if (installed || typeof window === 'undefined') return
   installed = true
+
+  // Todo reportError() de la app queda registrado en producción para el panel de monitoreo.
+  if (import.meta.env.PROD) {
+    setErrorSink((context, error) => {
+      if (error === undefined || isExpectedError(error)) return
+      void logApplicationError({ module: context, action: 'reportError', error })
+    })
+  }
 
   window.addEventListener('error', (event) => {
     void logApplicationError({
@@ -122,6 +156,7 @@ export function installGlobalErrorLogging() {
   })
 
   window.addEventListener('unhandledrejection', (event) => {
+    if (isExpectedError(event.reason)) return
     void logApplicationError({
       module: 'Frontend',
       action: 'unhandledrejection',

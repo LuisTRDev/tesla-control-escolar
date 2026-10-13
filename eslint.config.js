@@ -3,7 +3,7 @@ import globals from 'globals'
 import reactHooks from 'eslint-plugin-react-hooks'
 import tseslint from 'typescript-eslint'
 
-// Solo reporta (npm run lint); no forma parte del build ni corrige nada automáticamente.
+// Bloquea el build: `npm run build` corre `npm run lint` antes y falla con cualquier error o aviso.
 export default tseslint.config(
   { ignores: ['dist', 'node_modules', 'public/sw.js'] },
   {
@@ -18,7 +18,10 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'react-hooks/rules-of-hooks': 'error',
+      eqeqeq: ['error', 'smart'],
+      '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
 )

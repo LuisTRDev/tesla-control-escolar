@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { supabase, getRememberSession, setRememberSession } from '@/lib/supabase'
 import { reportError } from '@/lib/security'
+import { friendlyError } from '@/lib/errorMessages'
 
 type Props = { onLogin: () => void; externalError?: string }
 
@@ -24,10 +25,10 @@ export default function Login({ onLogin, externalError = '' }: Props) {
       setRememberSession(rememberSession)
       const normalizedEmail = email.trim().toLowerCase().slice(0, 254)
       const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password })
-      if (error || !data.user) { setErrorMessage(error?.message === 'Invalid login credentials' ? 'Correo o contraseña incorrectos.' : (error?.message ?? 'No se pudo iniciar sesión.')); return }
+      if (error || !data.user) { setErrorMessage(error?.message === 'Invalid login credentials' ? 'Correo o contraseña incorrectos. Revisa mayúsculas y que el correo esté bien escrito.' : /banned|user is banned/i.test(error?.message ?? '') ? 'Tu cuenta está desactivada. Pide al administrador que la reactive.' : /email not confirmed/i.test(error?.message ?? '') ? 'Tu cuenta aún no está confirmada. Pide al administrador que la active.' : friendlyError(error, 'No se pudo iniciar sesión.')); return }
       onLogin()
     } catch (error) {
-      reportError('login', error); setErrorMessage('Ocurrió un error al iniciar sesión.')
+      reportError('login', error); setErrorMessage(friendlyError(error, 'No se pudo iniciar sesión.'))
     } finally { setLoading(false) }
   }
 

@@ -1,3 +1,5 @@
+import type { SyncConflict } from '@/lib/syncConflicts'
+
 const DB_NAME = 'tesla-control-offline'
 const DB_VERSION = 1
 const SNAPSHOTS = 'snapshots'
@@ -13,6 +15,7 @@ export type SyncQueueItem = {
   createdAt: string
   retryCount: number
   lastError?: string
+  lastAttemptAt?: string
   operationKey?: string
 }
 
@@ -147,4 +150,25 @@ export async function clearCachedSnapshots(): Promise<void> {
     tx.onerror = () => reject(tx.error)
   })
   db.close()
+}
+
+// ---------------------------------------------------------------- Conflictos de sincronización
+
+const CONFLICTS_KEY = 'sync_conflicts'
+const MAX_CONFLICTS = 50
+
+/** Conflictos resueltos automáticamente al sincronizar, para que el auxiliar pueda revisarlos. */
+export async function getSyncConflicts(): Promise<SyncConflict[]> {
+  return (await getMeta<SyncConflict[]>(CONFLICTS_KEY)) ?? []
+}
+
+export async function addSyncConflict(conflict: SyncConflict): Promise<void> {
+  const current = await getSyncConflicts()
+  await setMeta(CONFLICTS_KEY, [conflict, ...current].slice(0, MAX_CONFLICTS))
+  window.dispatchEvent(new CustomEvent('tesla-sync-queue-changed'))
+}
+
+export async function clearSyncConflicts(): Promise<void> {
+  await setMeta(CONFLICTS_KEY, [])
+  window.dispatchEvent(new CustomEvent('tesla-sync-queue-changed'))
 }

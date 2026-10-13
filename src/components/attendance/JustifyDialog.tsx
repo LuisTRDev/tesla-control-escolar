@@ -8,6 +8,7 @@ import {
   JUSTIFICATION_REASONS, getDocumentUrl, justifyAbsence, justifyLate, unjustifyAbsence, unjustifyLate, uploadJustificationDocument,
 } from '@/services/dayStatusService'
 import type { AbsenceRecord, AttendanceRecord, Student } from '@/types'
+import { friendlyError } from '@/lib/errorMessages'
 
 export type JustifyTarget =
   | { kind: 'LATE'; student: Student; record: AttendanceRecord }
@@ -47,7 +48,7 @@ export default function JustifyDialog({ target, userName, onClose, onLateSaved, 
       onClose()
     } catch (err) {
       reportError('JustifyDialog', err)
-      setError(err instanceof Error ? err.message : 'No se pudo guardar la justificación.')
+      setError(friendlyError(err, 'No se pudo guardar la justificación.'))
     } finally { setSaving(false) }
   }
 
@@ -60,13 +61,13 @@ export default function JustifyDialog({ target, userName, onClose, onLateSaved, 
       onClose()
     } catch (err) {
       reportError('JustifyDialog', err)
-      setError(err instanceof Error ? err.message : 'No se pudo quitar la justificación.')
+      setError(friendlyError(err, 'No se pudo quitar la justificación.'))
     } finally { setSaving(false) }
   }
 
   async function openDocument(path: string) {
     try { window.open(await getDocumentUrl(path), '_blank', 'noopener,noreferrer') }
-    catch (err) { setError(err instanceof Error ? err.message : 'No se pudo abrir el documento.') }
+    catch (err) { setError(friendlyError(err, 'No se pudo abrir el documento.')) }
   }
 
   const isPermission = target?.kind === 'ABSENCE' && target.absence.status === 'PERMISSION'
@@ -110,11 +111,11 @@ export default function JustifyDialog({ target, userName, onClose, onLateSaved, 
                   </select>
                 </label>
                 <label className="mt-4 block text-sm font-bold">
-                  Detalle {reason === 'Otro' ? '' : <span className="font-normal text-slate-400">(opcional)</span>}
+                  Detalle {reason === 'Otro' ? '' : <span className="font-normal text-slate-500 dark:text-slate-400">(opcional)</span>}
                   <textarea value={detail} onChange={(e) => setDetail(e.target.value)} rows={3} maxLength={400} placeholder="Ej.: presentó certificado médico del Centro de Salud..." className="mt-2 w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
                 </label>
                 <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-slate-300 p-3 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900">
-                  <Paperclip size={18} className="shrink-0 text-slate-400" />
+                  <Paperclip size={18} className="shrink-0 text-slate-500 dark:text-slate-400" />
                   <span className="min-w-0 flex-1">
                     <b className="block">{file ? file.name : 'Adjuntar foto o PDF (opcional)'}</b>
                     <small className="text-slate-500 dark:text-slate-400">Certificado, esquela o constancia · máx. 5 MB</small>

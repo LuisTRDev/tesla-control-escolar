@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { spreadsheetSafeObject, spreadsheetSafeText } from '@/lib/csvSecurity'
 import { addDaysToKey } from '@/lib/dates'
 import { toNumber as n } from '@/lib/utils'
+import { fetchAllPages } from '@/lib/paging'
 
 export type ReportSummary = {
   totalStudents: number
@@ -159,22 +160,14 @@ async function getRepeatOffenders(from: string, to: string, classroomId: string 
 }
 
 async function getDetails(from: string, to: string, classroomId: string | null) {
-  const [studentsRes, classroomsRes, attendanceRes, presentationRes, notificationsRes] = await Promise.all([
-    supabase.from('students').select('id, classroom_id, first_name, last_name'),
-    supabase.from('classrooms').select('id, grade, section, level'),
-    supabase.from('attendance').select('student_id, date, entry_time, status').gte('date', from).lte('date', to).order('date'),
-    supabase.from('presentation_controls').select('id, student_id, date, status, other_description, presentation_violations(violation_type)').gte('date', from).lte('date', to).order('date'),
-    supabase.from('notifications').select('student_id, date, notification_number, notification_type, observation').gte('date', from).lte('date', to).order('date'),
+  // Más de 1000 filas en el rango es normal (un mes de todo el colegio): se piden por páginas.
+  const [studentRows, classroomRows, attendanceRows, presentationRows, notificationRows] = await Promise.all([
+    fetchAllPages<DbStudentReport>((a, b) => supabase.from('students').select('id, classroom_id, first_name, last_name').order('id').range(a, b) as unknown as PromiseLike<{ data: DbStudentReport[] | null; error: unknown }>),
+    fetchAllPages<DbClassroomReport>((a, b) => supabase.from('classrooms').select('id, grade, section, level').order('id').range(a, b) as unknown as PromiseLike<{ data: DbClassroomReport[] | null; error: unknown }>),
+    fetchAllPages<DbAttendanceReport>((a, b) => supabase.from('attendance').select('student_id, date, entry_time, status').gte('date', from).lte('date', to).order('date').order('id').range(a, b) as unknown as PromiseLike<{ data: DbAttendanceReport[] | null; error: unknown }>),
+    fetchAllPages<DbPresentationReport>((a, b) => supabase.from('presentation_controls').select('id, student_id, date, status, other_description, presentation_violations(violation_type)').gte('date', from).lte('date', to).order('date').order('id').range(a, b) as unknown as PromiseLike<{ data: DbPresentationReport[] | null; error: unknown }>),
+    fetchAllPages<DbNotificationReport>((a, b) => supabase.from('notifications').select('student_id, date, notification_number, notification_type, observation').gte('date', from).lte('date', to).order('date').order('id').range(a, b) as unknown as PromiseLike<{ data: DbNotificationReport[] | null; error: unknown }>),
   ])
-  for (const result of [studentsRes, classroomsRes, attendanceRes, presentationRes, notificationsRes]) {
-    if (result.error) throw result.error
-  }
-
-  const classroomRows = (classroomsRes.data ?? []) as DbClassroomReport[]
-  const studentRows = (studentsRes.data ?? []) as DbStudentReport[]
-  const attendanceRows = (attendanceRes.data ?? []) as DbAttendanceReport[]
-  const presentationRows = (presentationRes.data ?? []) as DbPresentationReport[]
-  const notificationRows = (notificationsRes.data ?? []) as DbNotificationReport[]
 
   const classrooms = new Map(classroomRows.map((row) => [String(row.id), row]))
   const students = new Map(studentRows.map((row) => [String(row.id), row]))

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { useToast } from '@/lib/toast'
+import { friendlyError } from '@/lib/errorMessages'
 import {
   computeDebtStatus,
   getGuardianPaymentHistory,
@@ -101,7 +102,7 @@ function GuardianRow({ guardian, year, month, onSaved, onViewHistory }: {
       onSaved({ ...guardian, paid: next })
       toast.success(next ? `${guardian.fullName} — pensión pagada` : `${guardian.fullName} — marcado pendiente`)
     } catch (error) {
-      toast.error('No se pudo actualizar', error instanceof Error ? error.message : undefined)
+      toast.error('No se pudo actualizar', friendlyError(error))
     } finally {
       setSaving(false)
     }
@@ -115,7 +116,7 @@ function GuardianRow({ guardian, year, month, onSaved, onViewHistory }: {
       setDirty(false)
       toast.success('Nota guardada')
     } catch (error) {
-      toast.error('No se pudo guardar la nota', error instanceof Error ? error.message : undefined)
+      toast.error('No se pudo guardar la nota', friendlyError(error))
     } finally {
       setSaving(false)
     }
@@ -140,14 +141,14 @@ function GuardianRow({ guardian, year, month, onSaved, onViewHistory }: {
             <p className="text-xs text-slate-500 dark:text-slate-400">
               {guardian.students.length > 0 ? guardian.students.map((s) => `${s.name} (${s.classroom})`).join(' · ') : 'Sin alumno vinculado'}
             </p>
-            <p className="mt-0.5 text-xs text-slate-400">
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
               S/{guardian.amount} · Vence {new Date(guardian.dueDate + 'T12:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })}
               {guardian.phone && ` · ${guardian.phone}`}
             </p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 self-start">
-          <button type="button" onClick={() => onViewHistory(guardian.guardianId)} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800" title="Ver historial">
+          <button type="button" onClick={() => onViewHistory(guardian.guardianId)} className="rounded-full p-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800" title="Ver historial">
             <Clock3 size={16} />
           </button>
           <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black ${meta.badge}`}>
@@ -188,7 +189,7 @@ export default function Cobranza({ open, onClose }: Props) {
     setError('')
     getPensionStatusForMonth(year, month)
       .then(setGuardians)
-      .catch((err) => setError(err instanceof Error ? err.message : 'No se pudo cargar la cobranza.'))
+      .catch((err) => setError(friendlyError(err, 'No se pudo cargar la cobranza.')))
       .finally(() => setLoading(false))
   }, [open, year, month])
 
@@ -260,7 +261,7 @@ export default function Cobranza({ open, onClose }: Props) {
           <div className="p-5 sm:p-7">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <button type="button" onClick={() => setStatusFilter('ALL')} className="text-left">
-                <Card className={`p-4 transition-colors hover:border-brand-gold ${statusFilter === 'ALL' ? 'border-brand-gold bg-brand-gold/5' : ''}`}>
+                <Card className={`p-4 transition-colors hover:border-sky-400 ${statusFilter === 'ALL' ? 'border-sky-500 bg-sky-50 dark:bg-sky-950/40' : ''}`}>
                   <p className="text-xs text-slate-500 dark:text-slate-400">Total apoderados</p>
                   <p className="mt-1 text-2xl font-black">{summary.total}</p>
                 </Card>
@@ -296,7 +297,7 @@ export default function Cobranza({ open, onClose }: Props) {
 
             <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
               <div className="relative flex-1">
-                <Search className="absolute left-4 top-3.5 text-slate-400" size={20} />
+                <Search className="absolute left-4 top-3.5 text-slate-500 dark:text-slate-400" size={20} />
                 <Input className="pl-12" placeholder="Buscar apoderado, alumno, DNI o teléfono..." value={search} onChange={(e) => setSearch(e.target.value)} />
               </div>
               <select

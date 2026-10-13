@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase'
 import { trimTime } from '@/lib/dates'
 import { enqueueOperation, getSnapshot, listPendingOperations, removePendingOperationFor, setSnapshot } from '@/lib/offlineDb'
 import type { AttendanceRecord, AttendanceStatus, Classroom, Guardian, PresentationRecord, Student } from '@/types'
+import { fetchAllPages } from '@/lib/paging'
 
 const DEFAULT_LIMIT = '07:45'
 const K = {
@@ -299,11 +300,15 @@ export function calculateStatus(time: string, entryLimit: string, tolerance?: To
 
 export async function getAttendanceRange(from: string, to: string): Promise<AttendanceRecord[]> {
   try {
-    const select = (columns: string) => supabase.from('attendance').select(columns).gte('date', from).lte('date', to).order('date', { ascending: false })
-    let { data, error } = await select(ATTENDANCE_COLUMNS + JUSTIFICATION_COLUMNS)
-    if (error?.code === '42703') ({ data, error } = await select(ATTENDANCE_COLUMNS))
-    if (error) throw error
-    const mapped = ((data ?? []) as unknown as DbAttendance[]).map(mapAttendance)
+    const select = (columns: string) => fetchAllPages<DbAttendance>((start, end) => supabase.from('attendance').select(columns).gte('date', from).lte('date', to).order('date', { ascending: false }).order('id').range(start, end) as unknown as PromiseLike<{ data: DbAttendance[] | null; error: unknown }>)
+    let data: DbAttendance[]
+    try { data = await select(ATTENDANCE_COLUMNS + JUSTIFICATION_COLUMNS) }
+    catch (error) {
+      // Sin phase14 no existen las columnas de justificación: se piden sin ellas.
+      if ((error as { code?: string } | null)?.code !== '42703') throw error
+      data = await select(ATTENDANCE_COLUMNS)
+    }
+    const mapped = data.map(mapAttendance)
     await setSnapshot(K.attendance(from, to), mapped)
     return overlayPendingAttendance(mapped, from, to)
   } catch (error) {
@@ -564,9 +569,8 @@ export async function deleteAttendanceForDate(date: string): Promise<void> {
 
 export async function getPresentationRange(from: string, to: string): Promise<PresentationRecord[]> {
   try {
-    const { data, error } = await supabase.from('presentation_controls').select('id, student_id, date, status, other_description, checked_at, presentation_violations(violation_type)').gte('date', from).lte('date', to).order('date', { ascending: false })
-    if (error) throw error
-    const mapped = ((data ?? []) as DbPresentation[]).map(mapPresentation)
+    const data = await fetchAllPages<DbPresentation>((start, end) => supabase.from('presentation_controls').select('id, student_id, date, status, other_description, checked_at, presentation_violations(violation_type)').gte('date', from).lte('date', to).order('date', { ascending: false }).order('id').range(start, end) as unknown as PromiseLike<{ data: DbPresentation[] | null; error: unknown }>)
+    const mapped = data.map(mapPresentation)
     await setSnapshot(K.presentation(from, to), mapped)
     return overlayPendingPresentation(mapped, from, to)
   } catch (error) {

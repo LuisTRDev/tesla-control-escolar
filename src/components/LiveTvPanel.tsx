@@ -371,7 +371,7 @@ export default function LiveTvPanel({
                     <div className="flex flex-wrap gap-2">
                       <button type="button" onClick={() => setCatalogOpen((value) => !value)} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-black text-slate-200 hover:bg-white/10"><Plus size={16} /> Añadir tarjeta {catalogOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>
                       <button type="button" onClick={resetLayout} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-black text-slate-300 hover:bg-white/10"><RotateCcw size={16} /> Restablecer</button>
-                      <button type="button" onClick={saveLayout} className="inline-flex items-center gap-2 rounded-xl bg-brand-gold px-4 py-2.5 text-sm font-black text-slate-950 shadow-lg shadow-brand-gold/10 hover:brightness-105"><Save size={16} /> Guardar</button>
+                      <button type="button" onClick={saveLayout} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-black text-slate-950 shadow-lg hover:brightness-105"><Save size={16} /> Guardar</button>
                     </div>
                   </div>
 
@@ -449,6 +449,7 @@ export default function LiveTvPanel({
 
 type PanelData = ReturnType<typeof buildPanelDataShape>
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- solo existe para derivar el tipo PanelData
 function buildPanelDataShape() {
   return {
     entered: 0, onTime: 0, late: 0, pending: 0, exited: 0, complianceChecked: 0, complianceOk: 0,
@@ -499,7 +500,7 @@ function StudentRow({ student, classroom, time, status, icon }: { student: Stude
 }
 
 function Metric({ icon, label, value, accent = 'slate' }: { icon: ReactNode; label: string; value: number; accent?: 'slate' | 'emerald' | 'blue' | 'amber' }) {
-  const accentClass = accent === 'emerald' ? 'text-emerald-300 bg-emerald-500/10' : accent === 'blue' ? 'text-brand-gold bg-brand-gold/10' : accent === 'amber' ? 'text-amber-300 bg-amber-500/10' : 'text-slate-300 bg-white/5'
+  const accentClass = accent === 'emerald' ? 'text-emerald-300 bg-emerald-500/10' : accent === 'blue' ? 'text-sky-300 bg-sky-500/10' : accent === 'amber' ? 'text-amber-300 bg-amber-500/10' : 'text-slate-300 bg-white/5'
   return <div className="rounded-2xl border border-white/10 bg-white/[.035] p-4 xl:p-5"><div className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-black uppercase tracking-wider ${accentClass}`}>{icon}{label}</div><p className="mt-4 text-4xl font-black tabular-nums xl:text-5xl">{value}</p></div>
 }
 

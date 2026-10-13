@@ -6,6 +6,7 @@ import { reportError } from '@/lib/security'
 import { CALENDAR_KIND_LABELS, deleteCalendarDay, deleteLevelSchedule, saveCalendarDay, saveLevelSchedule } from '@/services/dayStatusService'
 import type { ToleranceSettings } from '@/services/schoolService'
 import type { CalendarDay, CalendarDayKind, Classroom, LevelSchedule } from '@/types'
+import { friendlyError } from '@/lib/errorMessages'
 
 type Props = {
   schedules: LevelSchedule[]
@@ -30,7 +31,7 @@ export default function ScheduleCalendarSettings({ schedules, calendar, globalLi
   async function run(action: () => Promise<void>) {
     setError('')
     try { await action(); onChanged() }
-    catch (err) { reportError('ScheduleCalendarSettings', err); setError(err instanceof Error ? err.message : 'No se pudo guardar el cambio.') }
+    catch (err) { reportError('ScheduleCalendarSettings', err); setError(friendlyError(err, 'No se pudo guardar el cambio.')) }
   }
 
   function toggleOwnSchedule(level: Classroom['level'], enabled: boolean) {
@@ -86,7 +87,7 @@ export default function ScheduleCalendarSettings({ schedules, calendar, globalLi
                 <p className="font-black capitalize">{new Date(day.date + 'T12:00:00').toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}</p>
                 <p className="text-slate-500 dark:text-slate-400">{CALENDAR_KIND_LABELS[day.kind]}{day.description ? ` · ${day.description}` : ''}</p>
               </div>
-              {isAdmin && <button type="button" onClick={() => void run(() => deleteCalendarDay(day.date))} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600 dark:hover:bg-slate-800" aria-label="Quitar día"><Trash2 size={16} /></button>}
+              {isAdmin && <button type="button" onClick={() => void run(() => deleteCalendarDay(day.date))} className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 hover:text-red-600 dark:hover:bg-slate-800" aria-label="Quitar día"><Trash2 size={16} /></button>}
             </div>
           ))}
         </div>

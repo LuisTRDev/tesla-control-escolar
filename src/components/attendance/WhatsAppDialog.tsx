@@ -73,7 +73,7 @@ export default function WhatsAppDialog({ whatsAppStudent, setWhatsAppStudent, wh
                   >
                     {options.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}
                   </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-3.5 text-slate-400" size={20} />
+                  <ChevronDown className="pointer-events-none absolute right-3 top-3.5 text-slate-500 dark:text-slate-400" size={20} />
                 </div>
               </label>
             )}

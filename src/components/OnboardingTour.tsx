@@ -4,13 +4,19 @@ import { Button } from '@/components/ui/Button'
 
 export type TourStep = { target: string; title: string; description: string }
 
-const SEEN_KEY = 'tesla_tour_seen_v1'
+// v2: recorrido ampliado para auxiliares nuevos (se muestra una vez también a quien vio el v1).
+const SEEN_KEY = 'tesla_tour_seen_v2'
+const START_EVENT = 'tesla-start-tour'
 
 export function hasSeenTour(): boolean {
-  return localStorage.getItem(SEEN_KEY) === '1'
+  try { return localStorage.getItem(SEEN_KEY) === '1' } catch { return true }
 }
 function markTourSeen() {
-  localStorage.setItem(SEEN_KEY, '1')
+  try { localStorage.setItem(SEEN_KEY, '1') } catch { /* sin almacenamiento: se volverá a mostrar */ }
+}
+/** Relanza el recorrido desde cualquier parte (p. ej. la Guía de uso). */
+export function startTour() {
+  window.dispatchEvent(new Event(START_EVENT))
 }
 /** Botón "?" en cualquier parte de la app puede llamar esto para relanzar el tour manualmente. */
 export function resetTour() {
@@ -33,6 +39,12 @@ export function OnboardingTour({ steps, autoStart = true, onClose, forceKey }: P
   }, [autoStart])
 
   useEffect(() => {
+    const start = () => { setIndex(0); setActive(true) }
+    window.addEventListener(START_EVENT, start)
+    return () => window.removeEventListener(START_EVENT, start)
+  }, [])
+
+  useEffect(() => {
     if (!forceKey) return
     setIndex(0)
     setActive(true)
@@ -43,12 +55,13 @@ export function OnboardingTour({ steps, autoStart = true, onClose, forceKey }: P
     const step = steps[index]
     if (!step) return
     const el = document.querySelector(step.target)
-    if (el) {
-      el.scrollIntoView({ block: 'center', behavior: 'smooth' })
-      setRect(el.getBoundingClientRect())
-    } else {
-      setRect(null)
-    }
+    const visible = el instanceof HTMLElement && el.offsetParent !== null && el.getBoundingClientRect().right > 0
+    if (!el || !visible) { setRect(null); return }
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    setRect(el.getBoundingClientRect())
+    // Se vuelve a medir cuando termina el desplazamiento suave, para que el resaltado quede encima.
+    const timer = window.setTimeout(() => setRect(el.getBoundingClientRect()), 400)
+    return () => window.clearTimeout(timer)
   }, [active, index, steps])
 
   function finish() {
@@ -62,11 +75,11 @@ export function OnboardingTour({ steps, autoStart = true, onClose, forceKey }: P
   const isLast = index === steps.length - 1
 
   return (
-    <div className="fixed inset-0 z-[250]">
+    <div className="fixed inset-0 z-[250]" role="dialog" aria-modal="true" aria-label="Recorrido guiado">
       <div className="absolute inset-0 bg-slate-950/60" />
       {rect && (
         <div
-          className="absolute rounded-2xl ring-4 ring-brand-gold animate-pulseRing"
+          className="absolute rounded-2xl ring-4 ring-sky-400 animate-pulseRing"
           style={{
             top: rect.top - 8,
             left: rect.left - 8,
@@ -83,16 +96,16 @@ export function OnboardingTour({ steps, autoStart = true, onClose, forceKey }: P
             : { top: '40%', left: '50%', transform: 'translate(-50%, -50%)' }
         }
       >
-        <button onClick={finish} className="absolute right-3 top-3 text-slate-400 hover:text-slate-700" aria-label="Cerrar tour">
+        <button onClick={finish} className="absolute right-3 top-3 text-slate-500 dark:text-slate-400 hover:text-slate-700" aria-label="Cerrar tour">
           <X size={18} />
         </button>
-        <p className="text-[11px] font-black uppercase tracking-widest text-brand-gold">
+        <p className="text-[11px] font-black uppercase tracking-widest text-sky-600 dark:text-sky-400">
           Paso {index + 1} de {steps.length}
         </p>
         <h3 className="mt-1 text-lg font-black text-slate-900 dark:text-slate-100">{step.title}</h3>
         <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">{step.description}</p>
         <div className="mt-4 flex items-center justify-between gap-2">
-          <button onClick={finish} className="text-xs font-bold text-slate-400 hover:text-slate-600">
+          <button onClick={finish} className="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-600">
             Saltar
           </button>
           <div className="flex gap-2">

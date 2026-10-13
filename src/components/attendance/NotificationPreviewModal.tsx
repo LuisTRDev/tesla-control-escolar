@@ -24,7 +24,7 @@ export default function NotificationPreviewModal({ notificationPreviewData, setN
           <motion.section className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-5 text-slate-950 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 sm:p-6" onMouseDown={(event) => event.stopPropagation()} initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Ficha oficial · 1/3 A4</p>
+                <p className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Ficha oficial · 1/3 A4</p>
                 <h2 className="mt-1 text-xl font-black">Notificación sobre incumplimiento de reglamento interno</h2>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                   Fecha del incidente: {new Date((notificationData.presentation?.date ?? notificationData.attendance?.date ?? today) + 'T12:00:00').toLocaleDateString('es-PE', { day:'2-digit', month:'long', year:'numeric' })}

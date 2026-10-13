@@ -10,11 +10,32 @@ import type { Classroom } from '@/types'
 import { ToastProvider } from '@/lib/toast'
 import { OnboardingTour, type TourStep } from '@/components/OnboardingTour'
 
+// Recorrido para auxiliares nuevos: sigue el orden de un día normal de trabajo.
 const TOUR_STEPS: TourStep[] = [
-  { target: '[data-tour="nav-quick"]', title: 'Modo auxiliar rápido', description: 'El flujo más veloz para marcar asistencia uno por uno, ideal para la hora de ingreso.' },
-  { target: '[data-tour="nav-alerts"]', title: 'Centro de alertas', description: 'Aquí aparecen automáticamente los alumnos con reincidencias o 3+ notificaciones, sin que tengas que revisarlo manualmente.' },
-  { target: '[data-tour="nav-settings"]', title: 'Configuración', description: 'Hora límite, tolerancia de ingreso, apariencia y más — todo lo que puedes personalizar vive aquí.' },
+  { target: '[data-tour="classroom"]', title: '1. Elige tu aula', description: 'La lista muestra solo los alumnos del aula elegida. La app la recuerda para la próxima vez.' },
+  { target: '[data-tour="search"]', title: '2. Busca al alumno', description: 'Escribe apellido, nombre o parte del DNI; no importan las tildes. En PC, Enter marca la entrada si queda un solo alumno.' },
+  { target: '[data-tour="student-card"]', title: '3. Marca con un toque', description: 'Pulsa "Entrada": la app decide si llegó a tiempo o tarde. Si te equivocas, pulsa "Deshacer" en el aviso (5 segundos).' },
+  { target: '[data-tour="quick"]', title: '4. Hora de ingreso', description: 'El Modo rápido es una lista grande para marcar uno tras otro desde el celular, con el contador de quiénes faltan.' },
+  { target: '[data-tour="summary"]', title: '5. Al terminar', description: 'En "Resumen / cierre" pulsa "Cerrar día": quien no marcó queda con falta. Si llega después, su falta se borra sola.' },
+  { target: '[data-tour="whatsapp"]', title: '6. Avisar a los apoderados', description: 'Arma todos los WhatsApp del día. Envías uno, vuelves y pasas al siguiente.' },
+  { target: '[data-tour="sync"]', title: '7. Sin Internet', description: 'Puedes seguir marcando. Aquí ves cuántos cambios faltan enviar; tócalo para ver el detalle. No cierres sesión con pendientes.' },
+  { target: '[data-tour="help"]', title: '8. ¿Dudas?', description: 'La Guía de uso explica todo paso a paso y tiene los atajos de teclado. Puedes repetir este recorrido desde ahí.' },
 ]
+
+/** Módulo pedido por un acceso directo de la app instalada (manifest "shortcuts": /?open=quick). */
+export type StartModule = 'quick' | 'pda' | 'summary' | 'whatsapp' | null
+
+function readStartModule(): StartModule {
+  try {
+    const value = new URLSearchParams(window.location.search).get('open')
+    if (value === 'quick' || value === 'pda' || value === 'summary' || value === 'whatsapp') {
+      // Se limpia la URL para que recargar no vuelva a abrir el módulo.
+      window.history.replaceState(null, '', window.location.pathname)
+      return value
+    }
+  } catch { /* URL inválida: se abre la vista normal */ }
+  return null
+}
 
 type CachedProfile = { full_name: string; role: string }
 const PROFILE_CACHE_KEY = 'tesla_cached_profile'
@@ -39,6 +60,7 @@ export default function App() {
   const [classroom, setClassroom] = useState<Classroom | null>(null)
   const [appError, setAppError] = useState('')
   const loadedUserId = useRef<string | null>(null)
+  const [startModule] = useState<StartModule>(readStartModule)
 
   const clearSessionUi = useCallback(() => {
     loadedUserId.current = null
@@ -148,6 +170,7 @@ export default function App() {
         classroom={classroom}
         onClassroomChange={setClassroom}
         onLogout={() => void logout()}
+        startModule={startModule}
       />
       <OnboardingTour steps={TOUR_STEPS} />
     </ToastProvider>

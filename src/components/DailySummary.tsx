@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/Card'
 import { closeClassroomAttendance, getDailySchoolSummary, getSmartInsights, isAttendanceClosed, type DailySummary as Summary, type SmartInsight } from '@/services/phase6Service'
 import { CALENDAR_KIND_LABELS, closeAttendanceDay, reopenAttendanceDay } from '@/services/dayStatusService'
 import type { CalendarDay, Classroom } from '@/types'
+import { friendlyError } from '@/lib/errorMessages'
 
 type Props = {
   open: boolean
@@ -49,11 +50,13 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
       ])
       setSummary(summaryData); setInsights(insightData); setClosed(closure)
     } catch (err) {
-      reportError('DailySummary', err); setError(err instanceof Error ? err.message : 'No se pudo generar el resumen diario.')
+      reportError('DailySummary', err); setError(friendlyError(err, 'No se pudo generar el resumen diario.'))
     } finally { if (!silent) setLoading(false) }
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- load() se recrea en cada render; solo debe correr al abrir o cambiar el filtro
   useEffect(() => { if (open) void load() }, [open, classroomId, today])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- load() se recrea en cada render; solo debe correr al abrir o cambiar el filtro
   useEffect(() => { if (open && refreshKey > 0) void load(true) }, [refreshKey])
   const scopeLabel = classroomId === 'ALL' ? 'todo el colegio' : (() => { const c = classrooms.find((item) => item.id === classroomId); return `${c?.grade ?? ''} ${c?.section ?? ''}`.trim() })()
 
@@ -62,7 +65,7 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
       if (!window.confirm(`¿Cerrar el día en ${scopeLabel}? Los alumnos sin ingreso quedarán con FALTA (o "con permiso" si avisaron antes). Si alguno llega después, al marcarlo su falta se borra sola.`)) return
       setClosing(true); setError('')
       try { setCloseResult(await closeAttendanceDay(today, classroomId === 'ALL' ? null : classroomId)); onDayChanged?.(); await load() }
-      catch (err) { reportError('DailySummary', err); setError(err instanceof Error ? err.message : 'No se pudo cerrar el día.') }
+      catch (err) { reportError('DailySummary', err); setError(friendlyError(err, 'No se pudo cerrar el día.')) }
       finally { setClosing(false) }
       return
     }
@@ -70,7 +73,7 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
     if (!window.confirm(`¿Cerrar la asistencia de ${scopeLabel}? Los alumnos sin ingreso quedarán registrados como alertas de ausencia.`)) return
     setClosing(true); setError('')
     try { await closeClassroomAttendance(classroomId, today); await load() }
-    catch (err) { reportError('DailySummary', err); setError(err instanceof Error ? err.message : 'No se pudo cerrar la asistencia.') }
+    catch (err) { reportError('DailySummary', err); setError(friendlyError(err, 'No se pudo cerrar la asistencia.')) }
     finally { setClosing(false) }
   }
 
@@ -78,7 +81,7 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
     if (!window.confirm(`¿Reabrir el día en ${scopeLabel}? Se borrarán las faltas SIN justificar de hoy; las justificadas y los permisos se conservan.`)) return
     setClosing(true); setError('')
     try { const removed = await reopenAttendanceDay(today, classroomId === 'ALL' ? null : classroomId); setCloseResult(null); setError(''); onDayChanged?.(); await load(); window.alert(`Día reabierto: se quitaron ${removed} falta${removed === 1 ? '' : 's'}.`) }
-    catch (err) { reportError('DailySummary', err); setError(err instanceof Error ? err.message : 'No se pudo reabrir el día.') }
+    catch (err) { reportError('DailySummary', err); setError(friendlyError(err, 'No se pudo reabrir el día.')) }
     finally { setClosing(false) }
   }
 
@@ -92,7 +95,7 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div><p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-brand-navy dark:text-brand-gold"><Sparkles size={15}/> Automatización diaria</p><h2 className="mt-1 text-2xl font-black">Resumen y cierre de asistencia</h2><p className="mt-1 text-sm text-slate-500">{new Date(today + 'T12:00:00').toLocaleDateString('es-PE', { weekday:'long', day:'2-digit', month:'long', year:'numeric' })}</p></div>
             <div className="flex flex-wrap items-end gap-2">
-              <label className="block min-w-60"><span className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-slate-400">Alcance</span><select value={classroomId} onChange={(e)=>setClassroomId(e.target.value)} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold dark:border-slate-700 dark:bg-slate-950"><option value="ALL">Todo el colegio</option>{classrooms.map((item)=><option key={item.id} value={item.id}>{item.grade} {item.section} · {item.level}</option>)}</select></label>
+              <label className="block min-w-60"><span className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Alcance</span><select value={classroomId} onChange={(e)=>setClassroomId(e.target.value)} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold dark:border-slate-700 dark:bg-slate-950"><option value="ALL">Todo el colegio</option>{classrooms.map((item)=><option key={item.id} value={item.id}>{item.grade} {item.section} · {item.level}</option>)}</select></label>
               <Button variant="ghost" className="h-11 px-3" onClick={onClose}><X size={20}/></Button>
             </div>
           </div>
@@ -102,7 +105,7 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
           {loading && <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Calculando resumen...</div>}
           {summary && <>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              {metric('Alumnos', summary.totalStudents, <Users size={17} className="text-slate-400"/>)}
+              {metric('Alumnos', summary.totalStudents, <Users size={17} className="text-slate-500 dark:text-slate-400"/>)}
               {metric('Presentes', summary.present, <CheckCircle2 size={17} className="text-emerald-500"/>, 'text-emerald-700 dark:text-emerald-400')}
               {metric('Tardanzas', summary.late, <Clock3 size={17} className="text-amber-500"/>, 'text-amber-700 dark:text-amber-400')}
               {metric(closed ? 'Ausencias confirmadas' : 'Sin ingreso', summary.absent, <TriangleAlert size={17} className="text-violet-500"/>, 'text-violet-700 dark:text-violet-400')}
@@ -114,7 +117,7 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
 
             <div className="mt-5 grid gap-4 lg:grid-cols-[.9fr_1.1fr]">
               <Card className="p-5">
-                <p className="text-xs font-black uppercase tracking-wider text-slate-400">Estado de jornada</p>
+                <p className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Estado de jornada</p>
                 <div className="mt-4 flex items-end justify-between gap-4"><div><p className="text-4xl font-black">{presentPct}%</p><p className="mt-1 text-sm text-slate-500">asistencia registrada</p></div><span className={`rounded-xl px-3 py-2 text-sm font-black ${closed ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'}`}>{closed ? 'Asistencia cerrada' : 'En curso'}</span></div>
                 <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-emerald-500" style={{width:`${Math.min(100,presentPct)}%`}}/></div>
                 {dayStatusEnabled ? (
@@ -141,7 +144,7 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
               </Card>
 
               <Card className="p-5">
-                <div className="flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-wider text-slate-400">Análisis automático</p><h3 className="mt-1 font-black">Qué requiere atención</h3></div><Sparkles className="text-brand-gold" size={22}/></div>
+                <div className="flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Análisis automático</p><h3 className="mt-1 font-black">Qué requiere atención</h3></div><Sparkles className="text-brand-gold" size={22}/></div>
                 <div className="mt-4 space-y-3">{insights.map((item)=><div key={item.id} className={`rounded-xl border p-4 ${item.tone==='warning'?'border-amber-200 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/30':item.tone==='positive'?'border-emerald-200 bg-emerald-50 dark:border-emerald-900/60 dark:bg-emerald-950/30':'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900'}`}><div className="flex items-start justify-between gap-3"><div><p className="font-black">{item.title}</p><p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.detail}</p></div>{item.value && <span className="text-lg font-black">{item.value}</span>}</div></div>)}</div>
                 {summary.openAlerts > 0 && <Button variant="outline" className="mt-4 w-full" onClick={onOpenAlerts}><Bell className="mr-2" size={17}/> Revisar alertas</Button>}
               </Card>

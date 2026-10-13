@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/Input'
 import { reportError } from '@/lib/security'
 import { JUSTIFICATION_REASONS, createPermission, deletePermission, uploadJustificationDocument } from '@/services/dayStatusService'
 import type { PermissionKind, Student, StudentPermission } from '@/types'
+import { friendlyError } from '@/lib/errorMessages'
 
 type Props = {
   student: Student | null
@@ -48,14 +49,14 @@ export default function PermissionDialog({ student, permissions, today, userName
       onChanged()
     } catch (err) {
       reportError('PermissionDialog', err)
-      setError(err instanceof Error ? err.message : 'No se pudo registrar el permiso.')
+      setError(friendlyError(err, 'No se pudo registrar el permiso.'))
     } finally { setSaving(false) }
   }
 
   async function remove(permission: StudentPermission) {
     if (!confirm('¿Borrar este permiso?')) return
     try { await deletePermission(permission.id); onChanged() }
-    catch (err) { setError(err instanceof Error ? err.message : 'No se pudo borrar el permiso.') }
+    catch (err) { setError(friendlyError(err, 'No se pudo borrar el permiso.')) }
   }
 
   return (
@@ -82,7 +83,7 @@ export default function PermissionDialog({ student, permissions, today, userName
                       <p className="text-slate-600 dark:text-slate-300">{item.reason}</p>
                       {item.createdByName && <p className="text-xs text-slate-500 dark:text-slate-400">Registró: {item.createdByName}</p>}
                     </div>
-                    <button type="button" onClick={() => void remove(item)} className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-red-600 dark:hover:bg-slate-900" aria-label="Borrar permiso"><Trash2 size={16} /></button>
+                    <button type="button" onClick={() => void remove(item)} className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 hover:bg-white hover:text-red-600 dark:hover:bg-slate-900" aria-label="Borrar permiso"><Trash2 size={16} /></button>
                   </div>
                 ))}
               </div>
@@ -105,7 +106,7 @@ export default function PermissionDialog({ student, permissions, today, userName
             </label>
             <Input className="mt-3" placeholder="Detalle (opcional)" maxLength={300} value={detail} onChange={(e) => setDetail(e.target.value)} />
             <label className="mt-3 flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-slate-300 p-3 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900">
-              <Paperclip size={18} className="shrink-0 text-slate-400" />
+              <Paperclip size={18} className="shrink-0 text-slate-500 dark:text-slate-400" />
               <span className="min-w-0 flex-1 truncate font-bold">{file ? file.name : 'Adjuntar foto o PDF (opcional)'}</span>
               <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
             </label>

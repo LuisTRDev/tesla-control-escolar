@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import AuthorizedPickupsSection from '@/components/AuthorizedPickupsSection'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowRightLeft, Ban, CheckSquare, Link2, Pencil, Plus, RotateCcw, Search, Square, Star, Trash2, Unlink, UserPlus, Users, X } from 'lucide-react'
+import { ArrowRightLeft, Ban, CheckSquare, FileSpreadsheet, Link2, Pencil, Plus, RotateCcw, Search, Square, Star, Trash2, Unlink, UserPlus, Users, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
@@ -29,6 +29,8 @@ import {
 import { toDateKey } from '@/lib/dates'
 import { inactiveLabel, isInactive } from '@/lib/studentStatus'
 import type { Classroom, Student } from '@/types'
+import { friendlyError } from '@/lib/errorMessages'
+import { exportRosterExcel } from '@/services/rosterExport'
 
 type Props = {
   open: boolean
@@ -57,7 +59,7 @@ const hasGuardian = (s: Student) => (s.guardians ?? []).length > 0
 const missingGuardian = (s: Student) => !isInactive(s) && !hasGuardian(s)
 
 function errorText(error: unknown) {
-  return error instanceof Error ? error.message : 'No se pudo guardar el cambio.'
+  return friendlyError(error, 'No se pudo guardar el cambio.')
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -239,7 +241,7 @@ function StudentEditor({ studentId, classrooms, students, guardians, defaultClas
             {linked.map((g) => (
               <div key={g.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2.5 dark:border-slate-800">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-bold">{g.fullName} {g.isPrimary && <span className="ml-1 rounded-full bg-brand-gold/20 px-2 py-0.5 text-[10px] font-black text-brand-navy dark:text-brand-gold">PRINCIPAL</span>}</p>
+                  <p className="truncate text-sm font-bold">{g.fullName} {g.isPrimary && <span className="ml-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-black text-sky-800 dark:bg-sky-950/60 dark:text-sky-300">PRINCIPAL</span>}</p>
                   <p className="text-xs text-slate-500">{g.relationship || 'Sin parentesco'}{g.dni && ` · DNI ${g.dni}`}{g.phone && ` · ${g.phone}`}</p>
                 </div>
                 <div className="flex shrink-0 gap-1">
@@ -263,7 +265,7 @@ function StudentEditor({ studentId, classrooms, students, guardians, defaultClas
                   <div className="mt-2 space-y-1">
                     {guardianSearch.trim() && matches.length === 0 && <p className="text-xs text-slate-500">Sin coincidencias. Usa "Nuevo apoderado".</p>}
                     {matches.map((g) => (
-                      <button key={g.id} type="button" onClick={() => setSelectedGuardianId(g.id)} className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${selectedGuardianId === g.id ? 'border-brand-gold bg-brand-gold/10' : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950'}`}>
+                      <button key={g.id} type="button" onClick={() => setSelectedGuardianId(g.id)} className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${selectedGuardianId === g.id ? 'border-sky-500 bg-sky-50 ring-2 ring-sky-500/30 dark:bg-sky-950/40' : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950'}`}>
                         <span className="font-bold">{g.fullName}</span>
                         <span className="ml-2 text-xs text-slate-500">{g.dni && `DNI ${g.dni}`} {g.students.length > 0 && `· ${g.students.length} alumno(s)`}</span>
                       </button>
@@ -434,6 +436,19 @@ export default function RosterManager({ open, onClose, classrooms, students, def
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [moveTarget, setMoveTarget] = useState('')
   const [moving, setMoving] = useState(false)
+  const [exporting, setExporting] = useState(false)
+
+  async function exportRoster() {
+    setExporting(true)
+    try {
+      await exportRosterExcel(students, guardians, classrooms, `padron-tesla-${toDateKey()}.xlsx`)
+      toast.success('Padrón exportado', 'Incluye alumnos, apoderados, aulas y una hoja "Para revisar" con datos incompletos.')
+    } catch (err) {
+      toast.error('No se pudo exportar el padrón', friendlyError(err))
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const loadGuardians = useCallback(async () => {
     setError('')
@@ -551,9 +566,12 @@ export default function RosterManager({ open, onClose, classrooms, students, def
               </div>
               <Button variant="ghost" onClick={onClose} aria-label="Cerrar"><X size={20} /></Button>
             </div>
-            <div className="mt-4 flex gap-2">
+            <div className="mt-4 flex flex-wrap gap-2">
               <Button variant={tab === 'students' ? 'default' : 'outline'} onClick={() => setTab('students')}>Alumnos</Button>
               <Button variant={tab === 'guardians' ? 'default' : 'outline'} onClick={() => { stopSelecting(); setTab('guardians') }}>Apoderados</Button>
+              <Button variant="outline" title="Descargar el padrón completo (alumnos, apoderados y aulas) en Excel" disabled={exporting || loading} onClick={() => void exportRoster()}>
+                <FileSpreadsheet size={16} className="sm:mr-1.5" /><span className="hidden sm:inline">{exporting ? 'Exportando...' : 'Exportar a Excel'}</span>
+              </Button>
               {tab === 'students' && (
                 <Button variant={selecting ? 'default' : 'outline'} className="ml-auto" title="Asignar o reasignar el aula de varios alumnos" onClick={() => (selecting ? stopSelecting() : setSelecting(true))}>
                   <ArrowRightLeft size={16} className="mr-1.5" />{selecting ? 'Terminar' : 'Cambiar aula'}
@@ -568,7 +586,7 @@ export default function RosterManager({ open, onClose, classrooms, students, def
           <div className="p-5 sm:p-7">
             <div className="flex flex-col gap-3 sm:flex-row">
               <div className="relative flex-1">
-                <Search className="absolute left-4 top-3.5 text-slate-400" size={20} />
+                <Search className="absolute left-4 top-3.5 text-slate-500 dark:text-slate-400" size={20} />
                 <Input className="pl-12" placeholder={tab === 'students' ? 'Buscar alumno, DNI o apoderado...' : 'Buscar apoderado, DNI o teléfono...'} value={search} onChange={(e) => setSearch(e.target.value)} />
               </div>
               {tab === 'students' && (
@@ -621,8 +639,8 @@ export default function RosterManager({ open, onClose, classrooms, students, def
               {tab === 'students' ? (
                 filteredStudents.length === 0 ? <p className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700">No hay alumnos para este filtro.</p>
                 : filteredStudents.map((s) => (
-                  <button key={s.id} type="button" aria-pressed={selecting ? selected.has(s.id) : undefined} onClick={() => (selecting ? toggleSelected(s.id) : setEditing({ kind: 'student', id: s.id }))} className={`flex w-full items-center justify-between gap-3 rounded-2xl border p-4 text-left transition-colors ${selecting && selected.has(s.id) ? 'ring-2 ring-slate-900 dark:ring-slate-100 ' : ''}${isInactive(s) ? 'border-slate-200 bg-slate-100 text-slate-500 hover:border-slate-400 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-500' : hasGuardian(s) ? 'border-slate-200 bg-white hover:border-brand-gold dark:border-slate-800 dark:bg-slate-900' : 'border-red-500 bg-red-50 motion-safe:animate-blinkRed dark:bg-red-950/30'}`}>
-                    {selecting && (selected.has(s.id) ? <CheckSquare size={20} className="shrink-0" /> : <Square size={20} className="shrink-0 text-slate-400" />)}
+                  <button key={s.id} type="button" aria-pressed={selecting ? selected.has(s.id) : undefined} onClick={() => (selecting ? toggleSelected(s.id) : setEditing({ kind: 'student', id: s.id }))} className={`flex w-full items-center justify-between gap-3 rounded-2xl border p-4 text-left transition-colors ${selecting && selected.has(s.id) ? 'ring-2 ring-slate-900 dark:ring-slate-100 ' : ''}${isInactive(s) ? 'border-slate-200 bg-slate-100 text-slate-500 hover:border-slate-400 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-500' : hasGuardian(s) ? 'border-slate-200 bg-white hover:border-sky-400 dark:border-slate-800 dark:bg-slate-900' : 'border-red-500 bg-red-50 motion-safe:animate-blinkRed dark:bg-red-950/30'}`}>
+                    {selecting && (selected.has(s.id) ? <CheckSquare size={20} className="shrink-0" /> : <Square size={20} className="shrink-0 text-slate-500 dark:text-slate-400" />)}
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-black">{s.lastName}, {s.firstName}</p>
                       <p className={`truncate text-xs ${s.classroomId ? 'text-slate-500' : 'font-black text-red-600 dark:text-red-400'}`}>{s.classroomId ? classroomLabel(classrooms, s.classroomId) : '⚠ Sin aula'}{s.dni && ` · DNI ${s.dni}`}</p>
@@ -634,19 +652,19 @@ export default function RosterManager({ open, onClose, classrooms, students, def
                         </p>
                       )}
                     </div>
-                    {!selecting && <Pencil size={16} className="shrink-0 text-slate-400" />}
+                    {!selecting && <Pencil size={16} className="shrink-0 text-slate-500 dark:text-slate-400" />}
                   </button>
                 ))
               ) : (
                 filteredGuardians.length === 0 ? <p className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700">No hay apoderados para este filtro.</p>
                 : filteredGuardians.map((g) => (
-                  <button key={g.id} type="button" onClick={() => setEditing({ kind: 'guardian', id: g.id })} className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition-colors hover:border-brand-gold dark:border-slate-800 dark:bg-slate-900">
+                  <button key={g.id} type="button" onClick={() => setEditing({ kind: 'guardian', id: g.id })} className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition-colors hover:border-sky-400 dark:border-slate-800 dark:bg-slate-900">
                     <div className="min-w-0">
                       <p className="truncate font-black">{g.fullName}</p>
                       <p className="truncate text-xs text-slate-500">{[g.dni && `DNI ${g.dni}`, g.phone].filter(Boolean).join(' · ') || 'Sin DNI ni teléfono'}</p>
                       <p className={`truncate text-xs ${g.students.length ? 'text-slate-500' : 'font-bold text-red-600 dark:text-red-400'}`}>{g.students.length ? `${g.students.length} alumno(s) a cargo` : 'Sin alumno vinculado'}</p>
                     </div>
-                    <Pencil size={16} className="shrink-0 text-slate-400" />
+                    <Pencil size={16} className="shrink-0 text-slate-500 dark:text-slate-400" />
                   </button>
                 ))
               )}

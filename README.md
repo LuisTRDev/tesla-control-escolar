@@ -10,7 +10,7 @@ PWA para el control diario del colegio: asistencia y tardanzas, control de prese
 |---|---|
 | Operación | Inicio (asistencia y presentación por aula), Modo auxiliar rápido, Modo PDA (DNI), Panel TV en vivo, Dashboard, Reportes, Cobranza, Notificaciones |
 | Automatización | Centro de alertas (reincidencias, 3+ notificaciones), Resumen diario |
-| Sistema | Alumnos y apoderados (solo ADMIN), Auditoría, Backups, Carga histórica, Configuración |
+| Sistema | Alumnos y apoderados, Usuarios y Monitoreo de errores (solo ADMIN), Auditoría, Copias de seguridad, Carga histórica, Configuración, Guía de uso |
 
 ## Puesta en marcha
 
@@ -45,10 +45,13 @@ Ejecuta en **Supabase > SQL Editor**, en este orden, los scripts de `supabase/`:
 | `phase12_attendance_cleanup.sql` | Borrar una marca borra su notificación automática de tardanza y sus alertas; limpia rastros previos (ejecutar primero la vista previa) |
 | `phase13_alert_cleanup.sql` | Quita alertas de reincidencia que dejaron de cumplirse (ejecutar primero la vista previa) |
 | `phase14_absences_permissions.sql` | Faltas, justificaciones, permisos, salidas anticipadas, personas autorizadas, calendario escolar y horario por nivel. El bloque 11 (documentos adjuntos) es opcional |
+| `phase15_users_monitoring_backups.sql` | Gestión de usuarios desde la app, monitoreo de errores (`app_errors`) y copias automáticas diarias (`backup_snapshots` + pg_cron). El bloque 4 (pg_cron) puede requerir activar la extensión en Database > Extensions |
 
 > **Pendiente:** varias tablas y funciones RPC que usa la app (`alerts`, `notifications`, `audit_logs`, `attendance_closures`, `pension_payments`, `historical_import_*`, `student_guardians`, `get_student_case_file`, etc.) existen en la base de producción pero no están versionadas aquí. Para poder reconstruir la base desde cero, exporta el esquema con `supabase db dump --schema-only > supabase/schema.sql`.
 
 ### 3. Usuarios y roles
+
+Con `phase15` ejecutado, el administrador crea usuarios, cambia contraseñas y desactiva cuentas desde **Usuarios** en la app. Sin `phase15`, o para el primer administrador:
 
 1. Crea el usuario en **Supabase > Authentication > Users**.
 2. Inserta en `profiles` una fila con `id` = UUID de `auth.users.id`, `full_name` y `role`.
@@ -56,7 +59,7 @@ Ejecuta en **Supabase > SQL Editor**, en este orden, los scripts de `supabase/`:
 | Rol | Acceso |
 |---|---|
 | `AUXILIARY` | Operación diaria |
-| `ADMIN` | Todo lo anterior + módulo **Alumnos y apoderados** |
+| `ADMIN` | Todo lo anterior + **Alumnos y apoderados**, **Usuarios**, **Monitoreo de errores** y copias automáticas |
 | `MANAGEMENT` | Reservado (hoy equivale a AUXILIARY) |
 
 ### 4. Ejecutar
@@ -71,9 +74,9 @@ npm run dev
 | Comando | Uso |
 |---|---|
 | `npm run dev` | Servidor de desarrollo |
-| `npm run build` | Typecheck + build de producción (lo que corre Netlify) |
+| `npm run build` | ESLint + typecheck + build de producción (lo que corre Netlify). Falla con cualquier error o aviso de ESLint |
 | `npm test` | Tests (Vitest) |
-| `npm run lint` | ESLint (solo reporta; no bloquea el build) |
+| `npm run lint` | ESLint con `--max-warnings=0` |
 
 Antes de subir cambios: `npm test && npm run build`.
 
@@ -95,7 +98,9 @@ public/         Service worker, manifest, iconos, plantillas DOCX
 ## Offline y sincronización
 
 - IndexedDB guarda una caché de aulas, alumnos, asistencia, presentación y configuración, y una **cola** de operaciones pendientes (entradas, salidas, control de presentación).
-- La cola se envía al recuperar conexión, cada 2 minutos, al volver a la pestaña y manualmente desde el indicador superior. Las operaciones fallidas quedan con contador de reintentos y último error.
+- La cola se envía al recuperar conexión, cada 15 segundos, al volver a la pestaña y desde el **panel de sincronización** (botón de la nube arriba, o tecla `S`). El panel lista lo pendiente, lo que falló y por qué, y permite reintentar o descartar cada operación.
+- **Conflictos** (dos equipos registraron al mismo alumno sin conexión): en entrada y salida gana la hora más temprana; en presentación una incidencia nunca se pierde por un "conforme" y dos incidencias se unen. Cada conflicto queda en el panel para revisarlo (`src/lib/syncConflicts.ts`).
+- Las consultas de rangos grandes (asistencia del mes, reportes, copias) se piden por páginas de 1000 filas (`src/lib/paging.ts`): Supabase corta ahí sin avisar.
 - Supabase es la fuente de verdad; IndexedDB es caché y contingencia.
 - Acciones destructivas (Reiniciar hoy, cambiar hora límite) y los cambios del padrón requieren conexión.
 - La versión nueva de la PWA espera a que el usuario pulse **Actualizar ahora**.
@@ -117,4 +122,8 @@ Para mover textos o ajustar márgenes, edita la plantilla directamente en Word. 
 
 ## Backups
 
-Ver [BACKUPS.md](BACKUPS.md). El botón **Backups** genera una copia lógica JSON; no sustituye los backups nativos de Supabase.
+Ver [BACKUPS.md](BACKUPS.md).
+
+## Monitoreo de errores
+
+En producción, todo error que la app registra con `reportError()` y los errores no capturados se guardan en `app_errors` (requiere `phase15`). Los cortes de Internet y las sesiones vencidas no se cuentan. El administrador los ve agrupados por frecuencia en **Monitoreo de errores**, con un contador en el menú.

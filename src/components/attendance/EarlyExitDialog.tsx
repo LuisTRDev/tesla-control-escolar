@@ -9,6 +9,7 @@ import { normalizeText } from '@/lib/search'
 import { reportError } from '@/lib/security'
 import { getAuthorizedPickups, registerEarlyExit, saveAuthorizedPickup } from '@/services/dayStatusService'
 import type { AttendanceRecord, EarlyExit, Student } from '@/types'
+import { friendlyError } from '@/lib/errorMessages'
 
 type Person = { key: string; fullName: string; dni: string; relationship: string; source: 'Apoderado' | 'Autorizado' }
 
@@ -79,7 +80,7 @@ export default function EarlyExitDialog({ student, attendance, today, userName, 
       onClose()
     } catch (err) {
       reportError('EarlyExitDialog', err)
-      setError(err instanceof Error ? err.message : 'No se pudo registrar la salida.')
+      setError(friendlyError(err, 'No se pudo registrar la salida.'))
     } finally { setSaving(false) }
   }
 

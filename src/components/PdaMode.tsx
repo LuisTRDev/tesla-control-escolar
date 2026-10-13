@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { inactiveLabel, isInactive } from '@/lib/studentStatus'
 import type { AttendanceRecord, Classroom, Student } from '@/types'
+import { friendlyError } from '@/lib/errorMessages'
 
 type Props = {
   open: boolean
@@ -58,7 +59,7 @@ export default function PdaMode({ open, onClose, students, classrooms, records, 
       else await onExit(selected.id)
       setMessage(type === 'ENTRY' ? 'Entrada registrada correctamente.' : 'Salida registrada correctamente.')
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'No se pudo registrar el movimiento.')
+      setMessage(friendlyError(error, 'No se pudo registrar el movimiento.'))
     } finally {
       setBusy(null)
     }

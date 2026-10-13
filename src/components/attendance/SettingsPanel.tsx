@@ -42,7 +42,7 @@ export default function SettingsPanel({ settingsOpen, setSettingsOpen, entryLimi
         >
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Preferencias</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Preferencias</p>
               <h2 className="text-2xl font-black">Configuración</h2>
             </div>
             <Button variant="ghost" onClick={() => setSettingsOpen(false)} aria-label="Cerrar"><X size={20} /></Button>

@@ -1,3 +1,5 @@
+import { knownErrorHint } from '@/lib/errorMessages'
+
 // eslint-disable-next-line no-control-regex -- se eliminan caracteres de control a propósito
 const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g
 const BIDI_CONTROLS = /[\u202A-\u202E\u2066-\u2069]/g
@@ -44,19 +46,28 @@ export function validTime(value: unknown): value is string {
 }
 
 export function safeUserMessage(error: unknown, fallback = 'Ocurrió un error. Inténtalo nuevamente.'): string {
+  const hint = knownErrorHint(error)
+  if (hint) return hint
   if (error instanceof Error) {
     const text = error.message.toLowerCase()
-    if (text.includes('jwt') || text.includes('session') || text.includes('refresh token')) return 'La sesión expiró. Vuelve a iniciar sesión.'
-    if (text.includes('network') || text.includes('fetch') || text.includes('conex')) return 'No se pudo conectar con el servidor. Revisa tu conexión.'
     if (text.includes('archivo') || text.includes('file') || text.includes('formato') || text.includes('tamaño')) return cleanSingleLine(error.message, 220)
   }
   return fallback
+}
+
+type ErrorSink = (context: string, error: unknown) => void
+let errorSink: ErrorSink | null = null
+
+/** El monitoreo (services/errorLogger) se registra aquí para no crear una dependencia circular. */
+export function setErrorSink(sink: ErrorSink | null): void {
+  errorSink = sink
 }
 
 export function reportError(context: string, error?: unknown): void {
   if (import.meta.env.DEV) {
     console.error(`[Tesla:${context}]`, error)
   }
+  errorSink?.(context, error)
 }
 
 export function installProductionConsoleGuards(): void {

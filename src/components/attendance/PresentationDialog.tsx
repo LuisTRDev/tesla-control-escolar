@@ -31,7 +31,7 @@ export default function PresentationDialog({ presentationStudent, setPresentatio
         >
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Control de reglamento interno</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Control de reglamento interno</p>
               <h2 className="mt-1 text-xl font-black">{presentationStudent.firstName} {presentationStudent.lastName}</h2>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{classroom.grade} {classroom.section} · {classroom.level}</p>
             </div>
@@ -87,7 +87,7 @@ export default function PresentationDialog({ presentationStudent, setPresentatio
                   />
                   <span className="text-sm font-semibold leading-6">
                     {label}
-                    {disabled && <span className="mt-1 block text-xs font-normal text-slate-400">No disponible: el alumno no tiene una tardanza de ingreso registrada hoy.</span>}
+                    {disabled && <span className="mt-1 block text-xs font-normal text-slate-500 dark:text-slate-400">No disponible: el alumno no tiene una tardanza de ingreso registrada hoy.</span>}
                   </span>
                 </label>
                 )

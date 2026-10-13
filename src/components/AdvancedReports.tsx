@@ -3,10 +3,12 @@ import { reportError } from '@/lib/security'
 import { AnimatePresence, motion } from 'framer-motion'
 import { BarChart3, CalendarDays, Check, Download, FileSpreadsheet, FileText, RefreshCw, TriangleAlert, Users, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import ArrivalHeatmap from '@/components/ArrivalHeatmap'
 import { Card } from '@/components/ui/Card'
 import { getAdvancedReport, exportAdvancedReportExcel, exportAdvancedReportPdf, type AdvancedReport, type ReportExportFilters } from '@/services/reportService'
 import { addDaysToKey, monthRangeKeys, toDateKey } from '@/lib/dates'
 import type { Classroom } from '@/types'
+import { friendlyError } from '@/lib/errorMessages'
 
 type Props = {
   open: boolean
@@ -79,7 +81,7 @@ export default function AdvancedReports({ open, onClose, classrooms, refreshKey 
       setReport(await getAdvancedReport(from, to, classroomId === 'ALL' ? null : classroomId))
     } catch (err) {
       reportError('AdvancedReports', err)
-      setError(err instanceof Error ? err.message : 'No se pudo generar el reporte.')
+      setError(friendlyError(err, 'No se pudo generar el reporte.'))
     } finally {
       if (!silent) setLoading(false)
     }
@@ -132,7 +134,7 @@ export default function AdvancedReports({ open, onClose, classrooms, refreshKey 
         <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 sm:px-7">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-slate-400"><BarChart3 size={15} /> Fase 5.3</p>
+              <p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"><BarChart3 size={15} /> Fase 5.3</p>
               <h2 className="mt-1 text-2xl font-black">Reportes avanzados</h2>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Asistencia, incumplimientos, notificaciones y reincidencias desde PostgreSQL.</p>
             </div>
@@ -164,7 +166,7 @@ export default function AdvancedReports({ open, onClose, classrooms, refreshKey 
               <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
                 <Card className="p-4"><p className="text-xs text-slate-500 dark:text-slate-400">Alumnos</p><p className="mt-1 text-2xl font-black">{report.summary.totalStudents}</p></Card>
                 <button type="button" onClick={() => goToDetail('ENTRIES', 'ATTENDANCE', 'ALL')} className="text-left">
-                  <Card className={`p-4 transition-colors hover:border-brand-gold ${activeMetric === 'ENTRIES' ? 'border-brand-gold bg-brand-gold/5' : ''}`}><p className="text-xs text-slate-500 dark:text-slate-400">Ingresos</p><p className="mt-1 text-2xl font-black">{report.summary.totalEntries}</p></Card>
+                  <Card className={`p-4 transition-colors hover:border-sky-400 ${activeMetric === 'ENTRIES' ? 'border-sky-500 bg-sky-50 dark:bg-sky-950/40' : ''}`}><p className="text-xs text-slate-500 dark:text-slate-400">Ingresos</p><p className="mt-1 text-2xl font-black">{report.summary.totalEntries}</p></Card>
                 </button>
                 <button type="button" onClick={() => goToDetail('ON_TIME', 'ATTENDANCE', 'ON_TIME')} className="text-left">
                   <Card className={`p-4 transition-colors hover:border-emerald-400 ${activeMetric === 'ON_TIME' ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/20' : ''}`}><p className="text-xs text-slate-500 dark:text-slate-400">A tiempo</p><p className="mt-1 text-2xl font-black text-emerald-600 dark:text-emerald-400">{report.summary.onTime}</p></Card>
@@ -176,7 +178,7 @@ export default function AdvancedReports({ open, onClose, classrooms, refreshKey 
                   <Card className={`p-4 transition-colors hover:border-orange-400 ${activeMetric === 'INCIDENTS' ? 'border-orange-400 bg-orange-50 dark:bg-orange-950/20' : ''}`}><p className="text-xs text-slate-500 dark:text-slate-400">Incidencias</p><p className="mt-1 text-2xl font-black text-orange-600 dark:text-orange-400">{report.summary.presentationIncidents}</p></Card>
                 </button>
                 <button type="button" onClick={() => goToDetail('NOTIFICATIONS', 'NOTIFICATIONS')} className="text-left">
-                  <Card className={`p-4 transition-colors hover:border-brand-gold ${activeMetric === 'NOTIFICATIONS' ? 'border-brand-gold bg-brand-gold/5' : ''}`}><p className="text-xs text-slate-500 dark:text-slate-400">Notificaciones</p><p className="mt-1 text-2xl font-black text-brand-navy dark:text-brand-gold">{report.summary.notifications}</p></Card>
+                  <Card className={`p-4 transition-colors hover:border-sky-400 ${activeMetric === 'NOTIFICATIONS' ? 'border-sky-500 bg-sky-50 dark:bg-sky-950/40' : ''}`}><p className="text-xs text-slate-500 dark:text-slate-400">Notificaciones</p><p className="mt-1 text-2xl font-black text-brand-navy dark:text-brand-gold">{report.summary.notifications}</p></Card>
                 </button>
                 <button type="button" onClick={goToRepeatOffenders} className="text-left">
                   <Card className={`p-4 transition-colors hover:border-rose-400 ${activeMetric === 'REPEAT' ? 'border-rose-400 bg-rose-50 dark:bg-rose-950/20' : ''}`}><p className="text-xs text-slate-500 dark:text-slate-400">Reincidentes</p><p className="mt-1 text-2xl font-black text-rose-600 dark:text-rose-400">{report.summary.repeatOffenders}</p></Card>
@@ -190,7 +192,8 @@ export default function AdvancedReports({ open, onClose, classrooms, refreshKey 
 
               <Card className="mt-4 p-5"><div className="flex items-center gap-2"><CalendarDays size={18} /><h3 className="font-black">Evolución diaria</h3></div><p className="mt-1 text-xs text-slate-500">Verde: a tiempo · Ámbar: tardanzas · Rojo: incidencias.</p><div className="mt-6 overflow-x-auto"><div className="flex min-w-max items-end gap-3" style={{ height: 190 }}>{report.dailyTrend.map((item) => <div key={item.date} className="flex h-full w-14 flex-col justify-end"><div className="flex flex-1 items-end justify-center gap-1"><div title={`A tiempo: ${item.onTime}`} className="w-3 rounded-t bg-emerald-500" style={{ height: `${Math.max(item.onTime ? 4 : 0, (item.onTime / maxTrend) * 135)}px` }} /><div title={`Tardanzas: ${item.late}`} className="w-3 rounded-t bg-amber-500" style={{ height: `${Math.max(item.late ? 4 : 0, (item.late / maxTrend) * 135)}px` }} /><div title={`Incidencias: ${item.incidents}`} className="w-3 rounded-t bg-rose-500" style={{ height: `${Math.max(item.incidents ? 4 : 0, (item.incidents / maxTrend) * 135)}px` }} /></div><p className="mt-2 text-center text-[10px] text-slate-500">{prettyDate(item.date)}</p></div>)}</div></div></Card>
 
-              <Card ref={detailsRef} className="mt-4 overflow-hidden"><div className="border-b border-slate-200 p-4 dark:border-slate-800"><div className="flex flex-wrap items-center gap-2">{([['ATTENDANCE', `Asistencia (${report.attendanceDetails.length})`], ['INCIDENTS', `Incidencias (${report.incidentDetails.length})`], ['NOTIFICATIONS', `Notificaciones (${report.notificationDetails.length})`]] as const).map(([id, label]) => <button key={id} onClick={() => { setDetailTab(id); setActiveMetric(null) }} className={`rounded-xl px-3 py-2 text-xs font-black ${detailTab === id ? 'bg-slate-950 text-white dark:bg-white dark:text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>{label}</button>)}{detailTab === 'ATTENDANCE' && attendanceStatusFilter !== 'ALL' && <button onClick={() => setAttendanceStatusFilter('ALL')} className="rounded-xl bg-brand-gold/15 px-3 py-2 text-xs font-black text-brand-navy dark:text-brand-gold">Filtrando: {attendanceStatusFilter === 'ON_TIME' ? 'A tiempo' : 'Tardanzas'} ✕</button>}</div></div><div className="max-h-[430px] overflow-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="sticky top-0 bg-slate-100 text-xs uppercase text-slate-500 dark:bg-slate-900"><tr><th className="px-4 py-3">Alumno</th><th className="px-4 py-3">Aula</th><th className="px-4 py-3">Fecha</th>{detailTab === 'ATTENDANCE' ? <><th className="px-4 py-3">Hora</th><th className="px-4 py-3">Estado</th></> : detailTab === 'INCIDENTS' ? <><th className="px-4 py-3">Incumplimientos</th><th className="px-4 py-3">Observación</th></> : <><th className="px-4 py-3">N°</th><th className="px-4 py-3">Tipo</th></>}</tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{detailTab === 'ATTENDANCE' && report.attendanceDetails.filter((item) => attendanceStatusFilter === 'ALL' || item.status === attendanceStatusFilter).map((item, i) => <tr key={`${item.studentName}-${item.date}-${i}`}><td className="px-4 py-3 font-semibold">{item.studentName}</td><td className="px-4 py-3">{item.classroom}</td><td className="px-4 py-3">{item.date}</td><td className="px-4 py-3">{item.time}</td><td className="px-4 py-3">{item.status === 'LATE' ? 'Tardanza' : 'A tiempo'}</td></tr>)}{detailTab === 'INCIDENTS' && report.incidentDetails.map((item, i) => <tr key={`${item.studentName}-${item.date}-${i}`}><td className="px-4 py-3 font-semibold">{item.studentName}</td><td className="px-4 py-3">{item.classroom}</td><td className="px-4 py-3">{item.date}</td><td className="px-4 py-3">{item.violations}</td><td className="max-w-xs px-4 py-3">{item.observation || '—'}</td></tr>)}{detailTab === 'NOTIFICATIONS' && report.notificationDetails.map((item, i) => <tr key={`${item.studentName}-${item.date}-${i}`}><td className="px-4 py-3 font-semibold">{item.studentName}</td><td className="px-4 py-3">{item.classroom}</td><td className="px-4 py-3">{item.date}</td><td className="px-4 py-3 font-black">{item.notificationNumber}</td><td className="px-4 py-3">{item.notificationType}</td></tr>)}</tbody></table></div></Card>
+              <ArrivalHeatmap records={report.attendanceDetails} />
+              <Card ref={detailsRef} className="mt-4 overflow-hidden"><div className="border-b border-slate-200 p-4 dark:border-slate-800"><div className="flex flex-wrap items-center gap-2">{([['ATTENDANCE', `Asistencia (${report.attendanceDetails.length})`], ['INCIDENTS', `Incidencias (${report.incidentDetails.length})`], ['NOTIFICATIONS', `Notificaciones (${report.notificationDetails.length})`]] as const).map(([id, label]) => <button key={id} onClick={() => { setDetailTab(id); setActiveMetric(null) }} className={`rounded-xl px-3 py-2 text-xs font-black ${detailTab === id ? 'bg-slate-950 text-white dark:bg-white dark:text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>{label}</button>)}{detailTab === 'ATTENDANCE' && attendanceStatusFilter !== 'ALL' && <button onClick={() => setAttendanceStatusFilter('ALL')} className="rounded-xl bg-sky-100 px-3 py-2 text-xs font-black text-sky-800 dark:bg-sky-950/60 dark:text-sky-300">Filtrando: {attendanceStatusFilter === 'ON_TIME' ? 'A tiempo' : 'Tardanzas'} ✕</button>}</div></div><div className="max-h-[430px] overflow-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="sticky top-0 bg-slate-100 text-xs uppercase text-slate-500 dark:bg-slate-900"><tr><th className="px-4 py-3">Alumno</th><th className="px-4 py-3">Aula</th><th className="px-4 py-3">Fecha</th>{detailTab === 'ATTENDANCE' ? <><th className="px-4 py-3">Hora</th><th className="px-4 py-3">Estado</th></> : detailTab === 'INCIDENTS' ? <><th className="px-4 py-3">Incumplimientos</th><th className="px-4 py-3">Observación</th></> : <><th className="px-4 py-3">N°</th><th className="px-4 py-3">Tipo</th></>}</tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{detailTab === 'ATTENDANCE' && report.attendanceDetails.filter((item) => attendanceStatusFilter === 'ALL' || item.status === attendanceStatusFilter).map((item, i) => <tr key={`${item.studentName}-${item.date}-${i}`}><td className="px-4 py-3 font-semibold">{item.studentName}</td><td className="px-4 py-3">{item.classroom}</td><td className="px-4 py-3">{item.date}</td><td className="px-4 py-3">{item.time}</td><td className="px-4 py-3">{item.status === 'LATE' ? 'Tardanza' : 'A tiempo'}</td></tr>)}{detailTab === 'INCIDENTS' && report.incidentDetails.map((item, i) => <tr key={`${item.studentName}-${item.date}-${i}`}><td className="px-4 py-3 font-semibold">{item.studentName}</td><td className="px-4 py-3">{item.classroom}</td><td className="px-4 py-3">{item.date}</td><td className="px-4 py-3">{item.violations}</td><td className="max-w-xs px-4 py-3">{item.observation || '—'}</td></tr>)}{detailTab === 'NOTIFICATIONS' && report.notificationDetails.map((item, i) => <tr key={`${item.studentName}-${item.date}-${i}`}><td className="px-4 py-3 font-semibold">{item.studentName}</td><td className="px-4 py-3">{item.classroom}</td><td className="px-4 py-3">{item.date}</td><td className="px-4 py-3 font-black">{item.notificationNumber}</td><td className="px-4 py-3">{item.notificationType}</td></tr>)}</tbody></table></div></Card>
 
               <AnimatePresence>
                 {exportOpen && (
@@ -208,7 +211,7 @@ export default function AdvancedReports({ open, onClose, classrooms, refreshKey 
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div>
-                          <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Exportación personalizada</p>
+                          <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Exportación personalizada</p>
                           <h3 className="mt-1 text-xl font-black">¿Qué quieres descargar?</h3>
                           <p className="mt-1 text-sm text-slate-500">Combina uno o varios tipos de información del periodo y aula seleccionados.</p>
                         </div>
@@ -218,7 +221,7 @@ export default function AdvancedReports({ open, onClose, classrooms, refreshKey 
                       <div className="mt-5 flex flex-wrap gap-2">
                         <button type="button" onClick={selectAllExportFilters} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black dark:bg-slate-800">Seleccionar todo</button>
                         <button type="button" onClick={clearExportFilters} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-600 dark:bg-slate-800 dark:text-slate-300">Limpiar</button>
-                        <span className="ml-auto self-center text-xs font-bold text-slate-400">{selectedExportCount} seleccionados</span>
+                        <span className="ml-auto self-center text-xs font-bold text-slate-500 dark:text-slate-400">{selectedExportCount} seleccionados</span>
                       </div>
 
                       <div className="mt-4 space-y-2">
@@ -233,9 +236,9 @@ export default function AdvancedReports({ open, onClose, classrooms, refreshKey 
                             key={key}
                             type="button"
                             onClick={() => toggleExportFilter(key)}
-                            className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${exportFilters[key] ? 'border-brand-gold bg-brand-gold/5' : 'border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60'}`}
+                            className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${exportFilters[key] ? 'border-sky-500 bg-sky-50 dark:bg-sky-950/40' : 'border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60'}`}
                           >
-                            <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg border ${exportFilters[key] ? 'border-brand-gold bg-brand-gold text-brand-navy' : 'border-slate-300 dark:border-slate-700'}`}>
+                            <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg border ${exportFilters[key] ? 'border-sky-600 bg-sky-600 text-white' : 'border-slate-300 dark:border-slate-700'}`}>
                               {exportFilters[key] && <Check size={16} />}
                             </span>
                             <span className="min-w-0"><span className="block text-sm font-black">{label}</span><span className="block text-xs text-slate-500">{description}</span></span>

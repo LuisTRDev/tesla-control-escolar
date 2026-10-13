@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { getAlerts, resolveAlert, type AlertRecord, type AlertStatus, type AlertType } from '@/services/phase6Service'
 import type { Classroom, Student } from '@/types'
+import { friendlyError } from '@/lib/errorMessages'
 
 type Props = {
   open: boolean
@@ -46,7 +47,7 @@ export default function AlertCenter({ open, onClose, classrooms, currentClassroo
       setAlerts(await getAlerts({ status, classroomId: classroomId === 'ALL' ? null : classroomId }))
     } catch (err) {
       reportError('AlertCenter', err)
-      setError(err instanceof Error ? err.message : 'No se pudieron cargar las alertas.')
+      setError(friendlyError(err, 'No se pudieron cargar las alertas.'))
     } finally {
       setLoading(false)
     }
@@ -54,6 +55,7 @@ export default function AlertCenter({ open, onClose, classrooms, currentClassroo
 
   useEffect(() => {
     if (open) void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load() se recrea en cada render; solo debe correr al abrir o cambiar el filtro
   }, [open, status, classroomId])
 
   const counts = useMemo(() => ({
@@ -68,7 +70,7 @@ export default function AlertCenter({ open, onClose, classrooms, currentClassroo
       toast.success('Alerta resuelta')
     } catch (err) {
       reportError('AlertCenter', err)
-      setError(err instanceof Error ? err.message : 'No se pudo resolver la alerta.')
+      setError(friendlyError(err, 'No se pudo resolver la alerta.'))
       toast.error('No se pudo resolver la alerta')
     }
   }
@@ -86,13 +88,13 @@ export default function AlertCenter({ open, onClose, classrooms, currentClassroo
             </div>
             <div className="flex flex-wrap items-end gap-2">
               <label className="block min-w-40">
-                <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-slate-400">Estado</span>
+                <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Estado</span>
                 <select value={status} onChange={(e) => setStatus(e.target.value as AlertStatus | 'ALL')} className="h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold dark:border-slate-700 dark:bg-slate-950">
                   <option value="OPEN">Abiertas</option><option value="RESOLVED">Resueltas</option><option value="ALL">Todas</option>
                 </select>
               </label>
               <label className="block min-w-56">
-                <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-slate-400">Aula</span>
+                <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Aula</span>
                 <select value={classroomId} onChange={(e) => setClassroomId(e.target.value)} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold dark:border-slate-700 dark:bg-slate-950">
                   <option value="ALL">Todas las aulas</option>
                   {classrooms.map((item) => <option key={item.id} value={item.id}>{item.grade} {item.section} · {item.level}</option>)}

@@ -1,11 +1,11 @@
-import { lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { supabase } from '@/lib/supabase'
 import { reportError } from '@/lib/security'
 import { useToast } from '@/lib/toast'
 import { MotionConfig } from 'framer-motion'
 import { isAdminRole } from '@/services/rosterService'
 import {
-  Ban, Bell, CalendarCheck2, CalendarOff, ChevronDown, Clock3, Menu, MessageCircle, Monitor, Search, Settings2, Shirt, Users,
+  Ban, Bell, CalendarCheck2, CalendarOff, ChevronDown, Clock3, HelpCircle, Menu, MessageCircle, Monitor, Search, Settings2, Shirt, Users, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Tooltip } from '@/components/ui/Tooltip'
@@ -40,6 +40,9 @@ import { MAX_NOTIFICATIONS_PER_PAGE, type NotificationPrintData } from '@/lib/no
 import { emptyPresentationDraft, getPresentationViolationLabels, getViolationCount, type PresentationDraft } from '@/lib/presentation'
 import { playFeedback, type FeedbackKind } from '@/lib/feedback'
 import { matchesQuery, studentMatches } from '@/lib/search'
+import { hasOpenOverlay, isTypingTarget, pickEnterTarget } from '@/lib/shortcuts'
+import { countAppErrorsSince } from '@/services/adminService'
+import type { StartModule } from '@/App'
 import { getCurrentTime, getPreferences, getTodayKey, savePreferences, type UserPreferences } from '@/lib/storage'
 import { monthRangeKeys } from '@/lib/dates'
 import { inactiveLabel, isActiveStudent, isInactive } from '@/lib/studentStatus'
@@ -61,6 +64,7 @@ import {
   type WhatsAppTemplates,
 } from '@/services/communicationService'
 import { getWhatsAppTemplates, saveWhatsAppTemplates } from '@/services/whatsappTemplateService'
+import { friendlyError } from '@/lib/errorMessages'
 import {
   CALENDAR_KIND_LABELS, EMPTY_DAY_STATUS, findPermission, getDayStatusData, getEffectiveSchedule, saveLevelSchedule,
   type DayStatusData,
@@ -81,6 +85,10 @@ const LiveTvPanel = lazy(() => import('@/components/LiveTvPanel'))
 const RosterManager = lazy(() => import('@/components/RosterManager'))
 const StudentCaseFile = lazy(() => import('@/components/StudentCaseFile'))
 const WhatsAppQueue = lazy(() => import('@/components/WhatsAppQueue'))
+const SyncPanel = lazy(() => import('@/components/SyncPanel'))
+const HelpGuide = lazy(() => import('@/components/HelpGuide'))
+const UserManager = lazy(() => import('@/components/UserManager'))
+const ErrorMonitor = lazy(() => import('@/components/ErrorMonitor'))
 
 type Props = {
   userName: string
@@ -89,6 +97,8 @@ type Props = {
   classroom: Classroom
   onClassroomChange: (classroom: Classroom) => void
   onLogout: () => void
+  /** Módulo pedido por un acceso directo de la app instalada. */
+  startModule?: StartModule
 }
 
 const attendanceFilters: Array<{ id: AttendanceFilter; label: string }> = [
@@ -104,7 +114,13 @@ function isLateNotificationOf(item: NotificationRecord, rec: AttendanceRecord) {
   return item.notificationType === 'LATE_ENTRY' && item.studentId === rec.studentId && item.date === rec.date
 }
 
-export default function Attendance({ userName, userRole, classrooms, classroom, onClassroomChange, onLogout }: Props) {
+const ERRORS_SEEN_KEY = 'tesla_errors_seen_at'
+
+function readErrorsSeenAt() {
+  try { return localStorage.getItem(ERRORS_SEEN_KEY) ?? new Date(Date.now() - 86_400_000).toISOString() } catch { return new Date(Date.now() - 86_400_000).toISOString() }
+}
+
+export default function Attendance({ userName, userRole, classrooms, classroom, onClassroomChange, onLogout, startModule = null }: Props) {
   const toast = useToast()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<AttendanceFilter>('ALL')
@@ -160,6 +176,14 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [justifyTarget, setJustifyTarget] = useState<JustifyTarget | null>(null)
   const [permissionStudent, setPermissionStudent] = useState<Student | null>(null)
   const [earlyExitStudent, setEarlyExitStudent] = useState<Student | null>(null)
+  const [syncPanelOpen, setSyncPanelOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [usersOpen, setUsersOpen] = useState(false)
+  const [errorsOpen, setErrorsOpen] = useState(false)
+  const [errorCount, setErrorCount] = useState(0)
+  const [searchHint, setSearchHint] = useState('')
+  const searchRef = useRef<HTMLInputElement | null>(null)
+  const isAdmin = isAdminRole(userRole)
   const today = getTodayKey()
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
   const darkMode = preferences.theme === 'dark' || (preferences.theme === 'system' && systemDark)
@@ -185,7 +209,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       setToleranceSettings(tolerance)
       setDayStatus(await getDayStatusData(range.from, range.to).catch((error) => { reportError('Attendance', error); return EMPTY_DAY_STATUS }))
     } catch (error) {
-      reportError('Attendance', error); setDataError(error instanceof Error ? error.message : 'No se pudieron cargar los datos locales/remotos.')
+      reportError('Attendance', error); setDataError(friendlyError(error, 'No se pudieron cargar los datos locales/remotos.'))
     } finally { if (showLoading) setLoadingData(false) }
   }, [])
 
@@ -194,6 +218,45 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const syncState = useNetworkSync(pullInBackground)
   const realtimeState = useSchoolRealtime(pullInBackground)
   const { installAvailable, install } = usePwaInstall()
+
+  // Acceso directo de la app instalada (mantener presionado el ícono): abre el módulo pedido.
+  useEffect(() => {
+    if (startModule === 'quick') setQuickModeOpen(true)
+    else if (startModule === 'pda') setPdaModeOpen(true)
+    else if (startModule === 'summary') setDailySummaryOpen(true)
+    else if (startModule === 'whatsapp') setWhatsAppQueueOpen(true)
+  }, [startModule])
+
+  // Aviso cuando la sincronización resolvió conflictos o tiene operaciones que fallan.
+  const lastSyncResult = syncState.lastResult
+  useEffect(() => {
+    if (!lastSyncResult) return
+    if (lastSyncResult.conflicts > 0) {
+      toast.show({
+        title: `${lastSyncResult.conflicts} conflicto${lastSyncResult.conflicts === 1 ? '' : 's'} resuelto${lastSyncResult.conflicts === 1 ? '' : 's'} al sincronizar`,
+        description: 'Otro equipo había registrado a los mismos alumnos. Se guardó la hora más temprana.',
+        variant: 'info',
+        duration: 8000,
+        action: { label: 'Ver', onClick: () => setSyncPanelOpen(true) },
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo reacciona a un resultado nuevo, no a cambios de toast
+  }, [lastSyncResult])
+
+  // Monitoreo (solo admin): cantidad de errores nuevos desde la última revisión.
+  const refreshErrorCount = useCallback(() => {
+    if (!isAdmin) return
+    void countAppErrorsSince(readErrorsSeenAt()).then((count) => setErrorCount(count ?? 0))
+  }, [isAdmin])
+  useEffect(() => {
+    refreshErrorCount()
+    const timer = window.setInterval(refreshErrorCount, 5 * 60_000)
+    return () => window.clearInterval(timer)
+  }, [refreshErrorCount])
+  const markErrorsSeen = useCallback(() => {
+    try { localStorage.setItem(ERRORS_SEEN_KEY, new Date().toISOString()) } catch { /* sin almacenamiento: el contador no se reinicia */ }
+    setErrorCount(0)
+  }, [])
 
   useEffect(() => {
     const handleRealtimeEvent = (event: Event) => {
@@ -361,6 +424,38 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
 
   const unmarkedToday = classroomStudents.filter((student) => !recordByStudent.has(student.id))
 
+  /** Enter en el buscador marca la entrada si queda un solo alumno sin marcar; Esc limpia. */
+  function handleSearchKey(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      if (query) { setQuery(''); setSearchHint('') } else searchRef.current?.blur()
+      return
+    }
+    if (event.key !== 'Enter' || !query.trim()) return
+    event.preventDefault()
+    const target = pickEnterTarget(filtered.filter((student) => !recordByStudent.has(student.id)))
+    if (target.kind === 'mark') {
+      void mark(target.item.id)
+      setQuery('')
+      setSearchHint('')
+    } else {
+      setSearchHint(target.kind === 'many' ? `${target.count} alumnos coinciden: sigue escribiendo hasta que quede uno.` : 'Ningún alumno sin marcar coincide con la búsqueda.')
+    }
+  }
+
+  // Atajos globales de PC (no se activan mientras se escribe ni con un panel abierto).
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey || isTypingTarget(event.target) || hasOpenOverlay()) return
+      if (event.key === '/') { event.preventDefault(); searchRef.current?.focus() }
+      else if (event.key === '?') { event.preventDefault(); setHelpOpen(true) }
+      else if (event.key === 'q' || event.key === 'Q') { event.preventDefault(); setQuickModeOpen(true) }
+      else if (event.key === 's' || event.key === 'S') { event.preventDefault(); setSyncPanelOpen(true) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   function openBulkAttendance() {
     // Todos pre-seleccionados por defecto: el auxiliar desmarca solo
     // a quienes sabe que faltaron hoy, en vez de tener que elegir uno
@@ -392,7 +487,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       await bulkMarkStudents(ids)
       setBulkAttendanceOpen(false)
     } catch (error) {
-      toast.error('No se pudo completar el marcado masivo', error instanceof Error ? error.message : undefined)
+      toast.error('No se pudo completar el marcado masivo', friendlyError(error))
     } finally {
       setBulkAttendanceSaving(false)
     }
@@ -422,7 +517,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         duration: 5000,
         action: { label: 'Deshacer', onClick: () => void undoMark(rec, name) },
       })
-    } catch(error){ feedback('error'); reportError('Attendance', error); setDataError(error instanceof Error?error.message:'No se pudo registrar la entrada.'); toast.error('No se pudo registrar la entrada', error instanceof Error?error.message:undefined) }
+    } catch(error){ feedback('error'); reportError('Attendance', error); setDataError(friendlyError(error, 'No se pudo registrar la entrada.')); toast.error('No se pudo registrar la entrada', friendlyError(error)) }
   }
 
   async function undoMark(rec: AttendanceRecord, name: string) {
@@ -435,7 +530,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     } catch (error) {
       feedback('error')
       reportError('Attendance', error)
-      toast.error('No se pudo deshacer la marca', error instanceof Error ? error.message : undefined)
+      toast.error('No se pudo deshacer la marca', friendlyError(error))
     }
   }
 
@@ -450,7 +545,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     } catch (error) {
       feedback('error')
       reportError('Attendance', error)
-      setDataError(error instanceof Error ? error.message : 'No se pudo registrar la salida.')
+      setDataError(friendlyError(error, 'No se pudo registrar la salida.'))
     }
   }
   function openAttendanceEdit(record: AttendanceRecord) {
@@ -494,9 +589,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     } catch (error) {
       reportError('Attendance', error)
       setDataError(
-        error instanceof Error
-          ? error.message
-          : 'No se pudo corregir la hora de ingreso.',
+        friendlyError(error, 'No se pudo corregir la hora de ingreso.'),
       )
     } finally {
       setSavingAttendanceEdit(false)
@@ -522,7 +615,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       toast.info(`Marca borrada: ${name}`)
     } catch (error) {
       reportError('Attendance', error)
-      setDataError(error instanceof Error ? error.message : 'No se pudo borrar la marca.')
+      setDataError(friendlyError(error, 'No se pudo borrar la marca.'))
     } finally {
       setSavingAttendanceEdit(false)
     }
@@ -536,7 +629,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       setPresentationRecords((r) => r.filter((x) => x.date !== today))
       setNotifications((items) => items.filter((item) => item.date !== today))
     }
-    catch(error){ reportError('Attendance', error); setDataError(error instanceof Error?error.message:'No se pudo reiniciar el día.') }
+    catch(error){ reportError('Attendance', error); setDataError(friendlyError(error, 'No se pudo reiniciar el día.')) }
   }
   function changeClassroom(classroomId:string){ const selected=classrooms.find((i)=>i.id===classroomId); if(!selected)return; setQuery('');setFilter('ALL');setPresentationFilter('ALL');onClassroomChange(selected); if(preferences.rememberClassroom)updatePreferences({...preferences,lastClassroomId:selected.id}) }
   async function updateEntryLimit(value:string){
@@ -544,17 +637,17 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       const next = { ...currentLevelSchedule, entryLimit: value }
       setDayStatus((curr) => ({ ...curr, schedules: curr.schedules.map((item) => (item.level === next.level ? next : item)) }))
       try { await saveLevelSchedule(next) }
-      catch(error){ reportError('Attendance', error); setDataError(error instanceof Error?error.message:'No se pudo actualizar la hora límite.') }
+      catch(error){ reportError('Attendance', error); setDataError(friendlyError(error, 'No se pudo actualizar la hora límite.')) }
       return
     }
     setEntryLimit(value)
     try { await saveEntryLimit(value) }
-    catch(error){ reportError('Attendance', error); setDataError(error instanceof Error?error.message:'No se pudo actualizar la hora límite.') }
+    catch(error){ reportError('Attendance', error); setDataError(friendlyError(error, 'No se pudo actualizar la hora límite.')) }
   }
   async function updateTolerance(next: ToleranceSettings){
     setToleranceSettings(next)
     try { await saveToleranceSettings(next) }
-    catch(error){ reportError('Attendance', error); setDataError(error instanceof Error?error.message:'No se pudo actualizar la tolerancia.') }
+    catch(error){ reportError('Attendance', error); setDataError(friendlyError(error, 'No se pudo actualizar la tolerancia.')) }
   }
   function openPresentation(student:Student){
     const existing=presentationByStudent.get(student.id)
@@ -617,7 +710,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         }
       }
     }
-    catch(error){reportError('Attendance', error);setDataError(error instanceof Error?error.message:'No se pudo guardar la presentación.')}
+    catch(error){reportError('Attendance', error);setDataError(friendlyError(error, 'No se pudo guardar la presentación.'))}
   }
   const hasSelectedViolation=presentationDraft.hairstyleViolation||presentationDraft.uniformUsageViolation||presentationDraft.nonInstitutionalGarment||presentationDraft.lateEntryViolation||presentationDraft.inappropriateConductViolation
   const presentationSaveDisabled=!presentationDraft.status||(presentationDraft.status==='NON_COMPLIANT'&&!hasSelectedViolation)
@@ -720,7 +813,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       if (data) setNotificationPreviewData(data)
     } catch (error) {
       reportError('Attendance', error)
-      setDataError(error instanceof Error ? error.message : 'No se pudo registrar la notificación.')
+      setDataError(friendlyError(error, 'No se pudo registrar la notificación.'))
     }
   }
 
@@ -860,7 +953,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       setWhatsAppStudent(null)
     } catch (error) {
       reportError('Attendance', error)
-      setWhatsAppError(error instanceof Error ? error.message : 'No se pudo abrir WhatsApp.')
+      setWhatsAppError(friendlyError(error, 'No se pudo abrir WhatsApp.'))
     } finally {
       setOpeningWhatsApp(false)
     }
@@ -875,7 +968,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         userName={userName}
         userRole={userRole}
         formattedDate={formattedDate}
-        active={rosterOpen ? 'roster' : tvPanelOpen ? 'tv' : historicalImportOpen ? 'historical' : backupOpen ? 'backup' : quickModeOpen ? 'quick' : auditOpen ? 'audit' : dailySummaryOpen ? 'summary' : alertsOpen ? 'alerts' : cobranzaOpen ? 'cobranza' : reportsOpen ? 'reports' : dashboardOpen ? 'dashboard' : 'home'}
+        active={usersOpen ? 'users' : errorsOpen ? 'errors' : helpOpen ? 'help' : rosterOpen ? 'roster' : tvPanelOpen ? 'tv' : historicalImportOpen ? 'historical' : backupOpen ? 'backup' : quickModeOpen ? 'quick' : auditOpen ? 'audit' : dailySummaryOpen ? 'summary' : alertsOpen ? 'alerts' : cobranzaOpen ? 'cobranza' : reportsOpen ? 'reports' : dashboardOpen ? 'dashboard' : 'home'}
         onHome={() => { setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false); setCobranzaOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
         onDashboard={() => { setDashboardOpen(true); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false); setCobranzaOpen(false) }}
         onReports={() => { setReportsOpen(true); setDashboardOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false); setCobranzaOpen(false) }}
@@ -890,7 +983,11 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         onTvPanel={() => setTvPanelOpen(true)}
         onBackups={() => setBackupOpen(true)}
         onHistoricalImport={() => setHistoricalImportOpen(true)}
-        onRoster={isAdminRole(userRole) ? () => setRosterOpen(true) : undefined}
+        onRoster={isAdmin ? () => setRosterOpen(true) : undefined}
+        onUsers={isAdmin ? () => setUsersOpen(true) : undefined}
+        onErrors={isAdmin ? () => setErrorsOpen(true) : undefined}
+        errorCount={errorCount}
+        onHelp={() => setHelpOpen(true)}
         online={syncState.online}
         pendingSync={syncState.pending}
         onSettings={() => setSettingsOpen(true)}
@@ -911,21 +1008,35 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 <Menu size={20} />
               </button>
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Control diario</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Control diario</p>
                 <p className="truncate text-sm font-black sm:text-base">{classroom.grade} {classroom.section} · {classroom.level}</p>
               </div>
             </div>
 
             <div className="flex items-center gap-3">
-              <SyncStatus
-                online={syncState.online}
-                syncing={syncState.syncing}
-                pending={syncState.pending}
-                lastSync={syncState.lastSync}
-                onSync={() => void syncState.syncNow()}
-                installAvailable={installAvailable}
-                onInstall={() => void install()}
-              />
+              <div data-tour="sync">
+                <SyncStatus
+                  online={syncState.online}
+                  syncing={syncState.syncing}
+                  pending={syncState.pending}
+                  lastSync={syncState.lastSync}
+                  failing={syncState.failing}
+                  conflicts={syncState.conflicts}
+                  onOpen={() => setSyncPanelOpen(true)}
+                  installAvailable={installAvailable}
+                  onInstall={() => void install()}
+                />
+              </div>
+              <button
+                type="button"
+                data-tour="help"
+                onClick={() => setHelpOpen(true)}
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                aria-label="Guía de uso"
+                title="Guía de uso (tecla ?)"
+              >
+                <HelpCircle size={19} />
+              </button>
               <div className="hidden text-right xl:block">
                 <LiveClock className="text-sm font-black tabular-nums" />
                 <p className="text-[11px] capitalize text-slate-500 dark:text-slate-400">{formattedDate}</p>
@@ -933,14 +1044,19 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
               <div className="hidden h-9 w-px bg-slate-200 dark:bg-slate-800 xl:block" />
               <div className="hidden max-w-[180px] text-right 2xl:block">
                 <p className="truncate text-xs font-bold">{userName}</p>
-                <p className="truncate text-[10px] uppercase tracking-wider text-slate-400">{userRole}</p>
+                <p className="truncate text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">{userRole}</p>
               </div>
             </div>
           </div>
         </header>
 
         <section className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
-        {dataError && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">{dataError}</div>}
+        {dataError && (
+          <div role="alert" className="mb-4 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
+            <span className="flex-1">{dataError}</span>
+            <button type="button" onClick={() => setDataError('')} className="-m-1 rounded-lg p-1 hover:bg-red-100 dark:hover:bg-red-900/40" aria-label="Cerrar aviso"><X size={16} /></button>
+          </div>
+        )}
         {calendarToday && (
           <div className="mb-4 flex items-center gap-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-800 dark:border-indigo-900/60 dark:bg-indigo-950/40 dark:text-indigo-300">
             <CalendarOff size={18} className="shrink-0" />
@@ -952,13 +1068,13 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         <div className="rounded-2xl border border-slate-200 bg-white p-5 text-slate-950 shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Control diario</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Control diario</p>
               <h2 className="mt-1 text-2xl font-black tracking-tight">Lista de alumnos</h2>
               <p className="mt-1 max-w-xl text-sm text-slate-500 dark:text-slate-400">
                 Registra la llegada, detecta tardanzas y controla la presentación institucional desde una sola vista.
               </p>
               <div className="mt-3 inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 md:hidden dark:border-slate-800 dark:bg-slate-950/70">
-                <Clock3 size={16} className="text-slate-400" />
+                <Clock3 size={16} className="text-slate-500 dark:text-slate-400" />
                 <div>
                   <LiveClock className="text-sm font-black tabular-nums" />
                   <p className="text-[11px] capitalize text-slate-500 dark:text-slate-400">{formattedDate}</p>
@@ -967,7 +1083,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
             </div>
 
             <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end lg:w-auto">
-              <label className="block w-full sm:w-56 sm:shrink-0">
+              <label className="block w-full sm:w-56 sm:shrink-0" data-tour="classroom">
                 <span className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Aula</span>
                 <div className="relative">
                   <select
@@ -981,7 +1097,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                       </option>
                     ))}
                   </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-3.5 text-slate-400" size={20} />
+                  <ChevronDown className="pointer-events-none absolute right-3 top-3.5 text-slate-500 dark:text-slate-400" size={20} />
                 </div>
               </label>
 
@@ -1002,7 +1118,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
 
         <div className="mt-5 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-400">{classroom.level}</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{classroom.level}</p>
             <h3 className="text-2xl font-black">{classroom.grade} {classroom.section}</h3>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -1018,7 +1134,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
               </Button>
             </Tooltip>
             <Tooltip content="Marca asistencia de un alumno a la vez, ideal para la hora de ingreso">
-              <Button onClick={() => setQuickModeOpen(true)}>
+              <Button data-tour="quick" onClick={() => setQuickModeOpen(true)} title="Modo rápido (tecla Q)">
                 <Clock3 className="mr-2" size={17} /> Modo rápido
               </Button>
             </Tooltip>
@@ -1027,14 +1143,14 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 <Monitor className="mr-2" size={17} /> Panel TV
               </Button>
             </Tooltip>
-            <Button variant="outline" onClick={() => setDailySummaryOpen(true)}>
+            <Button variant="outline" data-tour="summary" onClick={() => setDailySummaryOpen(true)}>
               <CalendarCheck2 className="mr-2" size={17} /> Resumen / cierre
             </Button>
             <Button variant="outline" onClick={() => setAlertsOpen(true)}>
               <Bell className="mr-2" size={17} /> Alertas
             </Button>
             <Tooltip content="Envía uno tras otro los avisos de WhatsApp pendientes de hoy">
-              <Button variant="outline" className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/70 dark:text-emerald-300 dark:hover:bg-emerald-950/40" onClick={() => setWhatsAppQueueOpen(true)}>
+              <Button variant="outline" data-tour="whatsapp" className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/70 dark:text-emerald-300 dark:hover:bg-emerald-950/40" onClick={() => setWhatsAppQueueOpen(true)}>
                 <MessageCircle className="mr-2" size={17} /> WhatsApp en lote
               </Button>
             </Tooltip>
@@ -1045,7 +1161,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
           <Card className="p-4">
             <p className="text-xs text-slate-500 dark:text-slate-400">Alumnos</p>
             <p className="mt-1 text-2xl font-black">{classroomStudents.length}</p>
-            {inactiveClassroomStudents.length > 0 && <p className="text-xs text-slate-400">+{inactiveClassroomStudents.length} inhabilitado{inactiveClassroomStudents.length !== 1 ? 's' : ''}</p>}
+            {inactiveClassroomStudents.length > 0 && <p className="text-xs text-slate-500 dark:text-slate-400">+{inactiveClassroomStudents.length} inhabilitado{inactiveClassroomStudents.length !== 1 ? 's' : ''}</p>}
           </Card>
           <Card className="p-4">
             <p className="text-xs text-slate-500 dark:text-slate-400">A tiempo</p>
@@ -1078,14 +1194,19 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         </Card>
 
         <div className="mt-6 grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
-          <div className="relative">
-            <Search className="absolute left-4 top-3.5 text-slate-400" size={20} />
+          <div className="relative" data-tour="search">
+            <Search className="absolute left-4 top-3.5 text-slate-500 dark:text-slate-400" size={20} />
             <Input
+              ref={searchRef}
               className="pl-12"
               placeholder={`Buscar alumno en ${classroom.grade} ${classroom.section}...`}
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => { setQuery(event.target.value); setSearchHint('') }}
+              onKeyDown={handleSearchKey}
+              enterKeyHint="search"
+              aria-describedby={searchHint ? 'search-hint' : undefined}
             />
+            {searchHint && <p id="search-hint" role="status" className="mt-1 text-xs font-semibold text-amber-700 dark:text-amber-400">{searchHint}</p>}
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -1111,19 +1232,19 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                   <option key={item.id} value={item.id}>Presentación: {item.label}</option>
                 ))}
               </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-3 text-slate-400" size={18} />
+              <ChevronDown className="pointer-events-none absolute right-3 top-3 text-slate-500 dark:text-slate-400" size={18} />
             </label>
           </div>
         </div>
 
         <div className="mt-5 space-y-3">
-          {filtered.map((student) => {
+          {filtered.map((student, index) => {
             const record = recordByStudent.get(student.id)
             const presentation = presentationByStudent.get(student.id)
             const whatsAppOptions = getWhatsAppOptions(student)
             return (
+              <div key={student.id} data-tour={index === 0 ? 'student-card' : undefined}>
               <StudentAttendanceCard
-                key={student.id}
                 student={student}
                 classroom={classroom}
                 record={record}
@@ -1149,6 +1270,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 onEarlyExit={setEarlyExitStudent}
                 setHistoryStudent={setHistoryStudent}
               />
+              </div>
             )
           })}
 
@@ -1157,7 +1279,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <h3 className="font-bold text-slate-500 line-through decoration-slate-400/60 dark:text-slate-400">{student.firstName} {student.lastName}</h3>
-                  <p className="mt-1 text-sm text-slate-400">{classroom.grade} {classroom.section} · {classroom.level}{student.inactiveSince && ` · desde ${student.inactiveSince}`}</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{classroom.grade} {classroom.section} · {classroom.level}{student.inactiveSince && ` · desde ${student.inactiveSince}`}</p>
                 </div>
                 <span className="inline-flex max-w-full items-center gap-2 rounded-xl border border-slate-300 bg-slate-200 px-3 py-2 text-sm font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                   <Ban size={16} className="shrink-0" /><span className="truncate">Inhabilitado: {inactiveLabel(student)}</span>
@@ -1220,7 +1342,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       onExit={markExit}
       />
 
-      <Deferred when={backupOpen}><BackupCenter open={backupOpen} onClose={() => setBackupOpen(false)} online={syncState.online} /></Deferred>
+      <Deferred when={backupOpen}><BackupCenter open={backupOpen} onClose={() => setBackupOpen(false)} online={syncState.online} isAdmin={isAdmin} /></Deferred>
 
       <PresentationDialog
         presentationStudent={presentationStudent}
@@ -1429,6 +1551,11 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
           onSaveTemplates={handleSaveTemplates}
         />
       </Deferred>
+
+      <Deferred when={syncPanelOpen}><SyncPanel open={syncPanelOpen} onClose={() => setSyncPanelOpen(false)} sync={syncState} students={students} classrooms={classrooms} /></Deferred>
+      <Deferred when={helpOpen}><HelpGuide open={helpOpen} onClose={() => setHelpOpen(false)} /></Deferred>
+      <Deferred when={usersOpen}><UserManager open={usersOpen} onClose={() => setUsersOpen(false)} /></Deferred>
+      <Deferred when={errorsOpen}><ErrorMonitor open={errorsOpen} onClose={() => setErrorsOpen(false)} onSeen={markErrorsSeen} /></Deferred>
 
       <SettingsPanel
         settingsOpen={settingsOpen}

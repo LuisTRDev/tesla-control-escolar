@@ -9,9 +9,9 @@ export default function PwaUpdateNotice() {
 
   return (
     <div className="fixed bottom-4 left-4 right-4 z-[100] sm:left-auto sm:right-5 sm:w-[390px]">
-      <div className="overflow-hidden rounded-2xl border border-brand-gold/30 bg-white shadow-2xl shadow-slate-950/20 dark:border-brand-navyDeep/60 dark:bg-slate-950">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-950/20 dark:border-slate-800 dark:bg-slate-950">
         <div className="flex items-start gap-3 p-4">
-          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-navy text-white">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900">
             <Sparkles size={19} />
           </div>
 
@@ -29,7 +29,7 @@ export default function PwaUpdateNotice() {
             onClick={dismiss}
             disabled={updating}
             aria-label="Recordar más tarde"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40 dark:hover:bg-slate-800 dark:hover:text-white"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40 dark:hover:bg-slate-800 dark:hover:text-white"
           >
             <X size={17} />
           </button>
@@ -48,7 +48,7 @@ export default function PwaUpdateNotice() {
 
           <Button
             type="button"
-            className="h-9 bg-brand-navy px-3 text-xs text-white hover:bg-brand-gold"
+            className="h-9 px-3 text-xs"
             onClick={() => void updateNow()}
             disabled={updating}
           >

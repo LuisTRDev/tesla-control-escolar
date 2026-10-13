@@ -241,7 +241,17 @@ export async function ensureNotificationForLateAttendance(record: AttendanceReco
   const existing = await getExistingByAttendance(record.id)
   if (existing) return existing
 
-  const notificationNumber = await getNextNotificationNumber(record.studentId)
+  // Igual que en presentación: después de la 3.ª no se intenta una 4.ª (la rechaza el CHECK),
+  // se registra una alerta de reincidencia y se devuelve la última notificación.
+  const notificationNumber = await getNextNotificationNumberOrAlert(
+    record.studentId,
+    `El alumno superó las 3 notificaciones. Nueva tardanza el ${record.date} a las ${record.time}.`,
+  )
+  if (notificationNumber === null) {
+    const latest = await getLatestNotification(record.studentId)
+    if (latest) return latest
+    throw new Error('El alumno alcanzó el máximo de notificaciones y no se encontró una notificación previa para mostrar.')
+  }
   const observation = `Tardanza en el ingreso. Hora registrada: ${record.time}.`
   const { data, error } = await supabase
     .from('notifications')

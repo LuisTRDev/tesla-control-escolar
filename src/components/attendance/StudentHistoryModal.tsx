@@ -32,7 +32,7 @@ export default function StudentHistoryModal({ historyStudent, setHistoryStudent,
         <motion.div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-[1px] dark:bg-black/65" onMouseDown={() => setHistoryStudent(null)} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
           <motion.section className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-900 sm:p-6" onMouseDown={(e) => e.stopPropagation()} initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
             <div className="flex items-start justify-between gap-4">
-              <div><p className="text-xs font-bold uppercase tracking-widest text-slate-400">Historial mensual</p><h2 className="mt-1 text-xl font-black">{historyStudent.firstName} {historyStudent.lastName}</h2><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Datos persistentes almacenados en PostgreSQL.</p></div>
+              <div><p className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Historial mensual</p><h2 className="mt-1 text-xl font-black">{historyStudent.firstName} {historyStudent.lastName}</h2><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Datos persistentes almacenados en PostgreSQL.</p></div>
               <Button variant="ghost" onClick={() => setHistoryStudent(null)}><X size={20}/></Button>
             </div>
             <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -58,7 +58,7 @@ export default function StudentHistoryModal({ historyStudent, setHistoryStudent,
             <div className="mt-7 border-t border-slate-200 pt-5 dark:border-slate-800">
               <div className="flex items-end justify-between gap-3">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Reincidencias</p>
+                  <p className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Reincidencias</p>
                   <h3 className="mt-1 font-black">Historial de notificaciones</h3>
                 </div>
                 {(() => {
@@ -88,7 +88,7 @@ export default function StudentHistoryModal({ historyStudent, setHistoryStudent,
                         setNotificationPreviewData(previewData)
                         setHistoryStudent(null)
                       }}
-                      className={`flex w-full flex-col gap-1 rounded-xl border px-4 py-3 text-left transition-colors sm:flex-row sm:items-center sm:justify-between disabled:cursor-not-allowed ${item.voided ? 'border-slate-200 bg-slate-50 opacity-70 dark:border-slate-800 dark:bg-slate-900/40' : 'border-slate-200 dark:border-slate-800 enabled:hover:border-brand-gold enabled:hover:bg-brand-gold/10 disabled:opacity-60'}`}
+                      className={`flex w-full flex-col gap-1 rounded-xl border px-4 py-3 text-left transition-colors sm:flex-row sm:items-center sm:justify-between disabled:cursor-not-allowed ${item.voided ? 'border-slate-200 bg-slate-50 opacity-70 dark:border-slate-800 dark:bg-slate-900/40' : 'border-slate-200 dark:border-slate-800 enabled:hover:border-sky-400 enabled:hover:bg-sky-50 dark:enabled:hover:bg-sky-950/30 disabled:opacity-60'}`}
                     >
                       <div>
                         <p className={`font-black ${item.voided ? 'line-through decoration-slate-400' : ''}`}>
