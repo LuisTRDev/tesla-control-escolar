@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tesla-control-v0.7.2'
+const CACHE_NAME = 'tesla-control-v0.7.3'
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -6,6 +6,8 @@ const APP_SHELL = [
   '/images/logo-nikola-tesla.png',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
+  '/icons/maskable-192.png',
+  '/icons/maskable-512.png',
 ]
 
 self.addEventListener('install', (event) => {

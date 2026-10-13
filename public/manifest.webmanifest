@@ -1,24 +1,48 @@
 {
+  "id": "/",
   "name": "Tesla Control Escolar",
   "short_name": "Tesla Escolar",
   "description": "Control de asistencia, reglamento, alertas y reportes de IEPr Nikola Tesla.",
+  "lang": "es-PE",
+  "dir": "ltr",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "display_override": [
+    "standalone"
+  ],
   "background_color": "#020817",
   "theme_color": "#020817",
   "orientation": "portrait-primary",
+  "categories": [
+    "education",
+    "productivity"
+  ],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "shortcuts": [
@@ -29,9 +53,10 @@
       "url": "/?open=quick",
       "icons": [
         {
-          "src": "/icons/icon-192.png",
+          "src": "/icons/maskable-192.png",
           "sizes": "192x192",
-          "type": "image/png"
+          "type": "image/png",
+          "purpose": "maskable"
         }
       ]
     },
@@ -42,9 +67,10 @@
       "url": "/?open=pda",
       "icons": [
         {
-          "src": "/icons/icon-192.png",
+          "src": "/icons/maskable-192.png",
           "sizes": "192x192",
-          "type": "image/png"
+          "type": "image/png",
+          "purpose": "maskable"
         }
       ]
     },
@@ -55,9 +81,10 @@
       "url": "/?open=summary",
       "icons": [
         {
-          "src": "/icons/icon-192.png",
+          "src": "/icons/maskable-192.png",
           "sizes": "192x192",
-          "type": "image/png"
+          "type": "image/png",
+          "purpose": "maskable"
         }
       ]
     },
@@ -68,9 +95,10 @@
       "url": "/?open=whatsapp",
       "icons": [
         {
-          "src": "/icons/icon-192.png",
+          "src": "/icons/maskable-192.png",
           "sizes": "192x192",
-          "type": "image/png"
+          "type": "image/png",
+          "purpose": "maskable"
         }
       ]
     }
