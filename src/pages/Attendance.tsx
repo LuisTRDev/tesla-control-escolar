@@ -43,6 +43,8 @@ import { playFeedback, type FeedbackKind } from '@/lib/feedback'
 import { matchesQuery, studentMatches } from '@/lib/search'
 import { hasOpenOverlay, isTypingTarget, pickEnterTarget } from '@/lib/shortcuts'
 import { useOverlayScrollLock } from '@/lib/scrollLock'
+import { useBackClose } from '@/lib/backClose'
+import { requestPersistentStorage, setAppBadge } from '@/lib/nativeFeatures'
 import { countAppErrorsSince } from '@/services/adminService'
 import type { StartModule } from '@/App'
 import { getCurrentTime, getPreferences, getTodayKey, savePreferences, type UserPreferences } from '@/lib/storage'
@@ -333,6 +335,41 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   // Barra del sistema (Android) del mismo color que la cabecera, como en una app nativa.
   useEffect(() => { document.querySelector('meta[name="theme-color"]')?.setAttribute('content', darkMode ? '#020617' : '#ffffff') }, [darkMode])
   useOverlayScrollLock()
+  // Botón "atrás" de Android: cierra lo último que se abrió en vez de salir de la app.
+  useBackClose(sidebarOpen, () => setSidebarOpen(false))
+  useBackClose(settingsOpen, () => setSettingsOpen(false))
+  useBackClose(dashboardOpen, () => setDashboardOpen(false))
+  useBackClose(reportsOpen, () => setReportsOpen(false))
+  useBackClose(cobranzaOpen, () => setCobranzaOpen(false))
+  useBackClose(rosterOpen, () => setRosterOpen(false))
+  useBackClose(alertsOpen, () => setAlertsOpen(false))
+  useBackClose(dailySummaryOpen, () => setDailySummaryOpen(false))
+  useBackClose(auditOpen, () => setAuditOpen(false))
+  useBackClose(quickModeOpen, () => setQuickModeOpen(false))
+  useBackClose(pdaModeOpen, () => setPdaModeOpen(false))
+  useBackClose(backupOpen, () => setBackupOpen(false))
+  useBackClose(historicalImportOpen, () => setHistoricalImportOpen(false))
+  useBackClose(tvPanelOpen, () => setTvPanelOpen(false))
+  useBackClose(whatsAppQueueOpen, () => setWhatsAppQueueOpen(false))
+  useBackClose(syncPanelOpen, () => setSyncPanelOpen(false))
+  useBackClose(helpOpen, () => setHelpOpen(false))
+  useBackClose(usersOpen, () => setUsersOpen(false))
+  useBackClose(errorsOpen, () => setErrorsOpen(false))
+  useBackClose(multiNotificationOpen, () => setMultiNotificationOpen(false))
+  useBackClose(bulkAttendanceOpen, () => setBulkAttendanceOpen(false))
+  useBackClose(caseFileStudent !== null, () => setCaseFileStudent(null))
+  useBackClose(presentationStudent !== null, () => setPresentationStudent(null))
+  useBackClose(notificationPreviewData !== null, () => setNotificationPreviewData(null))
+  useBackClose(historyStudent !== null, () => setHistoryStudent(null))
+  useBackClose(whatsAppStudent !== null, () => setWhatsAppStudent(null))
+  useBackClose(editingAttendance !== null, () => setEditingAttendance(null))
+  useBackClose(justifyTarget !== null, () => setJustifyTarget(null))
+  useBackClose(permissionStudent !== null, () => setPermissionStudent(null))
+  useBackClose(earlyExitStudent !== null, () => setEarlyExitStudent(null))
+  // App instalada: número de cambios sin sincronizar sobre el ícono, y almacenamiento
+  // persistente para que Android no borre la cola offline.
+  useEffect(() => { setAppBadge(syncState.pending) }, [syncState.pending])
+  useEffect(() => { void requestPersistentStorage() }, [])
   useEffect(() => { const media=window.matchMedia('(prefers-color-scheme: dark)'); const update=(e:MediaQueryListEvent)=>setSystemDark(e.matches); media.addEventListener('change',update); return()=>media.removeEventListener('change',update) }, [])
   // Solo fecha y Dashboard dependen de now: basta refrescar cada 30 s (el reloj con segundos es LiveClock).
   useEffect(() => { const timer=window.setInterval(()=>setNow(new Date()),30000); return()=>window.clearInterval(timer) }, [])

@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion, useDragControls } from 'framer-motion'
 import { X } from 'lucide-react'
+import { useBackClose } from '@/lib/backClose'
 
 export type SheetAction = {
   key: string
@@ -36,6 +37,7 @@ const toneClass: Record<NonNullable<SheetAction['tone']>, string> = {
  */
 export function ActionSheet({ open, onClose, title, subtitle, actions }: Props) {
   const dragControls = useDragControls()
+  useBackClose(open, onClose)
   useEffect(() => {
     if (!open) return
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
