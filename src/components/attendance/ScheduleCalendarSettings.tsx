@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { CalendarOff, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { TimePicker } from '@/components/ui/TimePicker'
 import { reportError } from '@/lib/security'
 import { CALENDAR_KIND_LABELS, deleteCalendarDay, deleteLevelSchedule, saveCalendarDay, saveLevelSchedule } from '@/services/dayStatusService'
 import type { ToleranceSettings } from '@/services/schoolService'
@@ -65,7 +66,7 @@ export default function ScheduleCalendarSettings({ schedules, calendar, globalLi
                 </label>
                 {own && (
                   <div className="mt-3 grid grid-cols-[1fr_auto_auto] items-center gap-2 text-sm">
-                    <Input type="time" value={own.entryLimit} onChange={(e) => void run(() => saveLevelSchedule({ ...own, entryLimit: e.target.value }))} className="font-bold" />
+                    <TimePicker label={`Hora límite · ${level}`} value={own.entryLimit} onChange={(value) => void run(() => saveLevelSchedule({ ...own, entryLimit: value }))} className="h-10" />
                     <label className="flex items-center gap-1.5"><input type="checkbox" className="h-4 w-4" checked={own.toleranceEnabled} onChange={(e) => void run(() => saveLevelSchedule({ ...own, toleranceEnabled: e.target.checked }))} /> Tolerancia</label>
                     <input type="number" min={0} max={60} disabled={!own.toleranceEnabled} value={own.toleranceMinutes} onChange={(e) => void run(() => saveLevelSchedule({ ...own, toleranceMinutes: Number(e.target.value) || 0 }))} className="h-10 w-16 rounded-lg border border-slate-300 bg-white px-2 text-center font-bold text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" aria-label={`Minutos de tolerancia de ${level}`} />
                   </div>

@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { TimerOff, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
-import { Input } from '@/components/ui/Input'
+import { TimePicker, formatTime12 } from '@/components/ui/TimePicker'
 import { entryTimeLabel } from '@/lib/displayLabels'
 import type { AttendanceRecord, Student } from '@/types'
 
@@ -54,7 +54,7 @@ export default function AttendanceEditDialog({ record, student, time, onTimeChan
               <p className="text-sm font-bold">Alumno: {student ? `${student.lastName}, ${student.firstName}` : record.studentId}</p>
               <label className="mt-4 block text-sm font-bold">
                 Hora de ingreso
-                <Input className="mt-2 h-12 text-lg font-bold" type="time" value={time} onChange={(event) => onTimeChange(event.target.value)} disabled={saving} />
+                <TimePicker className="mt-2 text-lg" label="Hora de ingreso" hint={`Hora límite: ${formatTime12(entryLimit)}`} value={time} onChange={onTimeChange} disabled={saving} />
               </label>
               <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Hora actual: {entryTimeLabel(record.time)} · Límite: {entryLimit}</p>
               {record.time && (

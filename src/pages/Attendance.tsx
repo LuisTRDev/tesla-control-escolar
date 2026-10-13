@@ -8,6 +8,7 @@ import {
   Ban, Bell, CalendarCheck2, CalendarOff, ChevronDown, Clock3, HelpCircle, Menu, MessageCircle, Monitor, Search, Settings2, Shirt, Users, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { TimePicker } from '@/components/ui/TimePicker'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { Card } from '@/components/ui/Card'
 import { Deferred } from '@/components/ui/Deferred'
@@ -1153,11 +1154,11 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 <span className="mb-1.5 flex items-center gap-1.5 truncate text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 sm:mb-2 sm:text-xs">
                   <Settings2 size={14} className="shrink-0" /> Hora límite<span className="hidden sm:inline">{currentLevelSchedule ? ` · ${classroom.level}` : ''}</span>
                 </span>
-                <Input
-                  type="time"
+                <TimePicker
+                  label={currentLevelSchedule ? `Hora límite · ${classroom.level}` : 'Hora límite'}
+                  hint="Después de esta hora (más la tolerancia) la marca es tardanza"
                   value={currentSchedule.entryLimit}
-                  onChange={(event) => updateEntryLimit(event.target.value)}
-                  className="font-bold"
+                  onChange={(value) => void updateEntryLimit(value)}
                 />
               </label>
             </div>
