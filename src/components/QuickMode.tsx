@@ -200,7 +200,7 @@ export default function QuickMode({ open, onClose, classrooms, students, records
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4">
+        <div className="flex-1 overflow-y-auto p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:p-4">
           <div className="space-y-2">
             {filtered.map(({ student, record }, index) => {
               const classroom = classroomMap.get(student.classroomId)

@@ -18,6 +18,7 @@ import DailySummary from '@/components/DailySummary'
 import PdaMode from '@/components/PdaMode'
 import QuickMode from '@/components/QuickMode'
 import SyncStatus from '@/components/SyncStatus'
+import MobileTabBar from '@/components/MobileTabBar'
 import BulkMarkDialog from '@/components/BulkMarkDialog'
 import MultiNotificationModal from '@/components/attendance/MultiNotificationModal'
 import NotificationPreviewModal from '@/components/attendance/NotificationPreviewModal'
@@ -41,6 +42,7 @@ import { emptyPresentationDraft, getPresentationViolationLabels, getViolationCou
 import { playFeedback, type FeedbackKind } from '@/lib/feedback'
 import { matchesQuery, studentMatches } from '@/lib/search'
 import { hasOpenOverlay, isTypingTarget, pickEnterTarget } from '@/lib/shortcuts'
+import { useOverlayScrollLock } from '@/lib/scrollLock'
 import { countAppErrorsSince } from '@/services/adminService'
 import type { StartModule } from '@/App'
 import { getCurrentTime, getPreferences, getTodayKey, savePreferences, type UserPreferences } from '@/lib/storage'
@@ -328,6 +330,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   // Modo bajo consumo: sin animaciones, transiciones ni desenfoques (ver index.css).
   useEffect(() => { document.documentElement.classList.toggle('low-power', preferences.lowPowerMode) }, [preferences.lowPowerMode])
   useEffect(() => { document.documentElement.classList.toggle('dark', darkMode); return () => document.documentElement.classList.remove('dark') }, [darkMode])
+  // Barra del sistema (Android) del mismo color que la cabecera, como en una app nativa.
+  useEffect(() => { document.querySelector('meta[name="theme-color"]')?.setAttribute('content', darkMode ? '#020617' : '#ffffff') }, [darkMode])
+  useOverlayScrollLock()
   useEffect(() => { const media=window.matchMedia('(prefers-color-scheme: dark)'); const update=(e:MediaQueryListEvent)=>setSystemDark(e.matches); media.addEventListener('change',update); return()=>media.removeEventListener('change',update) }, [])
   // Solo fecha y Dashboard dependen de now: basta refrescar cada 30 s (el reloj con segundos es LiveClock).
   useEffect(() => { const timer=window.setInterval(()=>setNow(new Date()),30000); return()=>window.clearInterval(timer) }, [])
@@ -997,7 +1002,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
 
       <div className="min-h-screen lg:pl-[260px]">
         <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
-          <div className="flex min-h-16 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+          <div className="flex h-16 items-center justify-between gap-2 px-3 sm:gap-4 sm:px-6 lg:px-8">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
@@ -1008,12 +1013,15 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 <Menu size={20} />
               </button>
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Control diario</p>
-                <p className="truncate text-sm font-black sm:text-base">{classroom.grade} {classroom.section} · {classroom.level}</p>
+                <p className="hidden text-[10px] font-black uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 sm:block">Control diario</p>
+                <p className="truncate text-[15px] font-black leading-tight sm:text-base">{classroom.grade} {classroom.section} · {classroom.level}</p>
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 sm:hidden">
+                  <LiveClock className="tabular-nums" /><span aria-hidden="true">·</span><span className="truncate capitalize">{formattedDate}</span>
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               <div data-tour="sync">
                 <SyncStatus
                   online={syncState.online}
@@ -1050,7 +1058,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
           </div>
         </header>
 
-        <section className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+        <section className="mx-auto w-full max-w-7xl px-4 pb-[calc(var(--tabbar-h)+env(safe-area-inset-bottom)+1.5rem)] pt-3 sm:px-6 sm:pt-5 lg:px-8 lg:py-7">
         {dataError && (
           <div role="alert" className="mb-4 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
             <span className="flex-1">{dataError}</span>
@@ -1065,9 +1073,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         )}
         {loadingData && <div className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">Sincronizando datos con Supabase...</div>}
         {!syncState.online && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">Modo offline activo. Puedes seguir marcando entradas y controles; {syncState.pending} cambio{syncState.pending===1?'':'s'} pendiente{syncState.pending===1?'':'s'} se enviarán al recuperar Internet.</div>}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 text-slate-950 shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100">
+        <div className="rounded-2xl border border-slate-200 bg-white p-3 text-slate-950 shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 sm:p-5">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
+            <div className="hidden sm:block">
               <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Control diario</p>
               <h2 className="mt-1 text-2xl font-black tracking-tight">Lista de alumnos</h2>
               <p className="mt-1 max-w-xl text-sm text-slate-500 dark:text-slate-400">
@@ -1082,9 +1090,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
               </div>
             </div>
 
-            <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end lg:w-auto">
-              <label className="block w-full sm:w-56 sm:shrink-0" data-tour="classroom">
-                <span className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Aula</span>
+            <div className="grid w-full grid-cols-[minmax(0,1fr)_8.5rem] gap-2 sm:flex sm:items-end sm:gap-3 lg:w-auto">
+              <label className="block min-w-0 sm:w-56 sm:shrink-0" data-tour="classroom">
+                <span className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 sm:mb-2 sm:text-xs">Aula</span>
                 <div className="relative">
                   <select
                     className="h-12 w-full appearance-none rounded-xl border border-slate-300 bg-white px-4 pr-10 text-sm font-semibold text-slate-900 outline-none transition-colors focus:border-slate-500 focus:ring-2 focus:ring-slate-200 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:ring-slate-800"
@@ -1101,9 +1109,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 </div>
               </label>
 
-              <label className="block w-full sm:w-40 sm:shrink-0">
-                <span className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  <Settings2 size={14} /> Hora límite{currentLevelSchedule ? ` · ${classroom.level}` : ''}
+              <label className="block min-w-0 sm:w-40 sm:shrink-0">
+                <span className="mb-1.5 flex items-center gap-1.5 truncate text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 sm:mb-2 sm:text-xs">
+                  <Settings2 size={14} className="shrink-0" /> Hora límite<span className="hidden sm:inline">{currentLevelSchedule ? ` · ${classroom.level}` : ''}</span>
                 </span>
                 <Input
                   type="time"
@@ -1116,13 +1124,13 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
           </div>
         </div>
 
-        <div className="mt-5 flex flex-wrap items-end justify-between gap-3">
-          <div>
+        <div className="mt-3 flex flex-wrap items-end justify-between gap-3 sm:mt-5">
+          <div className="hidden sm:block">
             <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{classroom.level}</p>
             <h3 className="text-2xl font-black">{classroom.grade} {classroom.section}</h3>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 transition-colors dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+          <div className="no-scrollbar -mx-4 flex w-[calc(100%+2rem)] items-center gap-2 overflow-x-auto px-4 sm:mx-0 sm:w-auto sm:flex-wrap sm:overflow-visible sm:px-0 [&>*]:shrink-0">
+            <div className="hidden rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 transition-colors dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 sm:block">
               Hora límite: <span className="font-black text-slate-950 dark:text-slate-100">{currentSchedule.entryLimit}</span>
               {currentSchedule.tolerance.enabled && currentSchedule.tolerance.minutes > 0 && (
                 <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">(+{currentSchedule.tolerance.minutes} min tolerancia)</span>
@@ -1157,87 +1165,88 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Card className="p-4">
-            <p className="text-xs text-slate-500 dark:text-slate-400">Alumnos</p>
-            <p className="mt-1 text-2xl font-black">{classroomStudents.length}</p>
-            {inactiveClassroomStudents.length > 0 && <p className="text-xs text-slate-500 dark:text-slate-400">+{inactiveClassroomStudents.length} inhabilitado{inactiveClassroomStudents.length !== 1 ? 's' : ''}</p>}
+        <div className="mt-3 grid grid-cols-4 gap-2 sm:mt-4 sm:gap-3">
+          <Card className="min-w-0 p-2.5 sm:p-4">
+            <p className="truncate text-[11px] text-slate-500 dark:text-slate-400 sm:text-xs">Alumnos</p>
+            <p className="mt-0.5 text-xl font-black tabular-nums sm:mt-1 sm:text-2xl">{classroomStudents.length}</p>
+            {inactiveClassroomStudents.length > 0 && <p className="truncate text-[10px] leading-tight text-slate-500 dark:text-slate-400 sm:text-xs">+{inactiveClassroomStudents.length} <span className="sm:hidden">inhab.</span><span className="hidden sm:inline">inhabilitado{inactiveClassroomStudents.length !== 1 ? 's' : ''}</span></p>}
           </Card>
-          <Card className="p-4">
-            <p className="text-xs text-slate-500 dark:text-slate-400">A tiempo</p>
-            <p className="mt-1 text-2xl font-black text-emerald-700 dark:text-emerald-400">{onTimeCount}</p>
+          <Card className="min-w-0 p-2.5 sm:p-4">
+            <p className="truncate text-[11px] text-slate-500 dark:text-slate-400 sm:text-xs">A tiempo</p>
+            <p className="mt-0.5 text-xl font-black tabular-nums text-emerald-700 dark:text-emerald-400 sm:mt-1 sm:text-2xl">{onTimeCount}</p>
           </Card>
-          <Card className="p-4">
-            <p className="text-xs text-slate-500 dark:text-slate-400">Tardanzas</p>
-            <p className="mt-1 text-2xl font-black text-amber-700 dark:text-amber-400">{lateCount}</p>
-            {justifiedLateCount > 0 && <p className="text-xs text-sky-600 dark:text-sky-400">{justifiedLateCount} justificada{justifiedLateCount !== 1 ? 's' : ''}</p>}
+          <Card className="min-w-0 p-2.5 sm:p-4">
+            <p className="truncate text-[11px] text-slate-500 dark:text-slate-400 sm:text-xs">Tardanzas</p>
+            <p className="mt-0.5 text-xl font-black tabular-nums text-amber-700 dark:text-amber-400 sm:mt-1 sm:text-2xl">{lateCount}</p>
+            {justifiedLateCount > 0 && <p className="truncate text-[10px] leading-tight text-sky-600 dark:text-sky-400 sm:text-xs">{justifiedLateCount} <span className="sm:hidden">justif.</span><span className="hidden sm:inline">justificada{justifiedLateCount !== 1 ? 's' : ''}</span></p>}
           </Card>
-          <Card className="p-4">
-            <p className="text-xs text-slate-500 dark:text-slate-400">Pendientes</p>
-            <p className="mt-1 text-2xl font-black">{pendingCount}</p>
-            {absentCount > 0 && <p className="text-xs text-red-600 dark:text-red-400">{absentCount} con falta o permiso</p>}
+          <Card className="min-w-0 p-2.5 sm:p-4">
+            <p className="truncate text-[11px] text-slate-500 dark:text-slate-400 sm:text-xs">Pendientes</p>
+            <p className="mt-0.5 text-xl font-black tabular-nums sm:mt-1 sm:text-2xl">{pendingCount}</p>
+            {absentCount > 0 && <p className="truncate text-[10px] leading-tight text-red-600 dark:text-red-400 sm:text-xs">{absentCount} <span className="sm:hidden">falta/perm.</span><span className="hidden sm:inline">con falta o permiso</span></p>}
           </Card>
         </div>
 
-        <Card className="mt-3 p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Card className="mt-2 p-3 sm:mt-3 sm:p-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <div>
-              <p className="flex items-center gap-2 text-sm font-black"><Shirt size={17} /> Presentación institucional</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Estado del control de presentación para el aula seleccionada.</p>
+              <p className="flex items-center gap-2 text-sm font-black"><Shirt size={17} /> Presentación<span className="hidden sm:inline"> institucional</span></p>
+              <p className="mt-1 hidden text-xs text-slate-500 dark:text-slate-400 sm:block">Estado del control de presentación para el aula seleccionada.</p>
             </div>
-            <div className="flex flex-wrap gap-2 text-sm">
-              <span className="rounded-lg bg-emerald-50 px-3 py-1.5 font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">{compliantCount} conformes</span>
-              <span className="rounded-lg bg-amber-50 px-3 py-1.5 font-bold text-amber-700 dark:bg-amber-950/45 dark:text-amber-300">{nonCompliantCount} con incidencia</span>
-              <span className="rounded-lg bg-slate-100 px-3 py-1.5 font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{presentationPendingCount} sin revisar</span>
+            <div className="grid grid-cols-3 gap-1.5 text-xs sm:flex sm:flex-wrap sm:gap-2 sm:text-sm">
+              <span className="truncate rounded-lg bg-emerald-50 px-2 py-1.5 text-center font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 sm:px-3">{compliantCount} conformes</span>
+              <span className="truncate rounded-lg bg-amber-50 px-2 py-1.5 text-center font-bold text-amber-700 dark:bg-amber-950/45 dark:text-amber-300 sm:px-3">{nonCompliantCount} <span className="sm:hidden">incid.</span><span className="hidden sm:inline">con incidencia</span></span>
+              <span className="truncate rounded-lg bg-slate-100 px-2 py-1.5 text-center font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300 sm:px-3">{presentationPendingCount} sin revisar</span>
             </div>
           </div>
         </Card>
 
-        <div className="mt-6 grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
-          <div className="relative" data-tour="search">
+        <div className="sticky top-16 z-20 -mx-4 mt-3 grid gap-2 border-b border-slate-200/70 bg-slate-50/95 px-4 py-2 backdrop-blur-md dark:border-slate-800/70 dark:bg-slate-950/95 sm:static sm:mx-0 sm:mt-6 sm:gap-3 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none sm:dark:bg-transparent lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div className="relative min-w-0" data-tour="search">
             <Search className="absolute left-4 top-3.5 text-slate-500 dark:text-slate-400" size={20} />
             <Input
               ref={searchRef}
               className="pl-12"
-              placeholder={`Buscar alumno en ${classroom.grade} ${classroom.section}...`}
+              placeholder={`Buscar en ${classroom.grade} ${classroom.section}: apellido, nombre o DNI`}
               value={query}
               onChange={(event) => { setQuery(event.target.value); setSearchHint('') }}
               onKeyDown={handleSearchKey}
               enterKeyHint="search"
               aria-describedby={searchHint ? 'search-hint' : undefined}
             />
+            {query && <button type="button" onClick={() => { setQuery(''); setSearchHint('') }} className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800" aria-label="Limpiar búsqueda"><X size={18} /></button>}
             {searchHint && <p id="search-hint" role="status" className="mt-1 text-xs font-semibold text-amber-700 dark:text-amber-400">{searchHint}</p>}
           </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0">
+          <div className="no-scrollbar -mx-4 flex min-w-0 items-center gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+            <div className="flex shrink-0 gap-2">
               {attendanceFilters.map((item) => (
                 <Button
                   key={item.id}
                   variant={filter === item.id ? 'default' : 'outline'}
-                  className="whitespace-nowrap"
+                  className="h-9 min-h-9 whitespace-nowrap rounded-full px-3.5 sm:h-11 sm:min-h-11 sm:rounded-xl sm:px-4"
                   onClick={() => setFilter(item.id)}
                 >
                   {item.label}
                 </Button>
               ))}
             </div>
-            <label className="relative min-w-48">
+            <label className="relative w-52 shrink-0">
               <select
                 value={presentationFilter}
                 onChange={(event) => setPresentationFilter(event.target.value as PresentationFilter)}
-                className="h-11 w-full appearance-none rounded-xl border border-slate-300 bg-white px-3 pr-9 text-sm font-semibold text-slate-900 outline-none transition-colors dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                className="h-9 w-full appearance-none rounded-full sm:h-11 sm:rounded-xl border border-slate-300 bg-white px-3 pr-9 text-sm font-semibold text-slate-900 outline-none transition-colors dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
               >
                 {presentationFilters.map((item) => (
                   <option key={item.id} value={item.id}>Presentación: {item.label}</option>
                 ))}
               </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-3 text-slate-500 dark:text-slate-400" size={18} />
+              <ChevronDown className="pointer-events-none absolute right-3 top-2 text-slate-500 dark:text-slate-400 sm:top-3" size={18} />
             </label>
           </div>
         </div>
 
-        <div className="mt-5 space-y-3">
+        <div className="mt-3 space-y-3 sm:mt-5">
           {filtered.map((student, index) => {
             const record = recordByStudent.get(student.id)
             const presentation = presentationByStudent.get(student.id)
@@ -1294,6 +1303,15 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         </div>
         </section>
       </div>
+
+      <MobileTabBar
+        pendingCount={pendingCount}
+        onList={() => { setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setAuditOpen(false); setCobranzaOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+        onQuick={() => setQuickModeOpen(true)}
+        onSummary={() => setDailySummaryOpen(true)}
+        onWhatsApp={() => setWhatsAppQueueOpen(true)}
+        onMenu={() => setSidebarOpen(true)}
+      />
 
       <BulkMarkDialog
         open={bulkAttendanceOpen}

@@ -24,13 +24,17 @@ export default function SyncStatus({ online, syncing, pending, lastSync, failing
   const label = online
     ? failing > 0 ? `${failing} con error` : pending ? `${pending} pendiente${pending === 1 ? '' : 's'}` : 'Todo sincronizado'
     : `Offline · ${pending} pendiente${pending === 1 ? '' : 's'}`
+  // En celular la cabecera es angosta: solo lo esencial.
+  const shortLabel = online
+    ? failing > 0 ? `${failing} error` : pending ? `${pending} pend.` : 'Al día'
+    : `Offline${pending ? ` · ${pending}` : ''}`
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex items-center gap-2">
       <button
         type="button"
         onClick={onOpen}
         title="Ver cambios pendientes, errores y conflictos de sincronización"
-        className={`relative flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold transition ${online
+        className={`relative flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl border px-2.5 text-xs font-bold transition active:scale-95 sm:gap-2 sm:px-3 ${online
           ? failing > 0
             ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300'
             : pending > 0
@@ -39,14 +43,14 @@ export default function SyncStatus({ online, syncing, pending, lastSync, failing
           : 'border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'}`}
       >
         {failing > 0 ? <AlertTriangle size={15} /> : online ? <Cloud size={15} /> : <CloudOff size={15} />}
-        <span>{label}</span>
+        <span className="sm:hidden">{shortLabel}</span><span className="hidden sm:inline">{label}</span>
         {conflicts > 0 && <span className="rounded-full bg-sky-600 px-1.5 text-[10px] font-black text-white" title="Conflictos resueltos por revisar">{conflicts}</span>}
         {syncing && <RefreshCw size={14} className="animate-spin" />}
       </button>
       <span className="hidden text-[10px] font-semibold text-slate-500 dark:text-slate-400 xl:inline">{lastSyncLabel(lastSync)}</span>
       {installAvailable && onInstall && (
-        <Button variant="outline" className="h-9 px-3 text-xs" onClick={onInstall}>
-          <Smartphone className="mr-1.5" size={14} /> Instalar app
+        <Button variant="outline" className="h-10 min-h-10 px-2.5 text-xs sm:px-3" onClick={onInstall} aria-label="Instalar app">
+          <Smartphone className="sm:mr-1.5" size={14} /><span className="hidden sm:inline">Instalar app</span>
         </Button>
       )}
     </div>
