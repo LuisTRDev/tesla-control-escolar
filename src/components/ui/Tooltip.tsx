@@ -7,10 +7,12 @@ export function Tooltip({ content, children, side = 'top' }: Props) {
   const [open, setOpen] = useState(false)
   return (
     <span
-      className="relative inline-flex"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onFocus={() => setOpen(true)}
+      className="relative inline-flex shrink-0"
+      // Solo con mouse o teclado: en pantallas táctiles el toque no debe dejar el globo abierto.
+      onPointerEnter={(event) => { if (event.pointerType === 'mouse') setOpen(true) }}
+      onPointerLeave={() => setOpen(false)}
+      onPointerDown={() => setOpen(false)}
+      onFocus={(event) => { if (event.target instanceof HTMLElement && event.target.matches(':focus-visible')) setOpen(true) }}
       onBlur={() => setOpen(false)}
     >
       {children}

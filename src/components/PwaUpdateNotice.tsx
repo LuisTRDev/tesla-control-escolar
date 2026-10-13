@@ -8,7 +8,7 @@ export default function PwaUpdateNotice() {
   if (!updateAvailable) return null
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 z-[100] sm:left-auto sm:right-5 sm:w-[390px]">
+    <div className="fixed bottom-[calc(var(--tabbar-h)+env(safe-area-inset-bottom)+0.75rem)] left-4 right-4 z-[100] lg:bottom-4 sm:left-auto sm:right-5 sm:w-[390px]">
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-950/20 dark:border-slate-800 dark:bg-slate-950">
         <div className="flex items-start gap-3 p-4">
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900">
