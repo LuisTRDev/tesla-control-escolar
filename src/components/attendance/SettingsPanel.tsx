@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { BatteryLow, Monitor, Moon, RotateCcw, Sun, Vibrate, Volume2, X } from 'lucide-react'
 import { resetTour } from '@/components/OnboardingTour'
@@ -16,9 +17,11 @@ type Props = {
   setPreferences: (next: UserPreferences) => void
   updatePreferences: (next: UserPreferences) => void
   classroom: Classroom
+  /** Secciones adicionales (horario por nivel y calendario, Fase 14). */
+  extraSections?: ReactNode
 }
 
-export default function SettingsPanel({ settingsOpen, setSettingsOpen, entryLimit, toleranceSettings, updateTolerance, preferences, setPreferences, updatePreferences, classroom }: Props) {
+export default function SettingsPanel({ settingsOpen, setSettingsOpen, entryLimit, toleranceSettings, updateTolerance, preferences, setPreferences, updatePreferences, classroom, extraSections }: Props) {
   return (
     <AnimatePresence>{settingsOpen && (
       <motion.div
@@ -118,6 +121,8 @@ export default function SettingsPanel({ settingsOpen, setSettingsOpen, entryLimi
                 </p>
               )}
             </section>
+
+            {extraSections}
 
             <section>
               <h3 className="font-black">Interfaz</h3>

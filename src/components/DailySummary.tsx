@@ -2,11 +2,12 @@ import type { ReactNode } from 'react'
 import { reportError } from '@/lib/security'
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Bell, CalendarCheck2, CheckCircle2, Clock3, Sparkles, TriangleAlert, Users, X } from 'lucide-react'
+import { Bell, CalendarCheck2, CalendarOff, CheckCircle2, Clock3, MessageCircle, RotateCcw, Sparkles, TriangleAlert, Users, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { closeClassroomAttendance, getDailySchoolSummary, getSmartInsights, isAttendanceClosed, type DailySummary as Summary, type SmartInsight } from '@/services/phase6Service'
-import type { Classroom } from '@/types'
+import { CALENDAR_KIND_LABELS, closeAttendanceDay, reopenAttendanceDay } from '@/services/dayStatusService'
+import type { CalendarDay, Classroom } from '@/types'
 
 type Props = {
   open: boolean
@@ -16,13 +17,19 @@ type Props = {
   today: string
   onOpenAlerts: () => void
   refreshKey?: number
+  /** Fase 14: cierre que registra faltas reales (respeta permisos y calendario). */
+  dayStatusEnabled?: boolean
+  calendarToday?: CalendarDay
+  onDayChanged?: () => void
+  onOpenWhatsAppQueue?: () => void
 }
 
 function metric(label: string, value: number, icon: ReactNode, className = '') {
   return <Card className="p-4"><div className="flex items-center justify-between"><p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>{icon}</div><p className={`mt-2 text-2xl font-black ${className}`}>{value}</p></Card>
 }
 
-export default function DailySummary({ open, onClose, classrooms, currentClassroom, today, onOpenAlerts, refreshKey = 0 }: Props) {
+export default function DailySummary({ open, onClose, classrooms, currentClassroom, today, onOpenAlerts, refreshKey = 0, dayStatusEnabled = false, calendarToday, onDayChanged, onOpenWhatsAppQueue }: Props) {
+  const [closeResult, setCloseResult] = useState<{ absences: number; permissions: number } | null>(null)
   const [classroomId, setClassroomId] = useState<string | 'ALL'>(currentClassroom.id)
   const [summary, setSummary] = useState<Summary | null>(null)
   const [insights, setInsights] = useState<SmartInsight[]>([])
@@ -48,13 +55,30 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
 
   useEffect(() => { if (open) void load() }, [open, classroomId, today])
   useEffect(() => { if (open && refreshKey > 0) void load(true) }, [refreshKey])
+  const scopeLabel = classroomId === 'ALL' ? 'todo el colegio' : (() => { const c = classrooms.find((item) => item.id === classroomId); return `${c?.grade ?? ''} ${c?.section ?? ''}`.trim() })()
+
   async function closeAttendance() {
+    if (dayStatusEnabled) {
+      if (!window.confirm(`¿Cerrar el día en ${scopeLabel}? Los alumnos sin ingreso quedarán con FALTA (o "con permiso" si avisaron antes). Si alguno llega después, al marcarlo su falta se borra sola.`)) return
+      setClosing(true); setError('')
+      try { setCloseResult(await closeAttendanceDay(today, classroomId === 'ALL' ? null : classroomId)); onDayChanged?.(); await load() }
+      catch (err) { reportError('DailySummary', err); setError(err instanceof Error ? err.message : 'No se pudo cerrar el día.') }
+      finally { setClosing(false) }
+      return
+    }
     if (classroomId === 'ALL' || closed) return
-    const classroom = classrooms.find((item) => item.id === classroomId)
-    if (!window.confirm(`¿Cerrar la asistencia de ${classroom?.grade ?? ''} ${classroom?.section ?? ''}? Los alumnos sin ingreso quedarán registrados como alertas de ausencia.`)) return
+    if (!window.confirm(`¿Cerrar la asistencia de ${scopeLabel}? Los alumnos sin ingreso quedarán registrados como alertas de ausencia.`)) return
     setClosing(true); setError('')
     try { await closeClassroomAttendance(classroomId, today); await load() }
     catch (err) { reportError('DailySummary', err); setError(err instanceof Error ? err.message : 'No se pudo cerrar la asistencia.') }
+    finally { setClosing(false) }
+  }
+
+  async function reopenDay() {
+    if (!window.confirm(`¿Reabrir el día en ${scopeLabel}? Se borrarán las faltas SIN justificar de hoy; las justificadas y los permisos se conservan.`)) return
+    setClosing(true); setError('')
+    try { const removed = await reopenAttendanceDay(today, classroomId === 'ALL' ? null : classroomId); setCloseResult(null); setError(''); onDayChanged?.(); await load(); window.alert(`Día reabierto: se quitaron ${removed} falta${removed === 1 ? '' : 's'}.`) }
+    catch (err) { reportError('DailySummary', err); setError(err instanceof Error ? err.message : 'No se pudo reabrir el día.') }
     finally { setClosing(false) }
   }
 
@@ -93,8 +117,27 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
                 <p className="text-xs font-black uppercase tracking-wider text-slate-400">Estado de jornada</p>
                 <div className="mt-4 flex items-end justify-between gap-4"><div><p className="text-4xl font-black">{presentPct}%</p><p className="mt-1 text-sm text-slate-500">asistencia registrada</p></div><span className={`rounded-xl px-3 py-2 text-sm font-black ${closed ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'}`}>{closed ? 'Asistencia cerrada' : 'En curso'}</span></div>
                 <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-emerald-500" style={{width:`${Math.min(100,presentPct)}%`}}/></div>
-                {classroomId !== 'ALL' && <Button className="mt-5 w-full" disabled={closed || closing} onClick={() => void closeAttendance()}><CalendarCheck2 className="mr-2" size={18}/>{closed ? 'Asistencia ya cerrada' : closing ? 'Cerrando...' : 'Cerrar asistencia del aula'}</Button>}
-                {classroomId === 'ALL' && <p className="mt-4 rounded-xl bg-slate-100 p-3 text-xs text-slate-500 dark:bg-slate-800">Selecciona un aula concreta para cerrar su asistencia y generar alertas de ausencia.</p>}
+                {dayStatusEnabled ? (
+                  calendarToday ? (
+                    <p className="mt-5 flex items-center gap-2 rounded-xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300"><CalendarOff size={17}/> Hoy es día sin clases ({CALENDAR_KIND_LABELS[calendarToday.kind]}): no se generan faltas.</p>
+                  ) : (
+                    <>
+                      <Button className="mt-5 w-full" disabled={closing} onClick={() => void closeAttendance()}><CalendarCheck2 className="mr-2" size={18}/>{closing ? 'Procesando...' : closed ? `Volver a cerrar (${scopeLabel})` : `Cerrar día (${scopeLabel})`}</Button>
+                      {closeResult && (
+                        <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-900/60 dark:bg-emerald-950/30">
+                          <p className="font-black text-emerald-800 dark:text-emerald-300">Día cerrado: {closeResult.absences} falta{closeResult.absences === 1 ? '' : 's'}{closeResult.permissions ? ` · ${closeResult.permissions} con permiso` : ''}</p>
+                          {closeResult.absences > 0 && onOpenWhatsAppQueue && <Button variant="outline" className="mt-2 w-full border-emerald-300 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300" onClick={onOpenWhatsAppQueue}><MessageCircle className="mr-2" size={16}/> Avisar faltas por WhatsApp</Button>}
+                        </div>
+                      )}
+                      <Button variant="ghost" className="mt-2 w-full text-slate-600 dark:text-slate-300" disabled={closing} onClick={() => void reopenDay()}><RotateCcw className="mr-2" size={16}/> Reabrir día (quitar faltas sin justificar)</Button>
+                    </>
+                  )
+                ) : (
+                  <>
+                    {classroomId !== 'ALL' && <Button className="mt-5 w-full" disabled={closed || closing} onClick={() => void closeAttendance()}><CalendarCheck2 className="mr-2" size={18}/>{closed ? 'Asistencia ya cerrada' : closing ? 'Cerrando...' : 'Cerrar asistencia del aula'}</Button>}
+                    {classroomId === 'ALL' && <p className="mt-4 rounded-xl bg-slate-100 p-3 text-xs text-slate-500 dark:bg-slate-800">Selecciona un aula concreta para cerrar su asistencia y generar alertas de ausencia.</p>}
+                  </>
+                )}
               </Card>
 
               <Card className="p-5">

@@ -42,7 +42,22 @@ type DbStudent = {
   inactive_since?: string | null
   student_guardians: DbStudentGuardian[] | null
 }
-type DbAttendance = { id: number | string; student_id: number | string; date: string; entry_time: string; status: AttendanceStatus; exit_time?: string | null; exit_recorded_at?: string | null; exit_recorded_by?: string | null; entry_recorded_at?: string | null; entry_recorded_by?: string | null; entry_source?: string | null; exit_source?: string | null }
+type DbAttendance = { id: number | string; student_id: number | string; date: string; entry_time: string; status: AttendanceStatus; exit_time?: string | null; exit_recorded_at?: string | null; exit_recorded_by?: string | null; entry_recorded_at?: string | null; entry_recorded_by?: string | null; entry_source?: string | null; exit_source?: string | null; justified?: boolean | null; justification_reason?: string | null; justification_document?: string | null; justified_by_name?: string | null; justified_at?: string | null }
+
+const ATTENDANCE_COLUMNS = 'id, student_id, date, entry_time, status, exit_time, exit_recorded_at, exit_recorded_by, entry_recorded_at, entry_recorded_by, entry_source, exit_source'
+// Columnas de phase14 (tardanza justificada). Si aún no existen, se lee sin ellas.
+const JUSTIFICATION_COLUMNS = ', justified, justification_reason, justification_document, justified_by_name, justified_at'
+
+function mapAttendance(row: DbAttendance): AttendanceRecord {
+  return {
+    id: String(row.id), studentId: String(row.student_id), date: row.date, time: trimTime(row.entry_time), status: row.status,
+    exitTime: trimTime(row.exit_time), exitRecordedAt: row.exit_recorded_at ?? null, exitRecordedBy: row.exit_recorded_by ?? null,
+    entryRecordedAt: row.entry_recorded_at ?? null, entryRecordedBy: row.entry_recorded_by ?? null,
+    entrySource: row.entry_source ?? null, exitSource: row.exit_source ?? null,
+    justified: row.justified === true, justificationReason: row.justification_reason ?? null,
+    justificationDocument: row.justification_document ?? null, justifiedByName: row.justified_by_name ?? null, justifiedAt: row.justified_at ?? null,
+  }
+}
 type DbViolation = { violation_type: string }
 type DbPresentation = { id: number | string; student_id: number | string; date: string; status: 'COMPLIANT' | 'NON_COMPLIANT'; other_description: string | null; checked_at: string | null; presentation_violations?: DbViolation[] | null }
 
@@ -284,9 +299,11 @@ export function calculateStatus(time: string, entryLimit: string, tolerance?: To
 
 export async function getAttendanceRange(from: string, to: string): Promise<AttendanceRecord[]> {
   try {
-    const { data, error } = await supabase.from('attendance').select('id, student_id, date, entry_time, status, exit_time, exit_recorded_at, exit_recorded_by, entry_recorded_at, entry_recorded_by, entry_source, exit_source').gte('date', from).lte('date', to).order('date', { ascending: false })
+    const select = (columns: string) => supabase.from('attendance').select(columns).gte('date', from).lte('date', to).order('date', { ascending: false })
+    let { data, error } = await select(ATTENDANCE_COLUMNS + JUSTIFICATION_COLUMNS)
+    if (error?.code === '42703') ({ data, error } = await select(ATTENDANCE_COLUMNS))
     if (error) throw error
-    const mapped = ((data ?? []) as DbAttendance[]).map((row) => ({ id: String(row.id), studentId: String(row.student_id), date: row.date, time: trimTime(row.entry_time), status: row.status, exitTime: trimTime(row.exit_time), exitRecordedAt: row.exit_recorded_at ?? null, exitRecordedBy: row.exit_recorded_by ?? null, entryRecordedAt: row.entry_recorded_at ?? null, entryRecordedBy: row.entry_recorded_by ?? null, entrySource: row.entry_source ?? null, exitSource: row.exit_source ?? null }))
+    const mapped = ((data ?? []) as unknown as DbAttendance[]).map(mapAttendance)
     await setSnapshot(K.attendance(from, to), mapped)
     return overlayPendingAttendance(mapped, from, to)
   } catch (error) {
@@ -296,7 +313,12 @@ export async function getAttendanceRange(from: string, to: string): Promise<Atte
   }
 }
 
-export async function registerAttendance(studentId: string, entryLimit: string, date: string, time: string, tolerance?: ToleranceSettings): Promise<AttendanceRecord> {
+/**
+ * `lateJustification`: si el alumno tiene permiso de llegar tarde ese día, la
+ * tardanza se guarda ya justificada (sin notificación). Sin conexión se guarda
+ * como tardanza normal y se puede justificar después.
+ */
+export async function registerAttendance(studentId: string, entryLimit: string, date: string, time: string, tolerance?: ToleranceSettings, lateJustification?: { reason: string; byName: string }): Promise<AttendanceRecord> {
   const status = calculateStatus(time, entryLimit, tolerance)
   const optimistic: AttendanceRecord = { id: offlineId('attendance', studentId, date), studentId, date, time, status }
   if (!navigator.onLine) {
@@ -304,7 +326,10 @@ export async function registerAttendance(studentId: string, entryLimit: string, 
     return optimistic
   }
   try {
-    const record = { student_id: Number(studentId), date, entry_time: time, status }
+    const justification: { justified?: boolean; justification_reason?: string; justified_by_name?: string; justified_at?: string } = status === 'LATE' && lateJustification
+      ? { justified: true, justification_reason: lateJustification.reason, justified_by_name: lateJustification.byName, justified_at: new Date().toISOString() }
+      : {}
+    const record: Record<string, unknown> = { student_id: Number(studentId), date, entry_time: time, status, ...justification }
     const { data, error } = await supabase.from('attendance').upsert(record, { onConflict: 'student_id,date', ignoreDuplicates: true }).select('id, student_id, date, entry_time, status, exit_time, exit_recorded_at, exit_recorded_by, entry_recorded_at, entry_recorded_by, entry_source, exit_source').maybeSingle()
     if (error) throw error
     if (!data) {
@@ -312,7 +337,7 @@ export async function registerAttendance(studentId: string, entryLimit: string, 
       if (existingError) throw existingError
       return { id: String(existing.id), studentId: String(existing.student_id), date: existing.date, time: trimTime(existing.entry_time), status: existing.status, exitTime: trimTime(existing.exit_time), exitRecordedAt: existing.exit_recorded_at ?? null, exitRecordedBy: existing.exit_recorded_by ?? null, entryRecordedAt: existing.entry_recorded_at ?? null, entryRecordedBy: existing.entry_recorded_by ?? null, entrySource: existing.entry_source ?? null, exitSource: existing.exit_source ?? null }
     }
-    return { id: String(data.id), studentId: String(data.student_id), date: data.date, time: trimTime(data.entry_time), status: data.status, exitTime: trimTime(data.exit_time), exitRecordedAt: data.exit_recorded_at ?? null, exitRecordedBy: data.exit_recorded_by ?? null, entryRecordedAt: data.entry_recorded_at ?? null, entryRecordedBy: data.entry_recorded_by ?? null, entrySource: data.entry_source ?? null, exitSource: data.exit_source ?? null }
+    return { ...mapAttendance(data as DbAttendance), justified: justification.justified === true, justificationReason: justification.justification_reason ?? null, justifiedByName: justification.justified_by_name ?? null, justifiedAt: justification.justified_at ?? null }
   } catch {
     await enqueueOperation('ATTENDANCE_UPSERT', optimistic as unknown as Record<string, unknown>)
     return optimistic

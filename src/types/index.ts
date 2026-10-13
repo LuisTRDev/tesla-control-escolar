@@ -50,9 +50,76 @@ export type AttendanceRecord = {
   entryRecordedBy?: string | null
   entrySource?: string | null
   exitSource?: string | null
+  /** Tardanza justificada: sigue siendo LATE pero no genera notificación (phase14). */
+  justified?: boolean
+  justificationReason?: string | null
+  justificationDocument?: string | null
+  justifiedByName?: string | null
+  justifiedAt?: string | null
 }
 
-export type AttendanceFilter = 'ALL' | 'ON_TIME' | 'LATE' | 'PENDING'
+/** Falta generada al cerrar el día (phase14). */
+export type AbsenceStatus = 'UNJUSTIFIED' | 'JUSTIFIED' | 'PERMISSION'
+
+export type AbsenceRecord = {
+  id: string
+  studentId: string
+  classroomId: string
+  date: string
+  status: AbsenceStatus
+  justificationReason: string | null
+  justificationDocument: string | null
+  justifiedByName: string | null
+  justifiedAt: string | null
+}
+
+export type PermissionKind = 'ABSENCE' | 'LATE'
+
+export type StudentPermission = {
+  id: string
+  studentId: string
+  dateFrom: string
+  dateTo: string
+  kind: PermissionKind
+  reason: string
+  documentPath: string | null
+  createdByName: string | null
+}
+
+export type EarlyExit = {
+  id: string
+  studentId: string
+  date: string
+  exitTime: string
+  pickedUpByName: string
+  pickedUpByDni: string
+  relationship: string
+  reason: string
+  isAuthorizedPerson: boolean
+  recordedByName: string | null
+}
+
+export type AuthorizedPickup = {
+  id: string
+  studentId: string
+  fullName: string
+  dni: string
+  relationship: string
+  phone: string
+}
+
+export type CalendarDayKind = 'HOLIDAY' | 'VACATION' | 'NO_CLASSES'
+
+export type CalendarDay = { date: string; kind: CalendarDayKind; description: string }
+
+export type LevelSchedule = {
+  level: Classroom['level']
+  entryLimit: string
+  toleranceEnabled: boolean
+  toleranceMinutes: number
+}
+
+export type AttendanceFilter = 'ALL' | 'ON_TIME' | 'LATE' | 'PENDING' | 'ABSENT'
 
 export type PresentationStatus = 'COMPLIANT' | 'NON_COMPLIANT'
 

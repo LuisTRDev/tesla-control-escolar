@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card } from '@/components/ui/Card'
 import { getStudentCaseFile, type StudentCaseFile as CaseFile } from '@/services/phase6Service'
+import { getStudentDayHistory, type StudentDayHistory } from '@/services/dayStatusService'
 import type { Classroom, Student } from '@/types'
 import { getAlertTypeLabel, getNotificationTypeLabel } from '@/lib/displayLabels'
 import { addDaysToKey, toDateKey } from '@/lib/dates'
@@ -39,32 +40,54 @@ export default function StudentCaseFile({ student, classroom, onClose, onOpenWha
   const [error, setError] = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
+  const [history, setHistory] = useState<StudentDayHistory | null>(null)
 
   useEffect(() => {
     if (!student) { setData(null); return }
     setLoading(true); setError('')
     getStudentCaseFile(student.id).then(setData).catch((err) => { reportError('StudentCaseFile', err); setError(err instanceof Error ? err.message : 'No se pudo cargar el expediente.') }).finally(() => setLoading(false))
+    // Faltas, permisos y salidas (Fase 14): si falla, el expediente se muestra igual sin ellos.
+    setHistory(null)
+    getStudentDayHistory(student.id).then(setHistory).catch((err) => reportError('StudentCaseFile', err))
   }, [student?.id])
 
   const metrics = useMemo(() => {
-    if (!data) return { attendance:0, late:0, incidents:0, notifications:0, openAlerts:0 }
+    if (!data) return { attendance:0, late:0, absences:0, incidents:0, notifications:0, openAlerts:0 }
     return {
       attendance: data.attendance.length,
-      late: data.attendance.filter((row) => s(row.status) === 'LATE').length,
+      // Las tardanzas justificadas no cuentan como incidencia del alumno.
+      late: data.attendance.filter((row) => s(row.status) === 'LATE' && !history?.justifiedLate.has(s(row.id))).length,
+      absences: history?.absences.filter((row) => row.status === 'UNJUSTIFIED').length ?? 0,
       incidents: data.presentation.filter((row) => s(row.status) === 'NON_COMPLIANT').length,
       // Las notificaciones anuladas (voided) por una corrección de asistencia
       // ya no cuentan para el rendimiento del alumno.
       notifications: data.notifications.filter((row) => !row.voided).length,
       openAlerts: data.alerts.filter((row) => s(row.status) === 'OPEN').length,
     }
-  }, [data])
+  }, [data, history])
 
   const timeline = useMemo<TimelineItem[]>(() => {
     if (!data) return []
     const items: TimelineItem[] = []
     for (const row of data.attendance) {
       const late = s(row.status) === 'LATE'
+      const justification = history?.justifiedLate.get(s(row.id))
+      if (late && justification !== undefined) {
+        items.push({ id:`a-${s(row.id)}`, date:s(row.date), title:'Tardanza justificada', detail:`Hora: ${s(row.entry_time).slice(0,5) || '—'} · ${justification || 'Sin motivo'}`, tone:'info' })
+        continue
+      }
       items.push({ id:`a-${s(row.id)}`, date:s(row.date), title: late ? 'Tardanza' : 'Ingreso a tiempo', detail:`Hora: ${s(row.entry_time).slice(0,5) || '—'}`, tone: late ? 'warning' : 'ok' })
+    }
+    for (const row of history?.absences ?? []) {
+      const title = row.status === 'JUSTIFIED' ? 'Falta justificada' : row.status === 'PERMISSION' ? 'Inasistencia con permiso' : 'Falta'
+      items.push({ id:`ab-${row.id}`, date:row.date, title, detail: row.justificationReason || (row.status === 'UNJUSTIFIED' ? 'Sin justificar' : '—'), tone: row.status === 'UNJUSTIFIED' ? 'danger' : 'info' })
+    }
+    for (const row of history?.permissions ?? []) {
+      const range = row.dateFrom === row.dateTo ? row.dateFrom : `${row.dateFrom} al ${row.dateTo}`
+      items.push({ id:`pe-${row.id}`, date:row.dateFrom, title: row.kind === 'LATE' ? 'Permiso: llegará tarde' : 'Permiso de inasistencia', detail:`${range} · ${row.reason}`, tone:'info' })
+    }
+    for (const row of history?.earlyExits ?? []) {
+      items.push({ id:`ee-${row.id}`, date:row.date, title:`Salida anticipada ${row.exitTime}`, detail:`Recogió: ${row.pickedUpByName}${row.relationship ? ` (${row.relationship})` : ''}${row.isAuthorizedPerson ? '' : ' — NO estaba en la lista de autorizados'} · ${row.reason}`, tone: row.isAuthorizedPerson ? 'info' : 'danger' })
     }
     for (const row of data.presentation) {
       if (s(row.status) !== 'NON_COMPLIANT') continue
@@ -84,8 +107,8 @@ export default function StudentCaseFile({ student, classroom, onClose, onOpenWha
     for (const row of data.alerts) {
       items.push({ id:`al-${s(row.id)}`, date:s(row.created_at), title:`Alerta: ${getAlertTypeLabel(row.alert_type)}`, detail:s(row.message), tone:s(row.status)==='OPEN'?'danger':'info' })
     }
-    return items.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,100)
-  }, [data])
+    return items.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,150)
+  }, [data, history])
 
   // FIX: este useMemo estaba DESPUES del "if (!student) return null" que
   // había más abajo. Eso viola las Rules of Hooks: cuando `student` es
@@ -116,7 +139,7 @@ export default function StudentCaseFile({ student, classroom, onClose, onOpenWha
     doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.text(`${classroom ? `${classroom.grade} ${classroom.section} · ${classroom.level}` : ''}  |  Apoderado: ${student!.guardianName}`,14,31)
     doc.line(14,35,196,35)
     doc.setFontSize(9)
-    const summary = [`Ingresos: ${metrics.attendance}`,`Tardanzas: ${metrics.late}`,`Incidencias: ${metrics.incidents}`,`Notificaciones: ${metrics.notifications}`,`Alertas abiertas: ${metrics.openAlerts}`]
+    const summary = [`Ingresos: ${metrics.attendance}`,`Tardanzas: ${metrics.late}`,`Faltas: ${metrics.absences}`,`Incidencias: ${metrics.incidents}`,`Notificaciones: ${metrics.notifications}`,`Alertas abiertas: ${metrics.openAlerts}`]
     doc.text(summary.join('   |   '),14,42)
     let y=52
     doc.setFont('helvetica','bold'); doc.text('Historial',14,y); y+=6
@@ -165,10 +188,11 @@ export default function StudentCaseFile({ student, classroom, onClose, onOpenWha
           {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">{error}</div>}
           {loading && <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Cargando expediente completo...</div>}
           {data && <>
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
               <Card className="p-4"><p className="text-xs text-slate-500">Estado</p><p className={`mt-1 text-lg font-black ${status==='Seguimiento'?'text-amber-700 dark:text-amber-400':'text-emerald-700 dark:text-emerald-400'}`}>{status}</p></Card>
               <Card className="p-4"><p className="text-xs text-slate-500">Ingresos</p><p className="mt-1 text-2xl font-black"><AnimatedCounter value={metrics.attendance} /></p></Card>
               <Card className="p-4"><p className="text-xs text-slate-500">Tardanzas</p><p className="mt-1 text-2xl font-black text-amber-700 dark:text-amber-400"><AnimatedCounter value={metrics.late} /></p></Card>
+              <Card className="p-4"><p className="text-xs text-slate-500">Faltas</p><p className="mt-1 text-2xl font-black text-red-600 dark:text-red-400"><AnimatedCounter value={metrics.absences} /></p></Card>
               <Card className="p-4"><p className="text-xs text-slate-500">Incidencias</p><p className="mt-1 text-2xl font-black"><AnimatedCounter value={metrics.incidents} /></p></Card>
               <Card className="p-4"><p className="text-xs text-slate-500">Notificaciones</p><p className="mt-1 text-2xl font-black"><AnimatedCounter value={metrics.notifications} /></p></Card>
               <Card className="p-4"><p className="text-xs text-slate-500">Alertas</p><p className="mt-1 text-2xl font-black text-red-600 dark:text-red-400"><AnimatedCounter value={metrics.openAlerts} /></p></Card>

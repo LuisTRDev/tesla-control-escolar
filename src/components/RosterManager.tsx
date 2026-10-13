@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import AuthorizedPickupsSection from '@/components/AuthorizedPickupsSection'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ArrowRightLeft, Ban, CheckSquare, Link2, Pencil, Plus, RotateCcw, Search, Square, Star, Trash2, Unlink, UserPlus, Users, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -288,6 +289,8 @@ function StudentEditor({ studentId, classrooms, students, guardians, defaultClas
           </div>
         </div>
       )}
+
+      {student && <AuthorizedPickupsSection studentId={student.id} />}
 
       {student && (
         <div className="mt-6 border-t border-slate-200 pt-5 dark:border-slate-800">

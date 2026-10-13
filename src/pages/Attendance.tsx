@@ -1,10 +1,11 @@
-import { lazy, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { supabase } from '@/lib/supabase'
 import { reportError } from '@/lib/security'
 import { useToast } from '@/lib/toast'
 import { MotionConfig } from 'framer-motion'
 import { isAdminRole } from '@/services/rosterService'
 import {
-  Ban, Bell, CalendarCheck2, ChevronDown, Clock3, Menu, MessageCircle, Monitor, Search, Settings2, Shirt, Users,
+  Ban, Bell, CalendarCheck2, CalendarOff, ChevronDown, Clock3, Menu, MessageCircle, Monitor, Search, Settings2, Shirt, Users,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Tooltip } from '@/components/ui/Tooltip'
@@ -24,6 +25,10 @@ import PresentationDialog from '@/components/attendance/PresentationDialog'
 import SettingsPanel from '@/components/attendance/SettingsPanel'
 import StudentHistoryModal from '@/components/attendance/StudentHistoryModal'
 import WhatsAppDialog from '@/components/attendance/WhatsAppDialog'
+import JustifyDialog, { type JustifyTarget } from '@/components/attendance/JustifyDialog'
+import PermissionDialog from '@/components/attendance/PermissionDialog'
+import EarlyExitDialog from '@/components/attendance/EarlyExitDialog'
+import ScheduleCalendarSettings from '@/components/attendance/ScheduleCalendarSettings'
 import AttendanceEditDialog from '@/components/attendance/AttendanceEditDialog'
 import StudentAttendanceCard from '@/components/attendance/StudentAttendanceCard'
 import type { WhatsAppQueueItem } from '@/components/WhatsAppQueue'
@@ -56,8 +61,12 @@ import {
   type WhatsAppTemplates,
 } from '@/services/communicationService'
 import { getWhatsAppTemplates, saveWhatsAppTemplates } from '@/services/whatsappTemplateService'
+import {
+  CALENDAR_KIND_LABELS, EMPTY_DAY_STATUS, findPermission, getDayStatusData, getEffectiveSchedule, saveLevelSchedule,
+  type DayStatusData,
+} from '@/services/dayStatusService'
 import type {
-  AttendanceFilter, AttendanceRecord, Classroom, NotificationRecord, PresentationFilter,
+  AbsenceRecord, AttendanceFilter, AttendanceRecord, Classroom, EarlyExit, NotificationRecord, PresentationFilter,
   PresentationRecord, PresentationStatus, Student,
 } from '@/types'
 
@@ -83,7 +92,7 @@ type Props = {
 }
 
 const attendanceFilters: Array<{ id: AttendanceFilter; label: string }> = [
-  { id: 'ALL', label: 'Todos' }, { id: 'ON_TIME', label: 'A tiempo' }, { id: 'LATE', label: 'Tardanza' }, { id: 'PENDING', label: 'Pendientes' },
+  { id: 'ALL', label: 'Todos' }, { id: 'ON_TIME', label: 'A tiempo' }, { id: 'LATE', label: 'Tardanza' }, { id: 'PENDING', label: 'Pendientes' }, { id: 'ABSENT', label: 'Faltas y permisos' },
 ]
 const presentationFilters: Array<{ id: PresentationFilter; label: string }> = [
   { id: 'ALL', label: 'Todos' }, { id: 'COMPLIANT', label: 'Conforme' }, { id: 'NON_COMPLIANT', label: 'Con incumplimiento' }, { id: 'PENDING', label: 'Sin revisar' },
@@ -147,6 +156,10 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [whatsAppQueueOpen, setWhatsAppQueueOpen] = useState(false)
   const [waTemplates, setWaTemplates] = useState<WhatsAppTemplates>({})
   const [waTemplatesShared, setWaTemplatesShared] = useState(true)
+  const [dayStatus, setDayStatus] = useState<DayStatusData>(EMPTY_DAY_STATUS)
+  const [justifyTarget, setJustifyTarget] = useState<JustifyTarget | null>(null)
+  const [permissionStudent, setPermissionStudent] = useState<Student | null>(null)
+  const [earlyExitStudent, setEarlyExitStudent] = useState<Student | null>(null)
   const today = getTodayKey()
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
   const darkMode = preferences.theme === 'dark' || (preferences.theme === 'system' && systemDark)
@@ -170,6 +183,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       setNotifications(notificationData)
       setEntryLimit(limit)
       setToleranceSettings(tolerance)
+      setDayStatus(await getDayStatusData(range.from, range.to).catch((error) => { reportError('Attendance', error); return EMPTY_DAY_STATUS }))
     } catch (error) {
       reportError('Attendance', error); setDataError(error instanceof Error ? error.message : 'No se pudieron cargar los datos locales/remotos.')
     } finally { if (showLoading) setLoadingData(false) }
@@ -285,23 +299,65 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   }, [notifications])
   const classroomMap = useMemo(() => new Map(classrooms.map((item) => [item.id, item])), [classrooms])
   const studentMap = useMemo(() => new Map(students.map((item) => [item.id, item])), [students])
+  const absenceByStudent = useMemo(() => new Map(dayStatus.absences.filter((a) => a.date === today).map((a) => [a.studentId, a])), [dayStatus.absences, today])
+  const earlyExitByStudent = useMemo(() => new Map(dayStatus.earlyExits.filter((e) => e.date === today).map((e) => [e.studentId, e])), [dayStatus.earlyExits, today])
+  const todayPermissions = useMemo(() => dayStatus.permissions.filter((item) => item.dateFrom <= today && item.dateTo >= today), [dayStatus.permissions, today])
+  const calendarToday = dayStatus.calendar.find((day) => day.date === today)
+  // Horario efectivo del aula actual (propio del nivel o el general del colegio).
+  const currentSchedule = getEffectiveSchedule(classroom.level, dayStatus.schedules, entryLimit, toleranceSettings)
+  const currentLevelSchedule = dayStatus.schedules.find((item) => item.level === classroom.level)
+  function scheduleForStudent(studentId: string) {
+    const level = classroomMap.get(studentMap.get(studentId)?.classroomId ?? '')?.level
+    return getEffectiveSchedule(level, dayStatus.schedules, entryLimit, toleranceSettings)
+  }
+  function upsertAbsence(absence: AbsenceRecord) {
+    setDayStatus((curr) => ({ ...curr, absences: [...curr.absences.filter((a) => a.id !== absence.id), absence] }))
+  }
+  function addEarlyExit(exit: EarlyExit) {
+    setDayStatus((curr) => ({ ...curr, earlyExits: [...curr.earlyExits, exit] }))
+    setRecords((curr) => curr.map((r) => (r.studentId === exit.studentId && r.date === exit.date && !r.exitTime ? { ...r, exitTime: exit.exitTime, exitSource: 'EARLY_EXIT' } : r)))
+    toast.success('Salida anticipada registrada', exit.isAuthorizedPerson ? `Recogió: ${exit.pickedUpByName}` : `Recogió: ${exit.pickedUpByName} (no estaba en la lista)`)
+  }
+  async function reloadDayStatus() {
+    const range = monthRangeKeys()
+    setDayStatus(await getDayStatusData(range.from, range.to).catch(() => EMPTY_DAY_STATUS))
+  }
+  // Tiempo real de faltas/permisos/salidas en un canal propio, solo si phase14 ya existe
+  // (suscribirse a tablas inexistentes podría afectar al canal principal).
+  const reloadDayStatusRef = useRef(reloadDayStatus)
+  reloadDayStatusRef.current = reloadDayStatus
+  useEffect(() => {
+    if (!dayStatus.available) return
+    let timer: number | null = null
+    let channel = supabase.channel('tesla-day-status')
+    for (const table of ['student_absences', 'student_permissions', 'early_exits', 'school_calendar', 'level_schedules']) {
+      channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => {
+        if (timer !== null) window.clearTimeout(timer)
+        timer = window.setTimeout(() => { timer = null; void reloadDayStatusRef.current() }, 200)
+      })
+    }
+    channel.subscribe()
+    return () => { if (timer !== null) window.clearTimeout(timer); void supabase.removeChannel(channel) }
+  }, [dayStatus.available])
 
   const classroomRecords = classroomStudents.map((s) => recordByStudent.get(s.id)).filter((r): r is AttendanceRecord => Boolean(r))
   const classroomPresentationRecords = classroomStudents.map((s) => presentationByStudent.get(s.id)).filter((r): r is PresentationRecord => Boolean(r))
   const onTimeCount=classroomRecords.filter((r)=>r.status==='ON_TIME').length
   const lateCount=classroomRecords.filter((r)=>r.status==='LATE').length
-  const pendingCount=classroomStudents.length-classroomRecords.length
+  const absentCount = classroomStudents.filter((s) => !recordByStudent.has(s.id) && (absenceByStudent.has(s.id) || findPermission(todayPermissions, s.id, today, 'ABSENCE'))).length
+  const pendingCount=classroomStudents.length-classroomRecords.length-absentCount
+  const justifiedLateCount = classroomRecords.filter((r) => r.status === 'LATE' && r.justified).length
   const compliantCount=classroomPresentationRecords.filter((r)=>r.status==='COMPLIANT').length
   const nonCompliantCount=classroomPresentationRecords.filter((r)=>r.status==='NON_COMPLIANT').length
   const presentationPendingCount=classroomStudents.length-classroomPresentationRecords.length
   const filtered = useMemo(() => classroomStudents.filter((student)=>{
     if(!studentMatches(student, query)) return false
     const attendance=recordByStudent.get(student.id)
-    if(filter==='ON_TIME'&&attendance?.status!=='ON_TIME')return false; if(filter==='LATE'&&attendance?.status!=='LATE')return false; if(filter==='PENDING'&&attendance)return false
+    if(filter==='ON_TIME'&&attendance?.status!=='ON_TIME')return false; if(filter==='LATE'&&attendance?.status!=='LATE')return false; if(filter==='PENDING'&&(attendance||absenceByStudent.has(student.id)||findPermission(todayPermissions, student.id, today, 'ABSENCE')))return false; if(filter==='ABSENT'&&(attendance||!(absenceByStudent.has(student.id)||findPermission(todayPermissions, student.id, today, 'ABSENCE'))))return false
     const presentation=presentationByStudent.get(student.id)
     if(presentationFilter==='COMPLIANT'&&presentation?.status!=='COMPLIANT')return false; if(presentationFilter==='NON_COMPLIANT'&&presentation?.status!=='NON_COMPLIANT')return false; if(presentationFilter==='PENDING'&&presentation)return false
     return true
-  }), [classroomStudents, query, recordByStudent, presentationByStudent, filter, presentationFilter])
+  }), [classroomStudents, query, recordByStudent, presentationByStudent, filter, presentationFilter, absenceByStudent, todayPermissions, today])
 
   const unmarkedToday = classroomStudents.filter((student) => !recordByStudent.has(student.id))
 
@@ -315,12 +371,17 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
 
   async function bulkMarkStudents(ids: string[]): Promise<void> {
     if (ids.length === 0) return
-    const inserted = await registerBulkAttendance(ids, entryLimit, today)
+    const byLimit = new Map<string, string[]>()
+    for (const id of ids) {
+      const limit = scheduleForStudent(id).entryLimit
+      byLimit.set(limit, [...(byLimit.get(limit) ?? []), id])
+    }
+    const inserted = (await Promise.all([...byLimit].map(([limit, group]) => registerBulkAttendance(group, limit, today)))).flat()
     setRecords((curr) => [
       ...curr.filter((r) => !(r.date === today && ids.includes(r.studentId))),
       ...inserted,
     ])
-    toast.success(`${inserted.length} alumno${inserted.length !== 1 ? 's' : ''} marcado${inserted.length !== 1 ? 's' : ''} a tiempo`, `Hora registrada: ${entryLimit} (hora límite)`)
+    toast.success(`${inserted.length} alumno${inserted.length !== 1 ? 's' : ''} marcado${inserted.length !== 1 ? 's' : ''} a tiempo`, byLimit.size > 1 ? 'Hora registrada: la hora límite de cada nivel' : `Hora registrada: ${[...byLimit.keys()][0]} (hora límite)`)
   }
 
   async function confirmBulkAttendance() {
@@ -346,13 +407,16 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       return
     }
     try {
-      const rec=await registerAttendance(studentId,entryLimit,today,getCurrentTime(),toleranceSettings)
+      const schedule = scheduleForStudent(studentId)
+      const latePermission = findPermission(todayPermissions, studentId, today, 'LATE')
+      const rec=await registerAttendance(studentId,schedule.entryLimit,today,getCurrentTime(),schedule.tolerance, latePermission ? { reason: `Permiso: ${latePermission.reason}`, byName: userName } : undefined)
       setRecords((curr)=>[...curr.filter((r)=>!(r.studentId===studentId&&r.date===today)),rec])
-      feedback(rec.status === 'LATE' ? 'late' : 'ok')
+      feedback(rec.status === 'LATE' && !rec.justified ? 'late' : 'ok')
+      if (absenceByStudent.has(studentId)) setDayStatus((curr) => ({ ...curr, absences: curr.absences.filter((a) => !(a.studentId === studentId && a.date === today)) }))
       const name = student ? `${student.firstName} ${student.lastName}` : 'Alumno'
       // Sin diálogo de confirmación: un toque marca y el aviso permite deshacer durante 5 s.
       toast.show({
-        title: `${name} — ${rec.status === 'LATE' ? 'Tardanza' : 'A tiempo'}`,
+        title: `${name} — ${rec.status === 'LATE' ? (rec.justified ? 'Tardanza con permiso' : 'Tardanza') : 'A tiempo'}`,
         description: `Hora registrada: ${rec.time}`,
         variant: rec.status === 'LATE' ? 'warning' : 'success',
         duration: 5000,
@@ -409,11 +473,12 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       setSavingAttendanceEdit(true)
       setDataError('')
 
+      const editSchedule = scheduleForStudent(editingAttendance.studentId)
       const updated = await updateAttendanceEntryTime(
         editingAttendance,
         newTime,
-        entryLimit,
-        toleranceSettings,
+        editSchedule.entryLimit,
+        editSchedule.tolerance,
       )
 
       setRecords((curr) => [
@@ -475,6 +540,13 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   }
   function changeClassroom(classroomId:string){ const selected=classrooms.find((i)=>i.id===classroomId); if(!selected)return; setQuery('');setFilter('ALL');setPresentationFilter('ALL');onClassroomChange(selected); if(preferences.rememberClassroom)updatePreferences({...preferences,lastClassroomId:selected.id}) }
   async function updateEntryLimit(value:string){
+    if (currentLevelSchedule) {
+      const next = { ...currentLevelSchedule, entryLimit: value }
+      setDayStatus((curr) => ({ ...curr, schedules: curr.schedules.map((item) => (item.level === next.level ? next : item)) }))
+      try { await saveLevelSchedule(next) }
+      catch(error){ reportError('Attendance', error); setDataError(error instanceof Error?error.message:'No se pudo actualizar la hora límite.') }
+      return
+    }
     setEntryLimit(value)
     try { await saveEntryLimit(value) }
     catch(error){ reportError('Attendance', error); setDataError(error instanceof Error?error.message:'No se pudo actualizar la hora límite.') }
@@ -691,7 +763,10 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     const recurrence = studentNotificationStats(student.id)
     const options: Array<{ type: WhatsAppMessageType; label: string }> = []
 
-    if (attendance?.status === 'LATE' && !presentation?.lateEntryViolation) {
+    const absence = absenceByStudent.get(student.id)
+    if (!attendance && absence?.status === 'UNJUSTIFIED') options.push({ type: 'ABSENCE', label: 'Ausencia registrada' })
+
+    if (attendance?.status === 'LATE' && !attendance.justified && !presentation?.lateEntryViolation) {
       options.push({ type: 'LATE', label: 'Tardanza en el ingreso' })
     }
 
@@ -866,6 +941,12 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
 
         <section className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
         {dataError && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">{dataError}</div>}
+        {calendarToday && (
+          <div className="mb-4 flex items-center gap-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-800 dark:border-indigo-900/60 dark:bg-indigo-950/40 dark:text-indigo-300">
+            <CalendarOff size={18} className="shrink-0" />
+            Hoy es día sin clases ({CALENDAR_KIND_LABELS[calendarToday.kind]}{calendarToday.description ? `: ${calendarToday.description}` : ''}). No se generarán faltas.
+          </div>
+        )}
         {loadingData && <div className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">Sincronizando datos con Supabase...</div>}
         {!syncState.online && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">Modo offline activo. Puedes seguir marcando entradas y controles; {syncState.pending} cambio{syncState.pending===1?'':'s'} pendiente{syncState.pending===1?'':'s'} se enviarán al recuperar Internet.</div>}
         <div className="rounded-2xl border border-slate-200 bg-white p-5 text-slate-950 shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100">
@@ -906,11 +987,11 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
 
               <label className="block w-full sm:w-40 sm:shrink-0">
                 <span className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  <Settings2 size={14} /> Hora límite
+                  <Settings2 size={14} /> Hora límite{currentLevelSchedule ? ` · ${classroom.level}` : ''}
                 </span>
                 <Input
                   type="time"
-                  value={entryLimit}
+                  value={currentSchedule.entryLimit}
                   onChange={(event) => updateEntryLimit(event.target.value)}
                   className="font-bold"
                 />
@@ -926,9 +1007,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 transition-colors dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-              Hora límite: <span className="font-black text-slate-950 dark:text-slate-100">{entryLimit}</span>
-              {toleranceSettings.enabled && toleranceSettings.minutes > 0 && (
-                <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">(+{toleranceSettings.minutes} min tolerancia)</span>
+              Hora límite: <span className="font-black text-slate-950 dark:text-slate-100">{currentSchedule.entryLimit}</span>
+              {currentSchedule.tolerance.enabled && currentSchedule.tolerance.minutes > 0 && (
+                <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">(+{currentSchedule.tolerance.minutes} min tolerancia)</span>
               )}
             </div>
             <Tooltip content="Para cuando entran muchos alumnos a la vez: marca a los que ya entraron y no fueron marcados individualmente">
@@ -973,10 +1054,12 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
           <Card className="p-4">
             <p className="text-xs text-slate-500 dark:text-slate-400">Tardanzas</p>
             <p className="mt-1 text-2xl font-black text-amber-700 dark:text-amber-400">{lateCount}</p>
+            {justifiedLateCount > 0 && <p className="text-xs text-sky-600 dark:text-sky-400">{justifiedLateCount} justificada{justifiedLateCount !== 1 ? 's' : ''}</p>}
           </Card>
           <Card className="p-4">
             <p className="text-xs text-slate-500 dark:text-slate-400">Pendientes</p>
             <p className="mt-1 text-2xl font-black">{pendingCount}</p>
+            {absentCount > 0 && <p className="text-xs text-red-600 dark:text-red-400">{absentCount} con falta o permiso</p>}
           </Card>
         </div>
 
@@ -1056,6 +1139,14 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 openNotification={openNotification}
                 openWhatsAppModal={openWhatsAppModal}
                 setCaseFileStudent={setCaseFileStudent}
+                dayStatusEnabled={dayStatus.available}
+                absence={record ? undefined : absenceByStudent.get(student.id)}
+                permission={findPermission(todayPermissions, student.id, today)}
+                earlyExit={earlyExitByStudent.get(student.id)}
+                onJustifyLate={(target, rec) => setJustifyTarget({ kind: 'LATE', student: target, record: rec })}
+                onJustifyAbsence={(target, absence) => setJustifyTarget({ kind: 'ABSENCE', student: target, absence })}
+                onPermission={setPermissionStudent}
+                onEarlyExit={setEarlyExitStudent}
                 setHistoryStudent={setHistoryStudent}
               />
             )
@@ -1215,6 +1306,42 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         today={today}
         onOpenAlerts={() => { setDailySummaryOpen(false); setAlertsOpen(true) }}
         refreshKey={realtimeState.revision}
+        dayStatusEnabled={dayStatus.available}
+        calendarToday={calendarToday}
+        onDayChanged={() => void reloadDayStatus()}
+        onOpenWhatsAppQueue={() => { setDailySummaryOpen(false); setWhatsAppQueueOpen(true) }}
+      />
+
+      <JustifyDialog
+        target={justifyTarget}
+        userName={userName}
+        onClose={() => setJustifyTarget(null)}
+        onLateSaved={(rec) => {
+          setRecords((curr) => curr.map((r) => (r.id === rec.id ? rec : r)))
+          if (rec.justified) setNotifications((curr) => curr.filter((item) => !(item.attendanceId === rec.id && item.notificationType === 'LATE_ENTRY' && !item.presentationControlId)))
+          else void getNotifications().then(setNotifications).catch((error) => reportError('Attendance', error))
+          toast.success(rec.justified ? 'Tardanza justificada' : 'Justificación quitada')
+        }}
+        onAbsenceSaved={(absence) => { upsertAbsence(absence); toast.success(absence.status === 'JUSTIFIED' ? 'Falta justificada' : 'Justificación quitada') }}
+      />
+
+      <PermissionDialog
+        student={permissionStudent}
+        permissions={dayStatus.permissions}
+        today={today}
+        userName={userName}
+        onClose={() => setPermissionStudent(null)}
+        onChanged={() => { void reloadDayStatus(); toast.success('Permisos actualizados') }}
+      />
+
+      <EarlyExitDialog
+        student={earlyExitStudent}
+        attendance={earlyExitStudent ? recordByStudent.get(earlyExitStudent.id) : undefined}
+        today={today}
+        userName={userName}
+        isAdmin={isAdminRole(userRole)}
+        onClose={() => setEarlyExitStudent(null)}
+        onSaved={addEarlyExit}
       />
 
       <Deferred when={caseFileStudent !== null}>
@@ -1313,6 +1440,16 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         setPreferences={setPreferences}
         updatePreferences={updatePreferences}
         classroom={classroom}
+        extraSections={dayStatus.available ? (
+          <ScheduleCalendarSettings
+            schedules={dayStatus.schedules}
+            calendar={dayStatus.calendar}
+            globalLimit={entryLimit}
+            globalTolerance={toleranceSettings}
+            isAdmin={isAdminRole(userRole)}
+            onChanged={() => void reloadDayStatus()}
+          />
+        ) : undefined}
       />
     </main>
     </MotionConfig>
