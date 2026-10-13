@@ -1310,6 +1310,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         onQuick={() => setQuickModeOpen(true)}
         onSummary={() => setDailySummaryOpen(true)}
         onWhatsApp={() => setWhatsAppQueueOpen(true)}
+        onRoster={isAdmin ? () => setRosterOpen(true) : undefined}
         onMenu={() => setSidebarOpen(true)}
       />
 

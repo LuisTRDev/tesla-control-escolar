@@ -1,11 +1,13 @@
 import type { ReactNode } from 'react'
-import { CalendarCheck2, ListChecks, Menu, MessageCircle, Zap } from 'lucide-react'
+import { CalendarCheck2, ListChecks, Menu, MessageCircle, Users, Zap } from 'lucide-react'
 
 type Props = {
   onList: () => void
   onQuick: () => void
   onSummary: () => void
   onWhatsApp: () => void
+  /** Solo ADMIN: "Alumnos y apoderados" ocupa el lugar de WhatsApp. */
+  onRoster?: () => void
   onMenu: () => void
   /** Alumnos del aula aún sin marcar: se muestra como globo en "Lista". */
   pendingCount: number
@@ -31,7 +33,7 @@ function Tab({ icon, label, onClick, active = false, badge }: { icon: ReactNode;
 }
 
 /** Barra de pestañas inferior (solo celular y tablet): las acciones de todos los días a un toque del pulgar. */
-export default function MobileTabBar({ onList, onQuick, onSummary, onWhatsApp, onMenu, pendingCount }: Props) {
+export default function MobileTabBar({ onList, onQuick, onSummary, onWhatsApp, onRoster, onMenu, pendingCount }: Props) {
   return (
     <nav
       aria-label="Navegación principal"
@@ -41,7 +43,9 @@ export default function MobileTabBar({ onList, onQuick, onSummary, onWhatsApp, o
         <Tab icon={<ListChecks size={21} />} label="Lista" active onClick={onList} badge={pendingCount} />
         <Tab icon={<Zap size={21} />} label="Rápido" onClick={onQuick} />
         <Tab icon={<CalendarCheck2 size={21} />} label="Cierre" onClick={onSummary} />
-        <Tab icon={<MessageCircle size={21} />} label="WhatsApp" onClick={onWhatsApp} />
+        {onRoster
+          ? <Tab icon={<Users size={21} />} label="Alumnos" onClick={onRoster} />
+          : <Tab icon={<MessageCircle size={21} />} label="WhatsApp" onClick={onWhatsApp} />}
         <Tab icon={<Menu size={21} />} label="Menú" onClick={onMenu} />
       </div>
     </nav>
