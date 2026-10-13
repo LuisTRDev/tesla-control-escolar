@@ -118,7 +118,7 @@ export default function JustifyDialog({ target, userName, onClose, onLateSaved, 
                   <Paperclip size={18} className="shrink-0 text-slate-500 dark:text-slate-400" />
                   <span className="min-w-0 flex-1">
                     <b className="block">{file ? file.name : 'Adjuntar foto o PDF (opcional)'}</b>
-                    <small className="text-slate-500 dark:text-slate-400">Certificado, esquela o constancia · máx. 5 MB</small>
+                    <small className="text-slate-500 dark:text-slate-400">Certificado, esquela o constancia · las fotos se comprimen solas · PDF máx. 5 MB</small>
                   </span>
                   <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
                 </label>

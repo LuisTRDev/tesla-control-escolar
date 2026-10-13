@@ -1,3 +1,4 @@
+import { compressImage } from '@/lib/imageCompression'
 import { supabase } from '@/lib/supabase'
 import { trimTime } from '@/lib/dates'
 import { ensureNotificationForLateAttendance } from '@/services/notificationService'
@@ -16,6 +17,8 @@ import type {
 
 const DOCUMENT_BUCKET = 'justificaciones'
 const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
+/** Foto original aceptada antes de comprimir (las de celular pesan 3–12 MB). */
+const MAX_PHOTO_INPUT_BYTES = 25 * 1024 * 1024
 
 type PgError = { code?: string; message?: string } | null
 
@@ -366,10 +369,19 @@ async function detectDocumentType(file: File): Promise<{ ext: string; mime: stri
 export async function uploadJustificationDocument(file: File, studentId: string): Promise<string> {
   requireOnline('Adjuntar un documento')
   if (file.size <= 0) throw new Error('El archivo está vacío.')
-  if (file.size > MAX_DOCUMENT_BYTES) throw new Error('El documento supera el límite de 5 MB.')
-  const type = await detectDocumentType(file)
+  let type = await detectDocumentType(file)
+  let body: Blob = file
+  if (type.mime === 'application/pdf') {
+    if (file.size > MAX_DOCUMENT_BYTES) throw new Error('El PDF supera el límite de 5 MB.')
+  } else {
+    // Las fotos se comprimen antes de subir; el límite se aplica al resultado.
+    if (file.size > MAX_PHOTO_INPUT_BYTES) throw new Error('La foto supera el límite de 25 MB.')
+    const compressed = await compressImage(file)
+    if (compressed) { body = compressed.blob; type = { ext: compressed.ext, mime: compressed.mime } }
+    if (body.size > MAX_DOCUMENT_BYTES) throw new Error('La foto sigue superando 5 MB después de comprimirla.')
+  }
   const path = `${Number(studentId)}/${new Date().toISOString().slice(0, 10)}-${crypto.randomUUID()}.${type.ext}`
-  const { error } = await supabase.storage.from(DOCUMENT_BUCKET).upload(path, file, { contentType: type.mime, upsert: false })
+  const { error } = await supabase.storage.from(DOCUMENT_BUCKET).upload(path, body, { contentType: type.mime, upsert: false })
   if (error) {
     if (/bucket not found|not found/i.test(error.message)) throw new Error('Adjuntar documentos aún no está activado. Ejecuta el bloque opcional 11 de phase14 o guarda solo el motivo.')
     throw error
