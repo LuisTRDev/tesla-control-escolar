@@ -1,4 +1,5 @@
 import { compressImage } from '@/lib/imageCompression'
+import { reportError } from '@/lib/security'
 import { supabase } from '@/lib/supabase'
 import { trimTime } from '@/lib/dates'
 import { ensureNotificationForLateAttendance } from '@/services/notificationService'
@@ -381,11 +382,17 @@ export async function uploadJustificationDocument(file: File, studentId: string,
   } else {
     // Las fotos se comprimen antes de subir; el límite se aplica al resultado.
     if (file.size > MAX_PHOTO_INPUT_BYTES) throw new Error('La foto supera el límite de 25 MB.')
-    const compressed = await compressImage(file)
-    if (compressed) { body = compressed.blob; type = { ext: compressed.ext, mime: compressed.mime } }
-    onInfo?.(compressed
-      ? "Foto comprimida: " + formatBytes(file.size) + " → " + formatBytes(body.size)
-      : "La foto ya era liviana (" + formatBytes(file.size) + "): se subió sin cambios")
+    try {
+      const compressed = await compressImage(file)
+      if (compressed) { body = compressed.blob; type = { ext: compressed.ext, mime: compressed.mime } }
+      onInfo?.(compressed
+        ? 'Foto comprimida: ' + formatBytes(file.size) + ' → ' + formatBytes(body.size)
+        : 'La foto ya era liviana (' + formatBytes(file.size) + '): se subió sin cambios')
+    } catch (error) {
+      // No se bloquea la evidencia: se sube el original, pero se avisa y se registra.
+      reportError('uploadJustificationDocument', error)
+      onInfo?.('No se pudo comprimir la foto; se subió el original (' + formatBytes(file.size) + ')')
+    }
     if (body.size > MAX_DOCUMENT_BYTES) throw new Error('La foto sigue superando 5 MB después de comprimirla.')
   }
   const path = `${Number(studentId)}/${new Date().toISOString().slice(0, 10)}-${crypto.randomUUID()}.${type.ext}`
