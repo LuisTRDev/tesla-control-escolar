@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { getSnapshot, setSnapshot } from '@/lib/offlineDb'
-import { WHATSAPP_MESSAGE_TYPES, type WhatsAppTemplates } from '@/services/communicationService'
+import { PENSION_MESSAGE_TYPES, WHATSAPP_MESSAGE_TYPES, type WhatsAppTemplates } from '@/services/communicationService'
 
 const SNAPSHOT_KEY = 'whatsapp_templates'
 const LOCAL_KEY = 'tesla-whatsapp-templates-v1'
@@ -11,7 +11,7 @@ const MISSING_COLUMN = '42703'
 function sanitize(value: unknown): WhatsAppTemplates {
   if (!value || typeof value !== 'object') return {}
   const out: WhatsAppTemplates = {}
-  for (const type of WHATSAPP_MESSAGE_TYPES) {
+  for (const type of [...WHATSAPP_MESSAGE_TYPES, ...PENSION_MESSAGE_TYPES]) {
     const text = (value as Record<string, unknown>)[type]
     if (typeof text === 'string' && text.trim()) out[type] = text.slice(0, 4000)
   }

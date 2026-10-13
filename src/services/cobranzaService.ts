@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { addDaysToKey, lastDayOfMonthKey as lastDayOfMonth, toDateKey } from '@/lib/dates'
+import type { PensionDue } from '@/services/pensionMessages'
 
 export type GuardianDebtStatus = 'AL_DIA' | 'POR_VENCER' | 'MOROSO'
 
@@ -160,4 +161,27 @@ export async function getGuardianPaymentHistory(guardianId: string, monthsBack =
     paid: row.paid,
     paidAt: row.paid_at,
   }))
+}
+
+/**
+ * Pensiones vencidas e impagas de todos los apoderados, agrupadas por apoderado
+ * (para el mensaje de mora con el total adeudado). Solo cuenta los meses que ya
+ * tienen fila en pension_payments, es decir, los que se abrieron en Cobranza.
+ */
+export async function getOverduePensions(today: string = toDateKey()): Promise<Map<string, PensionDue[]>> {
+  const { data, error } = await supabase
+    .from('pension_payments')
+    .select('guardian_id, period_year, period_month, amount, due_date')
+    .eq('paid', false)
+    .lt('due_date', today)
+  if (error) throw error
+  const byGuardian = new Map<string, PensionDue[]>()
+  for (const row of (data ?? []) as Array<{ guardian_id: number | string; period_year: number; period_month: number; amount: number | string | null; due_date: string }>) {
+    const id = String(row.guardian_id)
+    const list = byGuardian.get(id) ?? []
+    list.push({ year: row.period_year, month: row.period_month, amount: Number(row.amount ?? PENSION_AMOUNT), dueDate: row.due_date })
+    byGuardian.set(id, list)
+  }
+  for (const list of byGuardian.values()) list.sort((a, b) => a.year - b.year || a.month - b.month)
+  return byGuardian
 }

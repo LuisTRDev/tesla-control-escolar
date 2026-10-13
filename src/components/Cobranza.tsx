@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { AlertTriangle, Banknote, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Search, TriangleAlert, X } from 'lucide-react'
+import { AlertTriangle, Banknote, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, Clock3, MessageCircle, Search, TriangleAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { useToast } from '@/lib/toast'
 import { friendlyError } from '@/lib/errorMessages'
+import { toDateKey } from '@/lib/dates'
+import { reportError } from '@/lib/security'
+import { isValidPeruWhatsApp, type WhatsAppTemplates } from '@/services/communicationService'
+import { buildPensionMessage, type PensionDue } from '@/services/pensionMessages'
+import { PensionMessageDialog, PensionWhatsAppQueue, pensionItemSummary, type PensionMessageItem } from '@/components/cobranza/PensionWhatsApp'
 import {
   computeDebtStatus,
   getGuardianPaymentHistory,
+  getOverduePensions,
   getPensionStatusForMonth,
   setPensionNotes,
   setPensionPaid,
@@ -18,7 +24,15 @@ import {
   type MonthlyHistoryEntry,
 } from '@/services/cobranzaService'
 
-type Props = { open: boolean; onClose: () => void }
+type Props = {
+  open: boolean
+  onClose: () => void
+  isAdmin: boolean
+  /** Plantillas de WhatsApp compartidas con el módulo escolar (mismo registro en school_settings). */
+  templates: WhatsAppTemplates
+  templatesShared: boolean
+  onSaveTemplates: (templates: WhatsAppTemplates) => Promise<void>
+}
 
 type StatusFilter = 'ALL' | GuardianDebtStatus
 
@@ -80,12 +94,15 @@ function HistoryPanel({ guardianId, onClose }: { guardianId: string; onClose: ()
   )
 }
 
-function GuardianRow({ guardian, year, month, onSaved, onViewHistory }: {
+function GuardianRow({ guardian, year, month, onSaved, onViewHistory, whatsApp, onWhatsApp }: {
   guardian: GuardianMonth
   year: number
   month: number
   onSaved: (updated: GuardianMonth) => void
   onViewHistory: (guardianId: string) => void
+  /** Mensaje de cobranza que le corresponde (mora o recordatorio), si hay. */
+  whatsApp?: PensionMessageItem
+  onWhatsApp: (item: PensionMessageItem) => void
 }) {
   const toast = useToast()
   const [notes, setNotes] = useState(guardian.notes)
@@ -145,9 +162,15 @@ function GuardianRow({ guardian, year, month, onSaved, onViewHistory }: {
               S/{guardian.amount} · Vence {new Date(guardian.dueDate + 'T12:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })}
               {guardian.phone && ` · ${guardian.phone}`}
             </p>
+            {whatsApp?.type === 'PENSION_OVERDUE' && <p className="mt-0.5 text-xs font-bold text-red-600 dark:text-red-400">{pensionItemSummary(whatsApp)} en total</p>}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 self-start">
+          {whatsApp && (
+            <button type="button" onClick={() => onWhatsApp(whatsApp)} className="rounded-full p-1.5 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40" title={whatsApp.type === 'PENSION_OVERDUE' ? 'Enviar aviso de mora por WhatsApp' : 'Enviar recordatorio por WhatsApp'} aria-label="WhatsApp">
+              <MessageCircle size={16} />
+            </button>
+          )}
           <button type="button" onClick={() => onViewHistory(guardian.guardianId)} className="rounded-full p-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800" title="Ver historial">
             <Clock3 size={16} />
           </button>
@@ -172,7 +195,7 @@ function GuardianRow({ guardian, year, month, onSaved, onViewHistory }: {
   )
 }
 
-export default function Cobranza({ open, onClose }: Props) {
+export default function Cobranza({ open, onClose, isAdmin, templates, templatesShared, onSaveTemplates }: Props) {
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
@@ -182,6 +205,16 @@ export default function Cobranza({ open, onClose }: Props) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
   const [historyGuardianId, setHistoryGuardianId] = useState<string | null>(null)
+  const [overdue, setOverdue] = useState<Map<string, PensionDue[]>>(new Map())
+  const [queueOpen, setQueueOpen] = useState(false)
+  const [messageItem, setMessageItem] = useState<PensionMessageItem | null>(null)
+  const today = toDateKey()
+
+  // Meses vencidos de cada apoderado (todos los meses, no solo el que se está viendo).
+  useEffect(() => {
+    if (!open) return
+    getOverduePensions().then(setOverdue).catch((err) => reportError('Cobranza', err))
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -224,7 +257,43 @@ export default function Cobranza({ open, onClose }: Props) {
   function updateGuardian(updated: GuardianMonth) {
     const status = computeDebtStatus(updated.paid, updated.dueDate)
     setGuardians((curr) => curr.map((g) => (g.guardianId === updated.guardianId ? { ...updated, status } : g)))
+    // Mantiene al día la deuda acumulada sin volver a consultar.
+    setOverdue((curr) => {
+      const copy = new Map(curr)
+      const list = (copy.get(updated.guardianId) ?? []).filter((m) => !(m.year === year && m.month === month))
+      if (!updated.paid && updated.dueDate < today) list.push({ year, month, amount: updated.amount, dueDate: updated.dueDate })
+      list.sort((a, b) => a.year - b.year || a.month - b.month)
+      if (list.length) copy.set(updated.guardianId, list); else copy.delete(updated.guardianId)
+      return copy
+    })
   }
+
+  /** Mora si debe algún mes vencido; si no, recordatorio cuando el mes está por vencer. */
+  const messageByGuardian = useMemo(() => {
+    const map = new Map<string, PensionMessageItem>()
+    for (const g of guardians) {
+      const owed = overdue.get(g.guardianId) ?? []
+      const type = owed.length ? 'PENSION_OVERDUE' : g.status === 'POR_VENCER' ? 'PENSION_REMINDER' : null
+      if (!type) continue
+      const months = type === 'PENSION_OVERDUE' ? owed : [{ year, month, amount: g.amount, dueDate: g.dueDate }]
+      map.set(g.guardianId, {
+        key: `${g.guardianId}:${type}`,
+        guardianId: g.guardianId,
+        guardianName: g.fullName,
+        phone: g.phone,
+        studentsLabel: g.students.length ? g.students.map((s) => s.name).join(', ') : 'Sin alumno vinculado',
+        type,
+        months,
+        message: buildPensionMessage({ type, guardianName: g.fullName, studentNames: g.students.map((s) => s.name), months }, templates),
+        phoneValid: isValidPeruWhatsApp(g.phone),
+      })
+    }
+    return map
+  }, [guardians, overdue, year, month, templates])
+
+  // Primero los morosos, luego los recordatorios; cada grupo por nombre.
+  const queueItems = useMemo(() => [...messageByGuardian.values()].sort((a, b) =>
+    (a.type === b.type ? 0 : a.type === 'PENSION_OVERDUE' ? -1 : 1) || a.guardianName.localeCompare(b.guardianName, 'es')), [messageByGuardian])
 
   return (
     <AnimatePresence>{open && (
@@ -242,7 +311,10 @@ export default function Cobranza({ open, onClose }: Props) {
                 <h2 className="mt-1 text-2xl font-black">Pensión mensual</h2>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Monto fijo S/{PENSION_AMOUNT} · vence el último día de cada mes.</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="outline" onClick={() => setQueueOpen(true)} disabled={loading}>
+                  <MessageCircle className="mr-2" size={16} /> Avisos WhatsApp{queueItems.length ? ` (${queueItems.length})` : ''}
+                </Button>
                 <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-950">
                   <button type="button" onClick={() => changeMonth(-1)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><ChevronLeft size={18} /></button>
                   <span className="min-w-[130px] text-center text-sm font-black">{MONTH_NAMES[month - 1]} {year}</span>
@@ -322,7 +394,7 @@ export default function Cobranza({ open, onClose }: Props) {
                 </div>
               ) : (
                 filtered.map((g) => (
-                  <GuardianRow key={g.guardianId} guardian={g} year={year} month={month} onSaved={updateGuardian} onViewHistory={setHistoryGuardianId} />
+                  <GuardianRow key={g.guardianId} guardian={g} year={year} month={month} onSaved={updateGuardian} onViewHistory={setHistoryGuardianId} whatsApp={messageByGuardian.get(g.guardianId)} onWhatsApp={setMessageItem} />
                 ))
               )}
             </div>
@@ -333,6 +405,8 @@ export default function Cobranza({ open, onClose }: Props) {
               <HistoryPanel guardianId={historyGuardianId} onClose={() => setHistoryGuardianId(null)} />
             )}
           </AnimatePresence>
+          <PensionMessageDialog item={messageItem} today={today} onClose={() => setMessageItem(null)} />
+          <PensionWhatsAppQueue open={queueOpen} onClose={() => setQueueOpen(false)} items={queueItems} today={today} isAdmin={isAdmin} templates={templates} templatesShared={templatesShared} onSaveTemplates={onSaveTemplates} />
         </motion.section>
       </motion.div>
     )}</AnimatePresence>

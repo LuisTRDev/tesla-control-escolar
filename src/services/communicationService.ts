@@ -63,7 +63,12 @@ export function getWhatsAppTypeLabel(type: WhatsAppMessageType): string {
   }
 }
 
-export type WhatsAppTemplates = Partial<Record<WhatsAppMessageType, string>>
+/** Mensajes de cobranza (módulo Cobranza); se guardan junto a las plantillas escolares. */
+export type PensionMessageType = 'PENSION_OVERDUE' | 'PENSION_REMINDER'
+
+export const PENSION_MESSAGE_TYPES: PensionMessageType[] = ['PENSION_OVERDUE', 'PENSION_REMINDER']
+
+export type WhatsAppTemplates = Partial<Record<WhatsAppMessageType | PensionMessageType, string>>
 
 export const WHATSAPP_MESSAGE_TYPES: WhatsAppMessageType[] = [
   'LATE', 'REGULATION', 'INAPPROPRIATE_CONDUCT', 'RECURRENCE_2', 'RECURRENCE_3', 'ABSENCE', 'FREQUENT_LATE',

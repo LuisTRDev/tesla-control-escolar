@@ -1561,7 +1561,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         />
       </Deferred>
 
-      <Deferred when={cobranzaOpen}><Cobranza open={cobranzaOpen} onClose={() => setCobranzaOpen(false)} /></Deferred>
+      <Deferred when={cobranzaOpen}><Cobranza open={cobranzaOpen} onClose={() => setCobranzaOpen(false)} isAdmin={isAdmin} templates={waTemplates} templatesShared={waTemplatesShared} onSaveTemplates={handleSaveTemplates} /></Deferred>
 
       <Deferred when={rosterOpen}>
         <RosterManager
