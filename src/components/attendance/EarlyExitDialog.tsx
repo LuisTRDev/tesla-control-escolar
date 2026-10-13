@@ -86,9 +86,9 @@ export default function EarlyExitDialog({ student, attendance, today, userName, 
 
   return (
     <AnimatePresence>{student && (
-      <motion.div className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/65 p-4 backdrop-blur-sm" onMouseDown={() => { if (!saving) onClose() }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
+      <motion.div data-sheet-overlay className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/65 p-4 backdrop-blur-sm" onMouseDown={() => { if (!saving) onClose() }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
         <motion.div className="w-full max-w-lg" initial={{ scale: 0.94, opacity: 0, y: 12 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.96, opacity: 0, y: 8 }} transition={{ type: 'spring', stiffness: 380, damping: 32 }}>
-          <Card className="max-h-[92vh] w-full overflow-y-auto p-6" onMouseDown={(e) => e.stopPropagation()}>
+          <Card data-sheet className="max-h-[92vh] w-full overflow-y-auto p-6" onMouseDown={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-orange-700 dark:text-orange-300"><DoorOpen size={15} /> Salida anticipada</p>

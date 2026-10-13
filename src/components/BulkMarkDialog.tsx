@@ -36,6 +36,7 @@ export default function BulkMarkDialog({ open, onClose, students, selected, onSe
   return (
     <AnimatePresence>{open && (
       <motion.div
+        data-sheet-overlay
         className={`${position} inset-0 z-[90] grid place-items-center bg-slate-950/60 p-4 backdrop-blur-sm`}
         onMouseDown={() => { if (!saving) onClose() }}
         initial={{ opacity: 0 }}
@@ -51,7 +52,7 @@ export default function BulkMarkDialog({ open, onClose, students, selected, onSe
           exit={{ scale: 0.96, opacity: 0, y: 8 }}
           transition={{ type: 'spring', stiffness: 380, damping: 32 }}
         >
-          <Card className="flex max-h-[85vh] flex-col p-6">
+          <Card data-sheet className="flex max-h-[85vh] flex-col p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-black uppercase tracking-widest text-brand-navy dark:text-brand-gold">Marcado masivo</p>

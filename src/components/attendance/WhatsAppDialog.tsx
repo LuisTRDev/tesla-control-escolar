@@ -25,6 +25,7 @@ export default function WhatsAppDialog({ whatsAppStudent, setWhatsAppStudent, wh
       const normalizedOk = isValidPeruWhatsApp(whatsAppStudent.guardianPhone)
       return (
         <motion.div
+          data-sheet-overlay
           className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-4 backdrop-blur-[1px] dark:bg-black/70"
           onMouseDown={() => setWhatsAppStudent(null)}
           initial={{ opacity: 0 }}
@@ -33,6 +34,7 @@ export default function WhatsAppDialog({ whatsAppStudent, setWhatsAppStudent, wh
           transition={{ duration: 0.18 }}
         >
           <motion.section
+            data-sheet
             className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 text-slate-950 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 sm:p-6"
             onMouseDown={(event) => event.stopPropagation()}
             initial={{ scale: 0.96, opacity: 0, y: 12 }}
