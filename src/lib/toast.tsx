@@ -3,9 +3,10 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { CheckCircle2, Info, TriangleAlert, X, XCircle } from 'lucide-react'
 
 type ToastVariant = 'success' | 'error' | 'info' | 'warning'
-type ToastItem = { id: number; title: string; description?: string; variant: ToastVariant }
+type ToastAction = { label: string; onClick: () => void }
+type ToastItem = { id: number; title: string; description?: string; variant: ToastVariant; action?: ToastAction }
 
-type ToastInput = { title: string; description?: string; variant?: ToastVariant; duration?: number }
+type ToastInput = { title: string; description?: string; variant?: ToastVariant; duration?: number; action?: ToastAction }
 
 type ToastContextValue = { show: (toast: ToastInput) => void }
 
@@ -36,7 +37,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const show = useCallback((toast: ToastInput) => {
     const id = ++idRef.current
     const variant = toast.variant ?? 'info'
-    setToasts((curr) => [...curr, { id, title: toast.title, description: toast.description, variant }])
+    setToasts((curr) => [...curr, { id, title: toast.title, description: toast.description, variant, action: toast.action }])
     const duration = toast.duration ?? (variant === 'error' ? 6000 : 3200)
     setTimeout(() => dismiss(id), duration)
   }, [dismiss])
@@ -61,6 +62,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{t.title}</p>
                 {t.description && <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{t.description}</p>}
               </div>
+              {t.action && (
+                <button
+                  type="button"
+                  onClick={() => { t.action?.onClick(); dismiss(t.id) }}
+                  className="shrink-0 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  {t.action.label}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => dismiss(t.id)}

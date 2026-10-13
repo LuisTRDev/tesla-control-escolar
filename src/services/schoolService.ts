@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { trimTime } from '@/lib/dates'
-import { enqueueOperation, getSnapshot, listPendingOperations, setSnapshot } from '@/lib/offlineDb'
+import { enqueueOperation, getSnapshot, listPendingOperations, removePendingOperationFor, setSnapshot } from '@/lib/offlineDb'
 import type { AttendanceRecord, AttendanceStatus, Classroom, Guardian, PresentationRecord, Student } from '@/types'
 
 const DEFAULT_LIMIT = '07:45'
@@ -477,6 +477,58 @@ export async function recalculateAttendanceForDate(date: string, entryLimit: str
   const { data, error } = await supabase.from('attendance').select('id, entry_time').eq('date', date)
   if (error) throw error
   await Promise.all((data ?? []).map(async (row: { id: number | string; entry_time: string }) => { const status = calculateStatus(trimTime(row.entry_time), entryLimit); const { error: updateError } = await supabase.from('attendance').update({ status }).eq('id', row.id); if (updateError) throw updateError }))
+}
+
+/**
+ * Quita lo que una marca generó automáticamente: la notificación de tardanza
+ * (trigger trg_auto_late_notification) y las alertas que esa notificación
+ * disparó. No se confía en el ON DELETE CASCADE porque en producción no
+ * siempre está activo (ver phase12_attendance_cleanup.sql).
+ */
+async function deleteAttendanceTraces(attendanceId: number): Promise<void> {
+  const { data: linked, error: findError } = await supabase.from('notifications').select('id, presentation_control_id').eq('attendance_id', attendanceId)
+  if (findError) throw findError
+  const rows = (linked ?? []) as Array<{ id: number | string; presentation_control_id: number | string | null }>
+
+  // Si la notificación también pertenece a un control de "Revisar normas", es
+  // historial propio de ese control: se conserva y solo se desvincula de la marca.
+  if (rows.some((row) => row.presentation_control_id != null)) {
+    const { error } = await supabase.from('notifications').update({ attendance_id: null })
+      .eq('attendance_id', attendanceId).not('presentation_control_id', 'is', null)
+    if (error) throw error
+  }
+
+  const ids = rows.filter((row) => row.presentation_control_id == null).map((row) => String(row.id))
+  if (ids.length === 0) return
+
+  // Las alertas de reincidencia que dejan de cumplirse las quita el trigger
+  // trg_delete_alerts_of_notification (phase13): no guardan qué notificación las originó.
+  const { error } = await supabase.from('notifications').delete().in('id', ids.map(Number))
+  if (error) throw error
+}
+
+/**
+ * Borra UNA marca de asistencia (deshacer un toque equivocado o corregir un
+ * alumno mal marcado) junto con la notificación y alertas que generó, para
+ * que no quede rastro en el expediente.
+ */
+export async function deleteAttendanceRecord(record: AttendanceRecord): Promise<void> {
+  let attendanceId: number | null = null
+  if (!record.id || record.id.startsWith('offline-')) {
+    const removed = await removePendingOperationFor('ATTENDANCE_UPSERT', record.studentId, record.date)
+    // Si ya no estaba en cola, la sincronización la subió entretanto: se borra en el servidor.
+    if (removed || !navigator.onLine) return
+    const { data, error } = await supabase.from('attendance').select('id').eq('student_id', Number(record.studentId)).eq('date', record.date).maybeSingle()
+    if (error) throw error
+    if (!data) return
+    attendanceId = Number(data.id)
+  } else {
+    if (!navigator.onLine) throw new Error('Borrar una marca ya sincronizada requiere conexión a Internet.')
+    attendanceId = Number(record.id)
+  }
+  await deleteAttendanceTraces(attendanceId)
+  const { error } = await supabase.from('attendance').delete().eq('id', attendanceId)
+  if (error) throw error
 }
 
 export async function deleteAttendanceForDate(date: string): Promise<void> {

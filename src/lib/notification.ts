@@ -2,17 +2,10 @@ import Docxtemplater from 'docxtemplater'
 import PizZip from 'pizzip'
 import { jsPDF } from 'jspdf'
 import { toDateKey } from '@/lib/dates'
-import type { AttendanceRecord, Classroom, PresentationRecord, Student } from '@/types'
+import { MAX_NOTIFICATIONS_PER_PAGE, type NotificationPrintData } from '@/lib/notificationTypes'
+import type { Student } from '@/types'
 
-export const MAX_NOTIFICATIONS_PER_PAGE = 3
-
-export type NotificationPrintData = {
-  student: Student
-  classroom: Classroom
-  presentation?: PresentationRecord
-  attendance?: AttendanceRecord
-  notificationNumber: number
-}
+export { MAX_NOTIFICATIONS_PER_PAGE, type NotificationPrintData }
 
 const A4_WIDTH_MM = 210
 const CARD_HEIGHT_MM = 99

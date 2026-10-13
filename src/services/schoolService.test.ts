@@ -16,6 +16,7 @@ vi.mock('@/lib/offlineDb', () => ({
   enqueueOperation: vi.fn(),
   getSnapshot: vi.fn(async () => null),
   listPendingOperations: vi.fn(async () => []),
+  removePendingOperationFor: vi.fn(async () => false),
   setSnapshot: vi.fn(async () => undefined),
 }))
 

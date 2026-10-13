@@ -40,6 +40,10 @@ Ejecuta en **Supabase > SQL Editor**, en este orden, los scripts de `supabase/`:
 | `phase8_realtime_access.sql` | Modo PDA/DNI, salidas, `access_events`, tardanza automática |
 | `phase8_global_realtime.sql` | Habilita Realtime en las tablas operativas |
 | `phase9_admin_roster.sql` | `is_admin()` y permisos de escritura del padrón solo para ADMIN |
+| `phase10_student_status.sql` | Inhabilitar (abandono, suspensión…) y eliminar alumnos |
+| `phase11_whatsapp_templates.sql` | Plantillas de WhatsApp editables por el admin, compartidas con todos |
+| `phase12_attendance_cleanup.sql` | Borrar una marca borra su notificación automática de tardanza y sus alertas; limpia rastros previos (ejecutar primero la vista previa) |
+| `phase13_alert_cleanup.sql` | Quita alertas de reincidencia que dejaron de cumplirse (ejecutar primero la vista previa) |
 
 > **Pendiente:** varias tablas y funciones RPC que usa la app (`alerts`, `notifications`, `audit_logs`, `attendance_closures`, `pension_payments`, `historical_import_*`, `student_guardians`, `get_student_case_file`, etc.) existen en la base de producción pero no están versionadas aquí. Para poder reconstruir la base desde cero, exporta el esquema con `supabase db dump --schema-only > supabase/schema.sql`.
 

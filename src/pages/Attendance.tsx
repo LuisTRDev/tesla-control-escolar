@@ -1,70 +1,77 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, useCallback, useEffect, useMemo, useState } from 'react'
 import { reportError } from '@/lib/security'
 import { useToast } from '@/lib/toast'
-import { AnimatePresence, motion } from 'framer-motion'
-import { resetTour } from '@/components/OnboardingTour'
-import Cobranza from '@/components/Cobranza'
-import RosterManager from '@/components/RosterManager'
+import { MotionConfig } from 'framer-motion'
 import { isAdminRole } from '@/services/rosterService'
 import {
-  Ban, Check, ChevronDown, ClipboardCheck, Clock3, Download, Edit3, FileText,
-  Menu, Monitor, Moon, RotateCcw, Search, Settings2, Shirt, Sun, TriangleAlert, Volume2, X, BookOpen, MessageCircle, Send, Bell, CalendarCheck2, FolderOpen, LogOut, Users,
+  Ban, Bell, CalendarCheck2, ChevronDown, Clock3, Menu, MessageCircle, Monitor, Search, Settings2, Shirt, Users,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { Card } from '@/components/ui/Card'
-import Dashboard from '@/components/Dashboard'
+import { Deferred } from '@/components/ui/Deferred'
+import { LiveClock } from '@/components/ui/LiveClock'
 import Sidebar from '@/components/Sidebar'
-import AdvancedReports from '@/components/AdvancedReports'
 import AlertCenter from '@/components/AlertCenter'
 import DailySummary from '@/components/DailySummary'
 import PdaMode from '@/components/PdaMode'
-import StudentCaseFile from '@/components/StudentCaseFile'
-import AuditLog from '@/components/AuditLog'
 import QuickMode from '@/components/QuickMode'
-import BackupCenter from '@/components/BackupCenter'
-import HistoricalImport from '@/components/HistoricalImport'
-import LiveTvPanel from '@/components/LiveTvPanel'
 import SyncStatus from '@/components/SyncStatus'
+import BulkMarkDialog from '@/components/BulkMarkDialog'
+import MultiNotificationModal from '@/components/attendance/MultiNotificationModal'
+import NotificationPreviewModal from '@/components/attendance/NotificationPreviewModal'
+import PresentationDialog from '@/components/attendance/PresentationDialog'
+import SettingsPanel from '@/components/attendance/SettingsPanel'
+import StudentHistoryModal from '@/components/attendance/StudentHistoryModal'
+import WhatsAppDialog from '@/components/attendance/WhatsAppDialog'
+import AttendanceEditDialog from '@/components/attendance/AttendanceEditDialog'
+import StudentAttendanceCard from '@/components/attendance/StudentAttendanceCard'
+import type { WhatsAppQueueItem } from '@/components/WhatsAppQueue'
 import { useNetworkSync } from '@/hooks/useNetworkSync'
 import { useSchoolRealtime } from '@/hooks/useSchoolRealtime'
 import { usePwaInstall } from '@/hooks/usePwaInstall'
 import { Input } from '@/components/ui/Input'
-import {
-  MAX_NOTIFICATIONS_PER_PAGE,
-  downloadMultiNotificationPdf,
-  downloadMultiNotificationWord,
-  downloadMultiNotificationImage,
-  downloadNotificationPdf,
-  downloadNotificationWord,
-  downloadNotificationImage,
-  type NotificationPrintData,
-} from '@/lib/notification'
-import { getCurrentTime, getPreferences, getTodayKey, resetPreferences, savePreferences, type UserPreferences } from '@/lib/storage'
+import { MAX_NOTIFICATIONS_PER_PAGE, type NotificationPrintData } from '@/lib/notificationTypes'
+import { emptyPresentationDraft, getPresentationViolationLabels, getViolationCount, type PresentationDraft } from '@/lib/presentation'
+import { playFeedback, type FeedbackKind } from '@/lib/feedback'
+import { matchesQuery, studentMatches } from '@/lib/search'
+import { getCurrentTime, getPreferences, getTodayKey, savePreferences, type UserPreferences } from '@/lib/storage'
 import { monthRangeKeys } from '@/lib/dates'
 import { inactiveLabel, isActiveStudent, isInactive } from '@/lib/studentStatus'
 import {
-  deleteAttendanceForDate, deletePresentationForDate, getAttendanceRange, getEntryLimit, getPresentationRange, getStudents,
+  deleteAttendanceForDate, deleteAttendanceRecord, deletePresentationForDate, getAttendanceRange, getEntryLimit, getPresentationRange, getStudents,
   registerAttendance, registerBulkAttendance, registerExitAttendance, saveEntryLimit, savePresentation as savePresentationRemote,
   getToleranceSettings, saveToleranceSettings, type ToleranceSettings,  updateAttendanceEntryTime,
 } from '@/services/schoolService'
 import {
   ensureNotificationForLateAttendance,
   ensureNotificationForPresentation,
-  getNotificationLabel,
   getNotifications,
 } from '@/services/notificationService'
 import {
   buildWhatsAppMessage,
-  getWhatsAppTypeLabel,
   isValidPeruWhatsApp,
   sendWhatsApp,
   type WhatsAppMessageType,
+  type WhatsAppTemplates,
 } from '@/services/communicationService'
+import { getWhatsAppTemplates, saveWhatsAppTemplates } from '@/services/whatsappTemplateService'
 import type {
   AttendanceFilter, AttendanceRecord, Classroom, NotificationRecord, PresentationFilter,
   PresentationRecord, PresentationStatus, Student,
 } from '@/types'
+
+// Módulos pesados o de uso ocasional: se descargan recién al abrirlos.
+const AdvancedReports = lazy(() => import('@/components/AdvancedReports'))
+const AuditLog = lazy(() => import('@/components/AuditLog'))
+const BackupCenter = lazy(() => import('@/components/BackupCenter'))
+const Cobranza = lazy(() => import('@/components/Cobranza'))
+const Dashboard = lazy(() => import('@/components/Dashboard'))
+const HistoricalImport = lazy(() => import('@/components/HistoricalImport'))
+const LiveTvPanel = lazy(() => import('@/components/LiveTvPanel'))
+const RosterManager = lazy(() => import('@/components/RosterManager'))
+const StudentCaseFile = lazy(() => import('@/components/StudentCaseFile'))
+const WhatsAppQueue = lazy(() => import('@/components/WhatsAppQueue'))
 
 type Props = {
   userName: string
@@ -82,11 +89,10 @@ const presentationFilters: Array<{ id: PresentationFilter; label: string }> = [
   { id: 'ALL', label: 'Todos' }, { id: 'COMPLIANT', label: 'Conforme' }, { id: 'NON_COMPLIANT', label: 'Con incumplimiento' }, { id: 'PENDING', label: 'Sin revisar' },
 ]
 
-type PresentationDraft = { status: PresentationStatus | null; hairstyleViolation: boolean; uniformUsageViolation: boolean; nonInstitutionalGarment: boolean; lateEntryViolation: boolean; inappropriateConductViolation: boolean; observation: string }
-const emptyPresentationDraft: PresentationDraft = { status: null, hairstyleViolation: false, uniformUsageViolation: false, nonInstitutionalGarment: false, lateEntryViolation: false, inappropriateConductViolation: false, observation: '' }
-function getViolationCount(record?: PresentationRecord) {
-  if (!record || record.status !== 'NON_COMPLIANT') return 0
-  return [record.hairstyleViolation, record.uniformUsageViolation, record.nonInstitutionalGarment, record.lateEntryViolation, record.inappropriateConductViolation].filter(Boolean).length
+/** La notificación de tardanza que generó esa marca (por id, o por alumno+fecha si la marca era offline). */
+function isLateNotificationOf(item: NotificationRecord, rec: AttendanceRecord) {
+  if (rec.id && item.attendanceId === rec.id) return true
+  return item.notificationType === 'LATE_ENTRY' && item.studentId === rec.studentId && item.date === rec.date
 }
 
 export default function Attendance({ userName, userRole, classrooms, classroom, onClassroomChange, onLogout }: Props) {
@@ -138,6 +144,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [editingAttendanceTime, setEditingAttendanceTime] = useState('')
   const [savingAttendanceEdit, setSavingAttendanceEdit] = useState(false)
   const [preferences, setPreferences] = useState<UserPreferences>(() => getPreferences())
+  const [whatsAppQueueOpen, setWhatsAppQueueOpen] = useState(false)
+  const [waTemplates, setWaTemplates] = useState<WhatsAppTemplates>({})
+  const [waTemplatesShared, setWaTemplatesShared] = useState(true)
   const today = getTodayKey()
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
   const darkMode = preferences.theme === 'dark' || (preferences.theme === 'system' && systemDark)
@@ -236,45 +245,65 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   }, [presentationRecords])
 
   useEffect(() => { void reloadData(true) }, [reloadData])
+  useEffect(() => {
+    void getWhatsAppTemplates().then((result) => { setWaTemplates(result.templates); setWaTemplatesShared(result.shared) })
+  }, [])
+  // Modo bajo consumo: sin animaciones, transiciones ni desenfoques (ver index.css).
+  useEffect(() => { document.documentElement.classList.toggle('low-power', preferences.lowPowerMode) }, [preferences.lowPowerMode])
   useEffect(() => { document.documentElement.classList.toggle('dark', darkMode); return () => document.documentElement.classList.remove('dark') }, [darkMode])
   useEffect(() => { const media=window.matchMedia('(prefers-color-scheme: dark)'); const update=(e:MediaQueryListEvent)=>setSystemDark(e.matches); media.addEventListener('change',update); return()=>media.removeEventListener('change',update) }, [])
-  useEffect(() => { const timer=window.setInterval(()=>setNow(new Date()),1000); return()=>window.clearInterval(timer) }, [])
+  // Solo fecha y Dashboard dependen de now: basta refrescar cada 30 s (el reloj con segundos es LiveClock).
+  useEffect(() => { const timer=window.setInterval(()=>setNow(new Date()),30000); return()=>window.clearInterval(timer) }, [])
 
-  const formattedClock = now.toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})
   const formattedDate = now.toLocaleDateString('es-PE',{weekday:'short',day:'2-digit',month:'short',year:'numeric'})
   function updatePreferences(next: UserPreferences) { setPreferences(savePreferences(next)) }
-  function playConfirmation() {
-    if (!preferences.soundEnabled) return
-    try { const AudioCtx=window.AudioContext || (window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext; if(!AudioCtx)return; const ctx=new AudioCtx(); const osc=ctx.createOscillator(); const gain=ctx.createGain(); osc.frequency.value=720; gain.gain.setValueAtTime(.05,ctx.currentTime); gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.12); osc.connect(gain); gain.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime+.12) } catch { /* El sonido es opcional: se ignora si el navegador lo bloquea. */ }
+  function feedback(kind: FeedbackKind) {
+    playFeedback(kind, { sound: preferences.soundEnabled, vibration: preferences.vibrationEnabled })
   }
+  function playConfirmation() { feedback('ok') }
 
   // Los inhabilitados (abandono, suspensión...) no cuentan en asistencia; se listan aparte en gris.
   const activeStudents = useMemo(() => students.filter(isActiveStudent), [students])
   const classroomStudents = useMemo(() => activeStudents.filter((student)=>student.classroomId===classroom.id), [activeStudents,classroom.id])
   const inactiveClassroomStudents = useMemo(() => students.filter((student)=>student.classroomId===classroom.id&&isInactive(student)), [students,classroom.id])
   const visibleInactiveStudents = filter==='ALL'&&presentationFilter==='ALL'
-    ? inactiveClassroomStudents.filter((student)=>`${student.firstName} ${student.lastName}`.toLowerCase().includes(query.toLowerCase()))
+    ? inactiveClassroomStudents.filter((student)=>studentMatches(student, query))
     : []
-  const todayRecords = records.filter((r)=>r.date===today)
-  const todayPresentationRecords = presentationRecords.filter((r)=>r.date===today)
-  const classroomRecords=todayRecords.filter((r)=>classroomStudents.some((s)=>s.id===r.studentId))
-  const classroomPresentationRecords=todayPresentationRecords.filter((r)=>classroomStudents.some((s)=>s.id===r.studentId))
+  const todayRecords = useMemo(() => records.filter((r)=>r.date===today), [records, today])
+  const todayPresentationRecords = useMemo(() => presentationRecords.filter((r)=>r.date===today), [presentationRecords, today])
+  // Índices por alumno: cada búsqueda pasa de recorrer todos los registros a una consulta directa.
+  const recordByStudent = useMemo(() => new Map(todayRecords.map((r) => [r.studentId, r])), [todayRecords])
+  const presentationByStudent = useMemo(() => new Map(todayPresentationRecords.map((r) => [r.studentId, r])), [todayPresentationRecords])
+  const notificationsByStudent = useMemo(() => {
+    const map = new Map<string, NotificationRecord[]>()
+    for (const item of notifications) {
+      const list = map.get(item.studentId)
+      if (list) list.push(item); else map.set(item.studentId, [item])
+    }
+    for (const list of map.values()) list.sort((a, b) => b.notificationNumber - a.notificationNumber || b.generatedAt.localeCompare(a.generatedAt))
+    return map
+  }, [notifications])
+  const classroomMap = useMemo(() => new Map(classrooms.map((item) => [item.id, item])), [classrooms])
+  const studentMap = useMemo(() => new Map(students.map((item) => [item.id, item])), [students])
+
+  const classroomRecords = classroomStudents.map((s) => recordByStudent.get(s.id)).filter((r): r is AttendanceRecord => Boolean(r))
+  const classroomPresentationRecords = classroomStudents.map((s) => presentationByStudent.get(s.id)).filter((r): r is PresentationRecord => Boolean(r))
   const onTimeCount=classroomRecords.filter((r)=>r.status==='ON_TIME').length
   const lateCount=classroomRecords.filter((r)=>r.status==='LATE').length
   const pendingCount=classroomStudents.length-classroomRecords.length
   const compliantCount=classroomPresentationRecords.filter((r)=>r.status==='COMPLIANT').length
   const nonCompliantCount=classroomPresentationRecords.filter((r)=>r.status==='NON_COMPLIANT').length
   const presentationPendingCount=classroomStudents.length-classroomPresentationRecords.length
-  const filtered=classroomStudents.filter((student)=>{
-    if(!`${student.firstName} ${student.lastName}`.toLowerCase().includes(query.toLowerCase())) return false
-    const attendance=todayRecords.find((i)=>i.studentId===student.id)
+  const filtered = useMemo(() => classroomStudents.filter((student)=>{
+    if(!studentMatches(student, query)) return false
+    const attendance=recordByStudent.get(student.id)
     if(filter==='ON_TIME'&&attendance?.status!=='ON_TIME')return false; if(filter==='LATE'&&attendance?.status!=='LATE')return false; if(filter==='PENDING'&&attendance)return false
-    const presentation=todayPresentationRecords.find((i)=>i.studentId===student.id)
+    const presentation=presentationByStudent.get(student.id)
     if(presentationFilter==='COMPLIANT'&&presentation?.status!=='COMPLIANT')return false; if(presentationFilter==='NON_COMPLIANT'&&presentation?.status!=='NON_COMPLIANT')return false; if(presentationFilter==='PENDING'&&presentation)return false
     return true
-  })
+  }), [classroomStudents, query, recordByStudent, presentationByStudent, filter, presentationFilter])
 
-  const unmarkedToday = classroomStudents.filter((student) => !todayRecords.some((r) => r.studentId === student.id))
+  const unmarkedToday = classroomStudents.filter((student) => !recordByStudent.has(student.id))
 
   function openBulkAttendance() {
     // Todos pre-seleccionados por defecto: el auxiliar desmarca solo
@@ -282,15 +311,6 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     // por uno a quién SÍ marcar.
     setBulkAttendanceSelected(new Set(unmarkedToday.map((s) => s.id)))
     setBulkAttendanceOpen(true)
-  }
-
-  function toggleBulkStudent(studentId: string) {
-    setBulkAttendanceSelected((curr) => {
-      const next = new Set(curr)
-      if (next.has(studentId)) next.delete(studentId)
-      else next.add(studentId)
-      return next
-    })
   }
 
   async function bulkMarkStudents(ids: string[]): Promise<void> {
@@ -318,25 +338,45 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   }
 
   async function mark(studentId:string) {
-    const existing = todayRecords.find((item) => item.studentId === studentId)
-    if (existing) return
-    const student = students.find((s) => s.id === studentId)
+    if (recordByStudent.has(studentId)) return
+    const student = studentMap.get(studentId)
     if (student && isInactive(student)) {
+      feedback('error')
       toast.error(`${student.firstName} ${student.lastName} está inhabilitado`, inactiveLabel(student))
       return
     }
     try {
       const rec=await registerAttendance(studentId,entryLimit,today,getCurrentTime(),toleranceSettings)
       setRecords((curr)=>[...curr.filter((r)=>!(r.studentId===studentId&&r.date===today)),rec])
-      playConfirmation()
+      feedback(rec.status === 'LATE' ? 'late' : 'ok')
       const name = student ? `${student.firstName} ${student.lastName}` : 'Alumno'
-      if (rec.status === 'LATE') toast.warning(`${name} — Tardanza`, `Hora registrada: ${rec.time}`)
-      else toast.success(`${name} — A tiempo`, `Hora registrada: ${rec.time}`)
-    } catch(error){ reportError('Attendance', error); setDataError(error instanceof Error?error.message:'No se pudo registrar la entrada.'); toast.error('No se pudo registrar la entrada', error instanceof Error?error.message:undefined) }
+      // Sin diálogo de confirmación: un toque marca y el aviso permite deshacer durante 5 s.
+      toast.show({
+        title: `${name} — ${rec.status === 'LATE' ? 'Tardanza' : 'A tiempo'}`,
+        description: `Hora registrada: ${rec.time}`,
+        variant: rec.status === 'LATE' ? 'warning' : 'success',
+        duration: 5000,
+        action: { label: 'Deshacer', onClick: () => void undoMark(rec, name) },
+      })
+    } catch(error){ feedback('error'); reportError('Attendance', error); setDataError(error instanceof Error?error.message:'No se pudo registrar la entrada.'); toast.error('No se pudo registrar la entrada', error instanceof Error?error.message:undefined) }
+  }
+
+  async function undoMark(rec: AttendanceRecord, name: string) {
+    try {
+      await deleteAttendanceRecord(rec)
+      setRecords((curr) => curr.filter((r) => !(r.studentId === rec.studentId && r.date === rec.date)))
+      setNotifications((curr) => curr.filter((item) => !isLateNotificationOf(item, rec)))
+      feedback('undo')
+      toast.info(`Marca deshecha: ${name}`)
+    } catch (error) {
+      feedback('error')
+      reportError('Attendance', error)
+      toast.error('No se pudo deshacer la marca', error instanceof Error ? error.message : undefined)
+    }
   }
 
   async function markExit(studentId: string) {
-    const record = todayRecords.find((r) => r.studentId === studentId)
+    const record = recordByStudent.get(studentId)
     if (!record) { setDataError('El alumno no tiene entrada registrada hoy, no se puede marcar salida.'); return }
     if (record.exitTime) return
     try {
@@ -344,6 +384,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       setRecords((curr) => [...curr.filter((r) => !(r.studentId === studentId && r.date === today)), updated])
       playConfirmation()
     } catch (error) {
+      feedback('error')
       reportError('Attendance', error)
       setDataError(error instanceof Error ? error.message : 'No se pudo registrar la salida.')
     }
@@ -397,6 +438,31 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     }
   }
 
+  /** Para marcas hechas por error (alumno equivocado o que en realidad faltó). */
+  async function deleteEditingAttendance() {
+    if (!editingAttendance) return
+    const student = studentMap.get(editingAttendance.studentId)
+    const name = student ? `${student.firstName} ${student.lastName}` : 'este alumno'
+    if (!confirm(`¿Borrar la marca de ingreso de ${name}? Quedará como pendiente y se eliminará su notificación de tardanza si la tiene.`)) return
+    try {
+      setSavingAttendanceEdit(true)
+      setDataError('')
+      const target = editingAttendance
+      await deleteAttendanceRecord(target)
+      setRecords((curr) => curr.filter((item) => !(item.studentId === target.studentId && item.date === target.date)))
+      setNotifications((curr) => curr.filter((item) => !isLateNotificationOf(item, target)))
+      setEditingAttendance(null)
+      setEditingAttendanceTime('')
+      feedback('undo')
+      toast.info(`Marca borrada: ${name}`)
+    } catch (error) {
+      reportError('Attendance', error)
+      setDataError(error instanceof Error ? error.message : 'No se pudo borrar la marca.')
+    } finally {
+      setSavingAttendanceEdit(false)
+    }
+  }
+
   async function resetToday() {
     if(!confirm('¿Borrar los registros de ingreso y presentación de hoy?')) return
     try {
@@ -419,8 +485,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     catch(error){ reportError('Attendance', error); setDataError(error instanceof Error?error.message:'No se pudo actualizar la tolerancia.') }
   }
   function openPresentation(student:Student){
-    const existing=todayPresentationRecords.find((i)=>i.studentId===student.id)
-    const attendance=todayRecords.find((i)=>i.studentId===student.id)
+    const existing=presentationByStudent.get(student.id)
+    const attendance=recordByStudent.get(student.id)
     setPresentationStudent(student)
     setPresentationDraft(existing ? {
       status: existing.status,
@@ -551,15 +617,15 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   }
 
   function studentNotificationStats(studentId: string) {
-    const history = notifications
-      .filter((item) => item.studentId === studentId)
-      .sort((a, b) => b.notificationNumber - a.notificationNumber || b.generatedAt.localeCompare(a.generatedAt))
+    const history = notificationsByStudent.get(studentId) ?? []
     return { total: history.length, latest: history[0], history }
   }
 
   async function ensureTodayNotification(student: Student): Promise<NotificationRecord | null> {
-    const presentation = todayPresentationRecords.find((item) => item.studentId === student.id && item.status === 'NON_COMPLIANT')
-    const attendance = todayRecords.find((item) => item.studentId === student.id && item.status === 'LATE')
+    const todayPresentation = presentationByStudent.get(student.id)
+    const todayAttendance = recordByStudent.get(student.id)
+    const presentation = todayPresentation?.status === 'NON_COMPLIANT' ? todayPresentation : undefined
+    const attendance = todayAttendance?.status === 'LATE' ? todayAttendance : undefined
 
     if (presentation) {
       const notification = await ensureNotificationForPresentation(presentation)
@@ -590,14 +656,13 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     const presentation = presentationRecords.find((item) => item.studentId === student.id && item.date === multiNotificationDate && item.status === 'NON_COMPLIANT')
     const attendance = records.find((item) => item.studentId === student.id && item.date === multiNotificationDate && item.status === 'LATE')
     if (!presentation && !attendance) return false
-    const classroomInfo = classrooms.find((item) => item.id === student.classroomId)
-    const haystack = `${student.firstName} ${student.lastName} ${classroomInfo?.grade ?? ''} ${classroomInfo?.section ?? ''} ${classroomInfo?.level ?? ''}`.toLowerCase()
-    return haystack.includes(notificationSearch.toLowerCase())
+    const classroomInfo = classroomMap.get(student.classroomId)
+    return matchesQuery([student.firstName, student.lastName, student.dni, classroomInfo?.grade, classroomInfo?.section, classroomInfo?.level], notificationSearch)
   })
 
   const selectedNotificationData = selectedNotificationIds
     .map((studentId) => {
-      const student = students.find((item) => item.id === studentId)
+      const student = studentMap.get(studentId)
       return student ? buildNotificationData(student, multiNotificationDate) : null
     })
     .filter((item): item is NotificationPrintData => Boolean(item))
@@ -620,20 +685,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   }
 
 
-  function getPresentationViolationLabels(record?: PresentationRecord): string[] {
-    if (!record || record.status !== 'NON_COMPLIANT') return []
-    return [
-      record.hairstyleViolation ? 'Peinado no acorde con las disposiciones institucionales.' : '',
-      record.uniformUsageViolation ? 'Uso inadecuado o incompleto del uniforme.' : '',
-      record.nonInstitutionalGarment ? 'Prenda no correspondiente al uniforme institucional.' : '',
-      record.lateEntryViolation ? 'Tardanza en el ingreso.' : '',
-      record.inappropriateConductViolation ? 'Conducta inapropiada.' : '',
-    ].filter(Boolean)
-  }
-
   function getWhatsAppOptions(student: Student): Array<{ type: WhatsAppMessageType; label: string }> {
-    const attendance = todayRecords.find((item) => item.studentId === student.id)
-    const presentation = todayPresentationRecords.find((item) => item.studentId === student.id)
+    const attendance = recordByStudent.get(student.id)
+    const presentation = presentationByStudent.get(student.id)
     const recurrence = studentNotificationStats(student.id)
     const options: Array<{ type: WhatsAppMessageType; label: string }> = []
 
@@ -657,8 +711,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   }
 
   function buildStudentWhatsAppMessage(student: Student, type: WhatsAppMessageType): string {
-    const attendance = todayRecords.find((item) => item.studentId === student.id)
-    const presentation = todayPresentationRecords.find((item) => item.studentId === student.id)
+    const attendance = recordByStudent.get(student.id)
+    const presentation = presentationByStudent.get(student.id)
     const recurrence = studentNotificationStats(student.id)
 
     return buildWhatsAppMessage({
@@ -671,7 +725,35 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       time: attendance?.time,
       observation: presentation?.observation,
       violations: getPresentationViolationLabels(presentation),
-    })
+    }, waTemplates)
+  }
+
+  /** Mensajes pendientes de hoy en todo el colegio, para la cola de envío en lote. */
+  function buildWhatsAppQueueItems(): WhatsAppQueueItem[] {
+    const items: WhatsAppQueueItem[] = []
+    for (const student of activeStudents) {
+      const options = getWhatsAppOptions(student)
+      if (!options.length) continue
+      const room = classroomMap.get(student.classroomId)
+      const type = options[0].type
+      items.push({
+        key: `${student.id}:${type}`,
+        student,
+        classroomId: student.classroomId,
+        classroomLabel: room ? `${room.grade} ${room.section} · ${room.level}` : 'Sin aula',
+        type,
+        message: buildStudentWhatsAppMessage(student, type),
+        phoneValid: isValidPeruWhatsApp(student.guardianPhone),
+      })
+    }
+    return items.sort((a, b) => a.classroomLabel.localeCompare(b.classroomLabel, 'es') || a.student.lastName.localeCompare(b.student.lastName, 'es'))
+  }
+
+  async function handleSaveTemplates(next: WhatsAppTemplates) {
+    const shared = await saveWhatsAppTemplates(next)
+    setWaTemplates(next)
+    setWaTemplatesShared(shared)
+    toast.success('Plantillas de WhatsApp guardadas', shared ? 'Ya las usan todos los auxiliares.' : 'Solo en este dispositivo hasta ejecutar phase11_whatsapp_templates.sql.')
   }
 
   function openWhatsAppModal(student: Student, forcedType?: WhatsAppMessageType) {
@@ -710,6 +792,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   }
 
   return (
+    <MotionConfig reducedMotion={preferences.lowPowerMode ? 'always' : 'user'}>
     <main className={`${sizeClass} min-h-screen bg-slate-50 text-slate-950 transition-colors duration-200 dark:bg-slate-950 dark:text-slate-100`}>
       <Sidebar
         open={sidebarOpen}
@@ -728,6 +811,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         onAudit={() => { setAuditOpen(true); setDashboardOpen(false); setReportsOpen(false); setAlertsOpen(false); setDailySummaryOpen(false); setCobranzaOpen(false) }}
         onQuickMode={() => setQuickModeOpen(true)}
         onPdaMode={() => setPdaModeOpen(true)}
+        onWhatsAppQueue={() => setWhatsAppQueueOpen(true)}
         onTvPanel={() => setTvPanelOpen(true)}
         onBackups={() => setBackupOpen(true)}
         onHistoricalImport={() => setHistoricalImportOpen(true)}
@@ -768,7 +852,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 onInstall={() => void install()}
               />
               <div className="hidden text-right xl:block">
-                <p className="text-sm font-black tabular-nums">{formattedClock}</p>
+                <LiveClock className="text-sm font-black tabular-nums" />
                 <p className="text-[11px] capitalize text-slate-500 dark:text-slate-400">{formattedDate}</p>
               </div>
               <div className="hidden h-9 w-px bg-slate-200 dark:bg-slate-800 xl:block" />
@@ -795,7 +879,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
               <div className="mt-3 inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 md:hidden dark:border-slate-800 dark:bg-slate-950/70">
                 <Clock3 size={16} className="text-slate-400" />
                 <div>
-                  <p className="text-sm font-black tabular-nums">{formattedClock}</p>
+                  <LiveClock className="text-sm font-black tabular-nums" />
                   <p className="text-[11px] capitalize text-slate-500 dark:text-slate-400">{formattedDate}</p>
                 </div>
               </div>
@@ -868,6 +952,11 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
             <Button variant="outline" onClick={() => setAlertsOpen(true)}>
               <Bell className="mr-2" size={17} /> Alertas
             </Button>
+            <Tooltip content="Envía uno tras otro los avisos de WhatsApp pendientes de hoy">
+              <Button variant="outline" className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/70 dark:text-emerald-300 dark:hover:bg-emerald-950/40" onClick={() => setWhatsAppQueueOpen(true)}>
+                <MessageCircle className="mr-2" size={17} /> WhatsApp en lote
+              </Button>
+            </Tooltip>
           </div>
         </div>
 
@@ -946,122 +1035,29 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
 
         <div className="mt-5 space-y-3">
           {filtered.map((student) => {
-            const record = todayRecords.find((item) => item.studentId === student.id)
-            const presentation = todayPresentationRecords.find((item) => item.studentId === student.id)
-            const violations = getViolationCount(presentation)
-            const recurrence = studentNotificationStats(student.id)
+            const record = recordByStudent.get(student.id)
+            const presentation = presentationByStudent.get(student.id)
             const whatsAppOptions = getWhatsAppOptions(student)
-            const canOpenWhatsApp = whatsAppOptions.length > 0 && isValidPeruWhatsApp(student.guardianPhone)
-
             return (
-              <Card key={student.id} className="p-4 sm:p-5">
-                <div className="flex flex-col gap-4">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-                    <div className="flex-1">
-                      <h3 className="font-bold">{student.firstName} {student.lastName}</h3>
-                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{classroom.grade} {classroom.section} · {classroom.level}</p>
-                    </div>
-
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      {record ? (
-                        record.status === 'ON_TIME' ? (
-                          <div className="flex min-w-44 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 font-bold text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/50 dark:text-emerald-300">
-                            <Check size={18} />
-                            {record.time} · A tiempo
-                          </div>
-                        ) : (
-                          <div className="flex min-w-44 items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 font-bold text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/45 dark:text-amber-300">
-                            <TriangleAlert size={18} />
-                            {record.time} · Tardanza
-                          </div>
-                        )
-                      ) : (
-                        <Button className="w-full sm:w-auto" onClick={() => void mark(student.id)}>
-                          <Clock3 className="mr-2" size={18} />
-                          Marcar entrada
-                        </Button>
-                      )}
-                      {record && (
-                        <>
-                          <Button
-                            variant="outline"
-                            className="w-full sm:w-auto"
-                            onClick={() => openAttendanceEdit(record)}
-                            title="Corregir hora de ingreso"
-                          >
-                            <Edit3 className="mr-2" size={18} />
-                            Editar ingreso
-                          </Button>
-
-                          <Button
-                            variant="outline"
-                            className="w-full sm:w-auto"
-                            disabled={Boolean(record.exitTime)}
-                            onClick={() => void markExit(student.id)}
-                            title={record.exitTime ? `Salida registrada: ${record.exitTime}` : 'Registrar salida'}
-                          >
-                            <LogOut className="mr-2" size={18} />
-                            {record.exitTime ? `Salida ${record.exitTime}` : 'Marcar salida'}
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-3 border-t border-slate-100 pt-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {presentation?.status === 'COMPLIANT' ? (
-                        <div className="flex items-center gap-2 text-sm font-bold text-emerald-700 dark:text-emerald-300">
-                          <ClipboardCheck size={18} /> Presentación: Conforme · {presentation.checkedAt}
-                        </div>
-                      ) : presentation?.status === 'NON_COMPLIANT' ? (
-                        <div className="flex items-center gap-2 text-sm font-bold text-amber-700 dark:text-amber-300">
-                          <TriangleAlert size={18} /> Presentación: {violations} {violations === 1 ? 'incidencia' : 'incidencias'} · {presentation.checkedAt}
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
-                          <Shirt size={18} /> Presentación: Sin revisar
-                        </div>
-                      )}
-
-                      {recurrence.total > 0 && recurrence.latest && (
-                        <span className="rounded-lg bg-amber-100 px-2.5 py-1 text-xs font-black text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                          Reincidencias: {recurrence.total} · {getNotificationLabel(recurrence.latest.notificationNumber)}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-                      <Button variant="ghost" className="w-full sm:w-auto" onClick={() => setCaseFileStudent(student)}>
-                        <FolderOpen className="mr-2" size={17} /> Expediente
-                      </Button>
-                      <Button variant="ghost" className="w-full sm:w-auto" onClick={() => setHistoryStudent(student)}>
-                        <BookOpen className="mr-2" size={17} /> Historial
-                      </Button>
-                      {whatsAppOptions.length > 0 && (
-                        <Button
-                          variant="outline"
-                          className="w-full border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/70 dark:text-emerald-300 dark:hover:bg-emerald-950/40 sm:w-auto"
-                          onClick={() => openWhatsAppModal(student)}
-                          disabled={!canOpenWhatsApp}
-                          title={canOpenWhatsApp ? 'Preparar mensaje para el apoderado' : 'El alumno no tiene un celular peruano válido registrado'}
-                        >
-                          <MessageCircle className="mr-2" size={17} /> WhatsApp
-                        </Button>
-                      )}
-                      {(presentation?.status === 'NON_COMPLIANT' || record?.status === 'LATE') && (
-                        <Button variant="outline" className="w-full sm:w-auto" onClick={() => void openNotification(student)}>
-                          <FileText className="mr-2" size={17} /> Notificación
-                        </Button>
-                      )}
-                      <Button variant="outline" className="w-full sm:w-auto" onClick={() => openPresentation(student)}>
-                        {presentation ? <Edit3 className="mr-2" size={17} /> : <ClipboardCheck className="mr-2" size={17} />}
-                        {presentation ? 'Editar control' : 'Revisar normas'}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </Card>
+              <StudentAttendanceCard
+                key={student.id}
+                student={student}
+                classroom={classroom}
+                record={record}
+                presentation={presentation}
+                violations={getViolationCount(presentation)}
+                recurrence={studentNotificationStats(student.id)}
+                whatsAppOptions={whatsAppOptions}
+                canOpenWhatsApp={whatsAppOptions.length > 0 && isValidPeruWhatsApp(student.guardianPhone)}
+                mark={mark}
+                markExit={markExit}
+                openAttendanceEdit={openAttendanceEdit}
+                openPresentation={openPresentation}
+                openNotification={openNotification}
+                openWhatsAppModal={openWhatsAppModal}
+                setCaseFileStudent={setCaseFileStudent}
+                setHistoryStudent={setHistoryStudent}
+              />
             )
           })}
 
@@ -1086,154 +1082,28 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         </section>
       </div>
 
-      <AnimatePresence>{bulkAttendanceOpen && (
-        <motion.div
-          className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/60 p-4 backdrop-blur-sm"
-          onMouseDown={() => { if (!bulkAttendanceSaving) setBulkAttendanceOpen(false) }}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.18 }}
-        >
-          <motion.div
-            className="w-full max-w-lg"
-            onMouseDown={(e) => e.stopPropagation()}
-            initial={{ scale: 0.94, opacity: 0, y: 12 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.96, opacity: 0, y: 8 }}
-            transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-          >
-            <Card className="flex max-h-[85vh] flex-col p-6">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-widest text-brand-navy dark:text-brand-gold">Marcado masivo</p>
-                  <h3 className="mt-1 text-xl font-black">Confirmar alumnos a marcar a tiempo</h3>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Se guardará <b>{entryLimit}</b> (hora límite) como hora de ingreso. Desmarca a quien sepas que <b>faltó</b> hoy — el resto quedará con asistencia normal, igual que si se hubiera marcado uno por uno.
-                  </p>
-                </div>
-                <Button variant="ghost" onClick={() => setBulkAttendanceOpen(false)} disabled={bulkAttendanceSaving}><X size={20} /></Button>
-              </div>
+      <BulkMarkDialog
+        open={bulkAttendanceOpen}
+        onClose={() => setBulkAttendanceOpen(false)}
+        students={unmarkedToday}
+        selected={bulkAttendanceSelected}
+        onSelectedChange={setBulkAttendanceSelected}
+        saving={bulkAttendanceSaving}
+        onConfirm={() => void confirmBulkAttendance()}
+        description={<>Se guardará <b>{entryLimit}</b> (hora límite) como hora de ingreso. Desmarca a quien sepas que <b>faltó</b> hoy — el resto quedará con asistencia normal, igual que si se hubiera marcado uno por uno.</>}
+      />
 
-              <div className="mt-4 flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400">
-                <span>{bulkAttendanceSelected.size} de {unmarkedToday.length} seleccionados</span>
-                <div className="flex gap-3">
-                  <button type="button" className="text-brand-navy hover:underline dark:text-brand-gold" onClick={() => setBulkAttendanceSelected(new Set(unmarkedToday.map((s) => s.id)))}>Marcar todos</button>
-                  <button type="button" className="text-brand-navy hover:underline dark:text-brand-gold" onClick={() => setBulkAttendanceSelected(new Set())}>Ninguno</button>
-                </div>
-              </div>
-
-              <div className="mt-3 flex-1 space-y-1.5 overflow-y-auto pr-1">
-                {unmarkedToday.length === 0 ? (
-                  <p className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700">Todos los alumnos del aula ya tienen asistencia registrada hoy.</p>
-                ) : unmarkedToday.map((student) => {
-                  const checked = bulkAttendanceSelected.has(student.id)
-                  return (
-                    <button
-                      key={student.id}
-                      type="button"
-                      onClick={() => toggleBulkStudent(student.id)}
-                      className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors ${checked ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-950/20' : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'}`}
-                    >
-                      <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border-2 ${checked ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300 dark:border-slate-600'}`}>
-                        {checked && <Check size={13} className="text-white" />}
-                      </span>
-                      <span className="font-semibold">{student.firstName} {student.lastName}</span>
-                    </button>
-                  )
-                })}
-              </div>
-
-              <div className="mt-5 flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setBulkAttendanceOpen(false)} disabled={bulkAttendanceSaving}>Cancelar</Button>
-                <Button onClick={() => void confirmBulkAttendance()} disabled={bulkAttendanceSaving || bulkAttendanceSelected.size === 0}>
-                  {bulkAttendanceSaving ? 'Guardando...' : `Marcar ${bulkAttendanceSelected.size} a tiempo`}
-                </Button>
-              </div>
-            </Card>
-          </motion.div>
-        </motion.div>
-      )}</AnimatePresence>
-
-      <AnimatePresence>{editingAttendance && (
-        <motion.div
-          className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/65 p-4 backdrop-blur-sm"
-          onMouseDown={() => {
-            if (!savingAttendanceEdit) setEditingAttendance(null)
-          }}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.18 }}
-        >
-          <motion.div
-            initial={{ scale: 0.94, opacity: 0, y: 12 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.96, opacity: 0, y: 8 }}
-            transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-          >
-          <Card
-            className="w-full max-w-md p-6"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-black uppercase tracking-widest text-brand-navy dark:text-brand-gold">
-                  Corrección de asistencia
-                </p>
-                <h3 className="mt-1 text-xl font-black">Editar hora de ingreso</h3>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  Corrige la hora registrada para este alumno.
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                disabled={savingAttendanceEdit}
-                onClick={() => setEditingAttendance(null)}
-                aria-label="Cerrar"
-              >
-                <X size={20} />
-              </Button>
-            </div>
-
-            <div className="mt-6">
-              <p className="text-sm font-bold">
-                Alumno: {editingAttendance.studentId}
-              </p>
-              <label className="mt-4 block text-sm font-bold">
-                Hora de ingreso
-                <Input
-                  className="mt-2 h-12 text-lg font-bold"
-                  type="time"
-                  value={editingAttendanceTime}
-                  onChange={(event) => setEditingAttendanceTime(event.target.value)}
-                  disabled={savingAttendanceEdit}
-                />
-              </label>
-              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                Hora actual: {editingAttendance.time || '—'} · Límite: {entryLimit}
-              </p>
-            </div>
-
-            <div className="mt-6 flex justify-end gap-2">
-              <Button
-                variant="outline"
-                disabled={savingAttendanceEdit}
-                onClick={() => setEditingAttendance(null)}
-              >
-                Cancelar
-              </Button>
-              <Button
-                disabled={savingAttendanceEdit || !editingAttendanceTime}
-                onClick={() => void saveAttendanceEdit()}
-              >
-                {savingAttendanceEdit ? 'Guardando...' : 'Guardar corrección'}
-              </Button>
-            </div>
-          </Card>
-          </motion.div>
-        </motion.div>
-      )}</AnimatePresence>
+      <AttendanceEditDialog
+        record={editingAttendance}
+        student={editingAttendance ? studentMap.get(editingAttendance.studentId) : undefined}
+        time={editingAttendanceTime}
+        onTimeChange={setEditingAttendanceTime}
+        entryLimit={entryLimit}
+        saving={savingAttendanceEdit}
+        onClose={() => setEditingAttendance(null)}
+        onSave={() => void saveAttendanceEdit()}
+        onDelete={() => void deleteEditingAttendance()}
+      />
 
       <QuickMode
         open={quickModeOpen}
@@ -1259,458 +1129,69 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       onExit={markExit}
       />
 
-      <BackupCenter open={backupOpen} onClose={() => setBackupOpen(false)} online={syncState.online} />
+      <Deferred when={backupOpen}><BackupCenter open={backupOpen} onClose={() => setBackupOpen(false)} online={syncState.online} /></Deferred>
 
-      <AnimatePresence>{presentationStudent && (
-        <motion.div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-[1px] dark:bg-black/65" onMouseDown={() => setPresentationStudent(null)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
-          <motion.section
-            className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 text-slate-950 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 sm:p-6"
-            onMouseDown={(event) => event.stopPropagation()}
-            initial={{ scale: 0.96, opacity: 0, y: 12 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.97, opacity: 0, y: 8 }}
-            transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Control de reglamento interno</p>
-                <h2 className="mt-1 text-xl font-black">{presentationStudent.firstName} {presentationStudent.lastName}</h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{classroom.grade} {classroom.section} · {classroom.level}</p>
-              </div>
-              <Button variant="ghost" onClick={() => setPresentationStudent(null)} aria-label="Cerrar"><X size={20} /></Button>
-            </div>
+      <PresentationDialog
+        presentationStudent={presentationStudent}
+        setPresentationStudent={setPresentationStudent}
+        presentationDraft={presentationDraft}
+        setPresentationDraft={setPresentationDraft}
+        setPresentationMode={setPresentationMode}
+        savePresentation={savePresentation}
+        presentationSaveDisabled={presentationSaveDisabled}
+        todayRecords={todayRecords}
+        classroom={classroom}
+      />
 
-            <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => setPresentationMode('COMPLIANT')}
-                className={`rounded-2xl border p-4 text-left transition ${presentationDraft.status === 'COMPLIANT'
-                  ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100 dark:border-emerald-500 dark:bg-emerald-950/40 dark:ring-emerald-950'
-                  : 'border-slate-200 bg-slate-50 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950/60 dark:hover:border-slate-600'}`}
-              >
-                <span className="flex items-center gap-2 font-black text-emerald-700 dark:text-emerald-300"><Check size={19} /> Todo conforme</span>
-                <span className="mt-1 block text-sm text-slate-500 dark:text-slate-400">El alumno fue revisado y no presenta incidencias.</span>
-              </button>
+      <NotificationPreviewModal
+        notificationPreviewData={notificationPreviewData}
+        setNotificationPreviewData={setNotificationPreviewData}
+        today={today}
+      />
 
-              <button
-                type="button"
-                onClick={() => setPresentationMode('NON_COMPLIANT')}
-                className={`rounded-2xl border p-4 text-left transition ${presentationDraft.status === 'NON_COMPLIANT'
-                  ? 'border-amber-500 bg-amber-50 ring-2 ring-amber-100 dark:border-amber-500 dark:bg-amber-950/35 dark:ring-amber-950'
-                  : 'border-slate-200 bg-slate-50 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950/60 dark:hover:border-slate-600'}`}
-              >
-                <span className="flex items-center gap-2 font-black text-amber-700 dark:text-amber-300"><TriangleAlert size={19} /> Registrar incumplimiento</span>
-                <span className="mt-1 block text-sm text-slate-500 dark:text-slate-400">Selecciona una o varias disposiciones incumplidas.</span>
-              </button>
-            </div>
+      <MultiNotificationModal
+        multiNotificationOpen={multiNotificationOpen}
+        setMultiNotificationOpen={setMultiNotificationOpen}
+        records={records}
+        presentationRecords={presentationRecords}
+        classrooms={classrooms}
+        today={today}
+        selectedNotificationIds={selectedNotificationIds}
+        setSelectedNotificationIds={setSelectedNotificationIds}
+        notificationSearch={notificationSearch}
+        setNotificationSearch={setNotificationSearch}
+        multiNotificationDate={multiNotificationDate}
+        setMultiNotificationDate={setMultiNotificationDate}
+        getNotificationNumber={getNotificationNumber}
+        notificationCandidates={notificationCandidates}
+        selectedNotificationData={selectedNotificationData}
+        toggleNotificationStudent={toggleNotificationStudent}
+      />
 
-            {presentationDraft.status === 'NON_COMPLIANT' && (() => {
-              const attendanceToday = todayRecords.find((r) => r.studentId === presentationStudent.id)
-              const lateAllowed = attendanceToday?.status === 'LATE'
-              return (
-              <div className="mt-6 space-y-3">
-                <p className="text-sm font-black">Incumplimientos institucionales</p>
-                {[
-                  ['hairstyleViolation', '1. Peinado no acorde con las disposiciones institucionales.'],
-                  ['uniformUsageViolation', '2. Uso inadecuado o incompleto del uniforme.'],
-                  ['nonInstitutionalGarment', '3. Prenda no correspondiente al uniforme institucional.'],
-                  ['lateEntryViolation', '4. Tardanza en el ingreso.'],
-                  ['inappropriateConductViolation', '5. Conducta inapropiada.'],
-                ].map(([key, label]) => {
-                  const disabled = key === 'lateEntryViolation' && !lateAllowed && !presentationDraft.lateEntryViolation
-                  return (
-                  <label key={key} className={`flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 transition-colors hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950/60 dark:hover:border-slate-600 ${disabled ? 'cursor-not-allowed opacity-50 hover:border-slate-200 dark:hover:border-slate-700' : ''}`}>
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 h-5 w-5 shrink-0 accent-slate-950 dark:accent-slate-100"
-                      checked={Boolean(presentationDraft[key as keyof PresentationDraft])}
-                      disabled={disabled}
-                      onChange={(event) => setPresentationDraft((current) => ({ ...current, [key]: event.target.checked }))}
-                    />
-                    <span className="text-sm font-semibold leading-6">
-                      {label}
-                      {disabled && <span className="mt-1 block text-xs font-normal text-slate-400">No disponible: el alumno no tiene una tardanza de ingreso registrada hoy.</span>}
-                    </span>
-                  </label>
-                  )
-                })}
-
-                <label className="block rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/50">
-                  <span className="text-sm font-black">Descripción de la observación</span>
-                  <textarea
-                    value={presentationDraft.observation}
-                    onChange={(event) => setPresentationDraft((current) => ({ ...current, observation: event.target.value }))}
-                    placeholder="Detalle adicional de la situación observada..."
-                    rows={3}
-                    className="mt-2 w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-slate-500 focus:ring-2 focus:ring-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-slate-800"
-                  />
-                </label>
-              </div>
-              )
-            })()}
-
-            <div className="mt-7 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button variant="outline" onClick={() => setPresentationStudent(null)}>Cancelar</Button>
-              <Button disabled={presentationSaveDisabled} onClick={savePresentation}>
-                <ClipboardCheck className="mr-2" size={18} /> Guardar control
-              </Button>
-            </div>
-          </motion.section>
-        </motion.div>
-      )}</AnimatePresence>
-
-      <AnimatePresence>{notificationPreviewData && (() => {
-        const notificationData = notificationPreviewData
-        const previewStudent = notificationData.student
-        const labels = getPresentationViolationLabels(notificationData.presentation)
-        if (notificationData.attendance?.status === 'LATE' && !labels.some((item) => item.startsWith('Tardanza'))) labels.push('Tardanza en el ingreso.')
-        return (
-          <motion.div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-[1px] dark:bg-black/65" onMouseDown={() => setNotificationPreviewData(null)} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
-            <motion.section className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-5 text-slate-950 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 sm:p-6" onMouseDown={(event) => event.stopPropagation()} initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Ficha oficial · 1/3 A4</p>
-                  <h2 className="mt-1 text-xl font-black">Notificación sobre incumplimiento de reglamento interno</h2>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Fecha del incidente: {new Date((notificationData.presentation?.date ?? notificationData.attendance?.date ?? today) + 'T12:00:00').toLocaleDateString('es-PE', { day:'2-digit', month:'long', year:'numeric' })}
-                  </p>
-                </div>
-                <Button variant="ghost" onClick={() => setNotificationPreviewData(null)} aria-label="Cerrar"><X size={20} /></Button>
-              </div>
-
-              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-700 dark:bg-slate-950/60">
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <p><span className="font-black">Estudiante:</span> {previewStudent.firstName} {previewStudent.lastName}</p>
-                  <p><span className="font-black">Año y sección:</span> {notificationData.classroom.grade} {notificationData.classroom.section}</p>
-                  <p><span className="font-black">Apoderado:</span> {previewStudent.guardianName}</p>
-                  <p><span className="font-black">DNI:</span> {previewStudent.guardianDni || 'Sin DNI registrado'}</p>
-                  <p><span className="font-black">N° de notificación:</span> {notificationData.notificationNumber}</p>
-                  <p><span className="font-black">Seguimiento:</span> {getNotificationLabel(notificationData.notificationNumber)}</p>
-                </div>
-                <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-700">
-                  <p className="font-black">Incumplimientos marcados</p>
-                  <ul className="mt-2 space-y-1 text-slate-600 dark:text-slate-300">
-                    {labels.map((label) => <li key={label}>• {label}</li>)}
-                  </ul>
-                  {notificationData.presentation?.observation && (
-                    <p className="mt-3"><span className="font-black">Descripción:</span> {notificationData.presentation.observation}</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-6 grid gap-2 sm:grid-cols-2">
-                <Button onClick={() => downloadNotificationPdf(notificationData)}>
-                  <Download className="mr-2" size={18} /> Descargar PDF
-                </Button>
-                <Button variant="outline" onClick={() => void downloadNotificationWord(notificationData)}>
-                  <FileText className="mr-2" size={18} /> Descargar Word
-                </Button>
-                <Button variant="outline" onClick={() => void downloadNotificationImage(notificationData)}>
-                  <Download className="mr-2" size={18} /> Descargar imagen PNG
-                </Button>
-              </div>
-            </motion.section>
-          </motion.div>
-        )
-      })()}</AnimatePresence>
-
-      <AnimatePresence>{multiNotificationOpen && (
-        <motion.div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-4 backdrop-blur-[1px] dark:bg-black/70" onMouseDown={() => setMultiNotificationOpen(false)} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
-          <motion.section className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-950 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100" onMouseDown={(event) => event.stopPropagation()} initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-800 sm:p-6">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Impresión optimizada</p>
-                <h2 className="mt-1 text-xl font-black">Multinotificación</h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Selecciona hasta 3 estudiantes. Se generará una hoja A4 vertical con una ficha de 210 × 99 mm por alumno.</p>
-              </div>
-              <Button variant="ghost" onClick={() => setMultiNotificationOpen(false)} aria-label="Cerrar"><X size={20} /></Button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-5 sm:p-6">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                <label className="w-full sm:w-48">
-                  <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Fecha de la incidencia</span>
-                  <Input
-                    type="date"
-                    value={multiNotificationDate}
-                    min={`${today.slice(0,7)}-01`}
-                    max={today}
-                    onChange={(event) => { setMultiNotificationDate(event.target.value); setSelectedNotificationIds([]) }}
-                    className="font-bold"
-                  />
-                </label>
-                <div className="relative flex-1">
-                  <Search className="absolute left-4 top-3.5 text-slate-400" size={20} />
-                  <Input className="pl-12" placeholder="Buscar por alumno, grado o aula..." value={notificationSearch} onChange={(event) => setNotificationSearch(event.target.value)} />
-                </div>
-                <div className={`rounded-xl px-4 py-2 text-sm font-black ${selectedNotificationIds.length === MAX_NOTIFICATIONS_PER_PAGE ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'}`}>
-                  {selectedNotificationIds.length} / {MAX_NOTIFICATIONS_PER_PAGE} seleccionados
-                </div>
-              </div>
-
-              <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-                {multiNotificationDate === today
-                  ? 'Aparecen estudiantes con incumplimiento del reglamento o tardanza registrada hoy.'
-                  : <>Aparecen estudiantes con incumplimiento del reglamento o tardanza registrada el {new Date(multiNotificationDate + 'T12:00:00').toLocaleDateString('es-PE', { day:'2-digit', month:'long', year:'numeric' })}.</>
-                } Puedes combinar alumnos de distintas aulas.
-              </p>
-
-              <div className="mt-4 space-y-2">
-                {notificationCandidates.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-300 p-7 text-center text-sm text-slate-500 dark:border-slate-700">No hay alumnos con incidencias que coincidan con la búsqueda.</div>
-                ) : notificationCandidates.map((student) => {
-                  const studentClassroom = classrooms.find((item) => item.id === student.classroomId)
-                  const checked = selectedNotificationIds.includes(student.id)
-                  const disabled = !checked && selectedNotificationIds.length >= MAX_NOTIFICATIONS_PER_PAGE
-                  return (
-                    <label key={student.id} className={`flex cursor-pointer items-center gap-4 rounded-xl border p-4 transition-colors ${checked ? 'border-slate-950 bg-slate-50 dark:border-slate-200 dark:bg-slate-800' : 'border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/70'} ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}>
-                      <input type="checkbox" className="h-5 w-5" checked={checked} disabled={disabled} onChange={() => toggleNotificationStudent(student.id)} />
-                      <div className="min-w-0 flex-1">
-                        <p className="font-black">{student.firstName} {student.lastName}</p>
-                        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{studentClassroom ? `${studentClassroom.grade} ${studentClassroom.section} · ${studentClassroom.level}` : 'Aula no encontrada'} · Apoderado: {student.guardianName}</p>
-                      </div>
-                      <span className="text-xs font-bold text-amber-700 dark:text-amber-300">N° {getNotificationNumber(student.id, multiNotificationDate, presentationRecords.find((item) => item.studentId === student.id && item.date === multiNotificationDate)?.id, records.find((item) => item.studentId === student.id && item.date === multiNotificationDate && item.status === 'LATE')?.id)}</span>
-                    </label>
-                  )
-                })}
-              </div>
-
-              {selectedNotificationIds.length >= MAX_NOTIFICATIONS_PER_PAGE && (
-                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">Máximo 3 estudiantes por hoja. Quita uno para seleccionar otro.</div>
-              )}
-            </div>
-
-            <div className="border-t border-slate-200 p-5 dark:border-slate-800 sm:p-6">
-              <div className="grid gap-2 sm:grid-cols-2">
-                <Button disabled={selectedNotificationData.length === 0} onClick={() => downloadMultiNotificationPdf(selectedNotificationData)}>
-                  <Download className="mr-2" size={18} /> Generar PDF A4
-                </Button>
-                <Button variant="outline" disabled={selectedNotificationData.length === 0} onClick={() => void downloadMultiNotificationWord(selectedNotificationData)}>
-                  <FileText className="mr-2" size={18} /> Generar Word A4
-                </Button>
-                <Button variant="outline" disabled={selectedNotificationData.length === 0} onClick={() => void downloadMultiNotificationImage(selectedNotificationData)}>
-                  <Download className="mr-2" size={18} /> Generar imagen PNG
-                </Button>
-              </div>
-              <p className="mt-3 text-center text-xs text-slate-500 dark:text-slate-400">Si eliges 1 o 2 alumnos, los espacios restantes quedan vacíos para conservar el formato de corte.</p>
-            </div>
-          </motion.section>
-        </motion.div>
-      )}</AnimatePresence>
-
-      <AnimatePresence>{historyStudent && (() => {
-        const attendanceHistory = records.filter((r) => r.studentId === historyStudent.id).sort((a,b) => b.date.localeCompare(a.date))
-        const presentationHistory = presentationRecords.filter((r) => r.studentId === historyStudent.id).sort((a,b) => b.date.localeCompare(a.date))
-        const notificationHistory = notifications
-          .filter((item) => item.studentId === historyStudent.id)
-          .sort((a,b) => b.date.localeCompare(a.date) || b.generatedAt.localeCompare(a.generatedAt))
-        const lateTotal = attendanceHistory.filter((r) => r.status === 'LATE').length
-        const incidentTotal = presentationHistory.filter((r) => r.status === 'NON_COMPLIANT').length
-        const dates = Array.from(new Set([...attendanceHistory.map(r => r.date), ...presentationHistory.map(r => r.date)])).sort((a,b) => b.localeCompare(a))
-        return (
-          <motion.div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-[1px] dark:bg-black/65" onMouseDown={() => setHistoryStudent(null)} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
-            <motion.section className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-900 sm:p-6" onMouseDown={(e) => e.stopPropagation()} initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
-              <div className="flex items-start justify-between gap-4">
-                <div><p className="text-xs font-bold uppercase tracking-widest text-slate-400">Historial mensual</p><h2 className="mt-1 text-xl font-black">{historyStudent.firstName} {historyStudent.lastName}</h2><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Datos persistentes almacenados en PostgreSQL.</p></div>
-                <Button variant="ghost" onClick={() => setHistoryStudent(null)}><X size={20}/></Button>
-              </div>
-              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Card className="p-4"><p className="text-xs text-slate-500">Ingresos</p><p className="mt-1 text-2xl font-black">{attendanceHistory.length}</p></Card>
-                <Card className="p-4"><p className="text-xs text-slate-500">Tardanzas</p><p className="mt-1 text-2xl font-black text-amber-600">{lateTotal}</p></Card>
-                <Card className="p-4"><p className="text-xs text-slate-500">Incidencias</p><p className="mt-1 text-2xl font-black text-amber-600">{incidentTotal}</p></Card>
-                <Card className="p-4"><p className="text-xs text-slate-500">Reincidencias</p><p className="mt-1 text-2xl font-black text-rose-600">{notificationHistory.length}</p></Card>
-              </div>
-              <div className="mt-5 space-y-3">
-                {dates.length === 0 ? <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700">Aún no hay historial este mes.</div> : dates.map((date) => {
-                  const att = attendanceHistory.find(r => r.date === date)
-                  const pre = presentationHistory.find(r => r.date === date)
-                  return <div key={date} className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-                    <p className="font-black">{new Date(date + 'T12:00:00').toLocaleDateString('es-PE', { day:'2-digit', month:'long', year:'numeric' })}</p>
-                    <div className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
-                      <p><b>Ingreso:</b> {att ? `${att.time} · ${att.status === 'ON_TIME' ? 'A tiempo' : 'Tardanza'}` : 'Sin registro'}</p>
-                      <p><b>Presentación:</b> {pre ? (pre.status === 'COMPLIANT' ? 'Conforme' : `${getViolationCount(pre)} incidencia(s)`) : 'Sin revisar'}</p>
-                    </div>
-                  </div>
-                })}
-              </div>
-
-              <div className="mt-7 border-t border-slate-200 pt-5 dark:border-slate-800">
-                <div className="flex items-end justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Reincidencias</p>
-                    <h3 className="mt-1 font-black">Historial de notificaciones</h3>
-                  </div>
-                  {(() => {
-                    const currentValid = notificationHistory.find((item) => !item.voided)
-                    return currentValid && (
-                      <span className="rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-black text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                        Nivel actual: {getNotificationLabel(currentValid.notificationNumber)}
-                      </span>
-                    )
-                  })()}
-                </div>
-
-                <div className="mt-3 space-y-2">
-                  {notificationHistory.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-300 p-5 text-center text-sm text-slate-500 dark:border-slate-700">
-                      El alumno aún no tiene notificaciones registradas.
-                    </div>
-                  ) : notificationHistory.map((item) => {
-                    const previewData = item.voided ? null : buildNotificationDataFromNotification(historyStudent, item)
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        disabled={!previewData}
-                        onClick={() => {
-                          if (!previewData) return
-                          setNotificationPreviewData(previewData)
-                          setHistoryStudent(null)
-                        }}
-                        className={`flex w-full flex-col gap-1 rounded-xl border px-4 py-3 text-left transition-colors sm:flex-row sm:items-center sm:justify-between disabled:cursor-not-allowed ${item.voided ? 'border-slate-200 bg-slate-50 opacity-70 dark:border-slate-800 dark:bg-slate-900/40' : 'border-slate-200 dark:border-slate-800 enabled:hover:border-brand-gold enabled:hover:bg-brand-gold/10 disabled:opacity-60'}`}
-                      >
-                        <div>
-                          <p className={`font-black ${item.voided ? 'line-through decoration-slate-400' : ''}`}>
-                            {getNotificationLabel(item.notificationNumber)}
-                            {item.voided && (
-                              <span className="ml-2 rounded-md bg-slate-200 px-1.5 py-0.5 text-[10px] font-black no-underline text-slate-600 dark:bg-slate-700 dark:text-slate-300">ANULADA</span>
-                            )}
-                          </p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">Registro #{item.id}{!item.voided && !previewData && ' · sin ficha vinculada'}</p>
-                          {item.voided && item.voidedReason && (
-                            <p className="mt-1 max-w-md text-xs italic text-slate-500 dark:text-slate-400">{item.voidedReason}</p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <p className="text-sm font-bold text-slate-600 dark:text-slate-300">
-                            {new Date(item.date + 'T12:00:00').toLocaleDateString('es-PE', { day:'2-digit', month:'long', year:'numeric' })}
-                          </p>
-                          {previewData && <Download size={16} className="text-brand-navy dark:text-brand-gold" />}
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            </motion.section>
-          </motion.div>
-        )
-      })()}</AnimatePresence>
+      <StudentHistoryModal
+        historyStudent={historyStudent}
+        setHistoryStudent={setHistoryStudent}
+        records={records}
+        presentationRecords={presentationRecords}
+        notifications={notifications}
+        setNotificationPreviewData={setNotificationPreviewData}
+        buildNotificationDataFromNotification={buildNotificationDataFromNotification}
+      />
 
 
-      <AnimatePresence>{whatsAppStudent && (() => {
-        const options = getWhatsAppOptions(whatsAppStudent)
-        const normalizedOk = isValidPeruWhatsApp(whatsAppStudent.guardianPhone)
-        return (
-          <motion.div
-            className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-4 backdrop-blur-[1px] dark:bg-black/70"
-            onMouseDown={() => setWhatsAppStudent(null)}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.18 }}
-          >
-            <motion.section
-              className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 text-slate-950 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 sm:p-6"
-              onMouseDown={(event) => event.stopPropagation()}
-              initial={{ scale: 0.96, opacity: 0, y: 12 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.97, opacity: 0, y: 8 }}
-              transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">WhatsApp · Fase 5.2</p>
-                  <h2 className="mt-1 text-xl font-black">Comunicar al apoderado</h2>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    El mensaje se abrirá listo en WhatsApp. La auxiliar solo tendrá que revisar y pulsar Enviar.
-                  </p>
-                </div>
-                <Button variant="ghost" onClick={() => setWhatsAppStudent(null)} aria-label="Cerrar"><X size={20} /></Button>
-              </div>
-
-              <div className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-700 dark:bg-slate-950/60 sm:grid-cols-2">
-                <p><span className="font-black">Estudiante:</span> {whatsAppStudent.firstName} {whatsAppStudent.lastName}</p>
-                <p><span className="font-black">Apoderado:</span> {whatsAppStudent.guardianName}</p>
-                <p className="sm:col-span-2">
-                  <span className="font-black">WhatsApp:</span>{' '}
-                  <span className={normalizedOk ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-600 dark:text-red-300'}>
-                    {whatsAppStudent.guardianPhone || 'Sin número registrado'}
-                  </span>
-                </p>
-              </div>
-
-              {options.length > 1 && (
-                <label className="mt-5 block">
-                  <span className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Motivo de comunicación</span>
-                  <div className="relative">
-                    <select
-                      value={whatsAppType}
-                      onChange={(event) => changeWhatsAppType(event.target.value as WhatsAppMessageType)}
-                      className="h-12 w-full appearance-none rounded-xl border border-slate-300 bg-white px-4 pr-10 text-sm font-semibold text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                    >
-                      {options.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-3 top-3.5 text-slate-400" size={20} />
-                  </div>
-                </label>
-              )}
-
-              {options.length === 1 && (
-                <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-300">
-                  Motivo: {getWhatsAppTypeLabel(options[0].type)}
-                </div>
-              )}
-
-              <label className="mt-5 block">
-                <span className="mb-2 flex items-center justify-between gap-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  <span>Mensaje</span>
-                  <button
-                    type="button"
-                    onClick={() => setWhatsAppMessage(buildStudentWhatsAppMessage(whatsAppStudent, whatsAppType))}
-                    className="normal-case tracking-normal text-brand-navy hover:underline dark:text-brand-gold"
-                  >
-                    Restaurar texto automático
-                  </button>
-                </span>
-                <textarea
-                  value={whatsAppMessage}
-                  onChange={(event) => setWhatsAppMessage(event.target.value)}
-                  rows={11}
-                  className="w-full resize-y rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm leading-6 text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:ring-slate-800"
-                />
-              </label>
-
-              {!normalizedOk && (
-                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-300">
-                  El teléfono registrado no parece un celular peruano válido. Guarda en Supabase un número como 987654321 o +51987654321.
-                </div>
-              )}
-
-              {whatsAppError && (
-                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-300">
-                  {whatsAppError}
-                </div>
-              )}
-
-              <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-400">
-                <b>Modo actual:</b> wa.me (sin costo de API). Este botón no confirma que el mensaje fue enviado; abre WhatsApp con el destinatario y texto preparados. El servicio está aislado para poder cambiarlo luego por WhatsApp Cloud API sin rediseñar esta pantalla.
-              </div>
-
-              <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <Button variant="outline" onClick={() => setWhatsAppStudent(null)}>Cancelar</Button>
-                <Button
-                  onClick={() => void handleOpenWhatsApp()}
-                  disabled={!normalizedOk || !whatsAppMessage.trim() || openingWhatsApp}
-                  className="bg-emerald-600 text-white hover:bg-emerald-500 dark:bg-emerald-500 dark:text-white dark:hover:bg-emerald-400"
-                >
-                  <Send className="mr-2" size={18} /> {openingWhatsApp ? 'Abriendo...' : 'Abrir WhatsApp'}
-                </Button>
-              </div>
-            </motion.section>
-          </motion.div>
-        )
-      })()}</AnimatePresence>
+      <WhatsAppDialog
+        whatsAppStudent={whatsAppStudent}
+        setWhatsAppStudent={setWhatsAppStudent}
+        whatsAppType={whatsAppType}
+        whatsAppMessage={whatsAppMessage}
+        setWhatsAppMessage={setWhatsAppMessage}
+        whatsAppError={whatsAppError}
+        openingWhatsApp={openingWhatsApp}
+        getWhatsAppOptions={getWhatsAppOptions}
+        buildStudentWhatsAppMessage={buildStudentWhatsAppMessage}
+        changeWhatsAppType={changeWhatsAppType}
+        handleOpenWhatsApp={handleOpenWhatsApp}
+      />
 
       <AlertCenter
         open={alertsOpen}
@@ -1736,218 +1217,104 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         refreshKey={realtimeState.revision}
       />
 
-      <StudentCaseFile
-        student={caseFileStudent}
-        classroom={caseFileStudent ? classrooms.find((item) => item.id === caseFileStudent.classroomId) : undefined}
-        onClose={() => setCaseFileStudent(null)}
-        onOpenWhatsApp={(student) => { setCaseFileStudent(null); openWhatsAppModal(student) }}
-      />
+      <Deferred when={caseFileStudent !== null}>
+        <StudentCaseFile
+          student={caseFileStudent}
+          classroom={caseFileStudent ? classrooms.find((item) => item.id === caseFileStudent.classroomId) : undefined}
+          onClose={() => setCaseFileStudent(null)}
+          onOpenWhatsApp={(student) => { setCaseFileStudent(null); openWhatsAppModal(student) }}
+        />
+      </Deferred>
 
-      <HistoricalImport
-        open={historicalImportOpen}
-        onClose={() => setHistoricalImportOpen(false)}
-        students={students}
-        classrooms={classrooms}
-        refreshKey={realtimeState.revision}
-      />
+      <Deferred when={historicalImportOpen}>
+        <HistoricalImport
+          open={historicalImportOpen}
+          onClose={() => setHistoricalImportOpen(false)}
+          students={students}
+          classrooms={classrooms}
+          refreshKey={realtimeState.revision}
+        />
+      </Deferred>
 
-      <AuditLog open={auditOpen} onClose={() => setAuditOpen(false)} refreshKey={realtimeState.revision} />
+      <Deferred when={auditOpen}><AuditLog open={auditOpen} onClose={() => setAuditOpen(false)} refreshKey={realtimeState.revision} /></Deferred>
 
-      <AdvancedReports
-        open={reportsOpen}
-        onClose={() => setReportsOpen(false)}
-        classrooms={classrooms}
-        refreshKey={realtimeState.revision}
-      />
+      <Deferred when={reportsOpen}>
+        <AdvancedReports
+          open={reportsOpen}
+          onClose={() => setReportsOpen(false)}
+          classrooms={classrooms}
+          refreshKey={realtimeState.revision}
+        />
+      </Deferred>
 
-      <Cobranza open={cobranzaOpen} onClose={() => setCobranzaOpen(false)} />
+      <Deferred when={cobranzaOpen}><Cobranza open={cobranzaOpen} onClose={() => setCobranzaOpen(false)} /></Deferred>
 
-      <RosterManager
-        open={rosterOpen}
-        onClose={() => setRosterOpen(false)}
-        classrooms={classrooms}
-        students={students}
-        defaultClassroomId={classroom.id}
-        onChanged={() => reloadData(false)}
-      />
+      <Deferred when={rosterOpen}>
+        <RosterManager
+          open={rosterOpen}
+          onClose={() => setRosterOpen(false)}
+          classrooms={classrooms}
+          students={students}
+          defaultClassroomId={classroom.id}
+          onChanged={() => reloadData(false)}
+        />
+      </Deferred>
 
-      <LiveTvPanel
-        open={tvPanelOpen}
-        onClose={() => setTvPanelOpen(false)}
-        students={activeStudents}
-        classrooms={classrooms}
-        attendanceRecords={records}
-        presentationRecords={presentationRecords}
-        today={today}
-        realtimeConnected={realtimeState.connected}
-      />
+      <Deferred when={tvPanelOpen}>
+        <LiveTvPanel
+          open={tvPanelOpen}
+          onClose={() => setTvPanelOpen(false)}
+          students={activeStudents}
+          classrooms={classrooms}
+          attendanceRecords={records}
+          presentationRecords={presentationRecords}
+          today={today}
+          realtimeConnected={realtimeState.connected}
+        />
+      </Deferred>
 
-      <Dashboard
-        open={dashboardOpen}
+      <Deferred when={dashboardOpen}>
+        <Dashboard
+          open={dashboardOpen}
+          classroom={classroom}
+          onClose={() => setDashboardOpen(false)}
+          onClassroomChange={changeClassroom}
+          classrooms={classrooms}
+          students={activeStudents}
+          attendanceRecords={records}
+          presentationRecords={presentationRecords}
+          today={today}
+          now={now}
+        />
+      </Deferred>
+
+      <Deferred when={whatsAppQueueOpen}>
+        <WhatsAppQueue
+          open={whatsAppQueueOpen}
+          onClose={() => setWhatsAppQueueOpen(false)}
+          items={whatsAppQueueOpen ? buildWhatsAppQueueItems() : []}
+          today={today}
+          currentClassroomId={classroom.id}
+          currentClassroomLabel={`${classroom.grade} ${classroom.section}`}
+          isAdmin={isAdminRole(userRole)}
+          templates={waTemplates}
+          templatesShared={waTemplatesShared}
+          onSaveTemplates={handleSaveTemplates}
+        />
+      </Deferred>
+
+      <SettingsPanel
+        settingsOpen={settingsOpen}
+        setSettingsOpen={setSettingsOpen}
+        entryLimit={entryLimit}
+        toleranceSettings={toleranceSettings}
+        updateTolerance={updateTolerance}
+        preferences={preferences}
+        setPreferences={setPreferences}
+        updatePreferences={updatePreferences}
         classroom={classroom}
-        onClose={() => setDashboardOpen(false)}
-        onClassroomChange={changeClassroom}
-        classrooms={classrooms}
-        students={activeStudents}
-        attendanceRecords={records}
-        presentationRecords={presentationRecords}
-        today={today}
-        now={now}
       />
-
-      <AnimatePresence>{settingsOpen && (
-        <motion.div
-          className="fixed inset-0 z-50 flex justify-end bg-slate-950/45 backdrop-blur-[1px] dark:bg-black/55"
-          onMouseDown={() => setSettingsOpen(false)}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-        >
-          <motion.aside
-            className="h-full w-full max-w-md overflow-y-auto border-l border-slate-200 bg-white p-6 text-slate-950 shadow-2xl transition-colors dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
-            onMouseDown={(event) => event.stopPropagation()}
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', stiffness: 340, damping: 34 }}
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Preferencias</p>
-                <h2 className="text-2xl font-black">Configuración</h2>
-              </div>
-              <Button variant="ghost" onClick={() => setSettingsOpen(false)} aria-label="Cerrar"><X size={20} /></Button>
-            </div>
-
-            <div className="mt-8 space-y-8">
-              <section>
-                <h3 className="font-black">Apariencia</h3>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Elige cómo quieres ver el sistema.</p>
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'light' as const, label: 'Claro', icon: Sun },
-                    { id: 'dark' as const, label: 'Oscuro', icon: Moon },
-                    { id: 'system' as const, label: 'Sistema', icon: Monitor },
-                  ].map((option) => {
-                    const Icon = option.icon
-                    return (
-                      <Button
-                        key={option.id}
-                        variant={preferences.theme === option.id ? 'default' : 'outline'}
-                        onClick={() => updatePreferences({ ...preferences, theme: option.id })}
-                      >
-                        <Icon className="mr-2" size={16} />{option.label}
-                      </Button>
-                    )
-                  })}
-                </div>
-              </section>
-
-              <section>
-                <h3 className="font-black">Asistencia</h3>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  Tolerancia sobre la hora límite (configurada en la vista de Asistencia: {entryLimit}).
-                </p>
-
-                <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-4 transition-colors dark:border-slate-700 dark:bg-slate-950/60">
-                  <span>
-                    <b className="block">Tolerancia de ingreso</b>
-                    <small className="text-slate-500 dark:text-slate-400">
-                      No marcar tardanza dentro de los primeros minutos después de la hora límite
-                    </small>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={toleranceSettings.enabled}
-                    onChange={(e) => updateTolerance({ ...toleranceSettings, enabled: e.target.checked })}
-                    className="h-5 w-5"
-                  />
-                </label>
-
-                {toleranceSettings.enabled && (
-                  <div className="mt-3 flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 transition-colors dark:border-slate-700 dark:bg-slate-950/60">
-                    <span className="text-sm font-semibold">Minutos de tolerancia</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={60}
-                      value={toleranceSettings.minutes}
-                      onChange={(e) => {
-                        const minutes = Math.max(0, Math.min(60, Number(e.target.value) || 0))
-                        updateTolerance({ ...toleranceSettings, minutes })
-                      }}
-                      className="ml-auto h-10 w-20 rounded-lg border border-slate-300 bg-white px-2 text-center text-sm font-bold text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                    <span className="text-sm text-slate-500 dark:text-slate-400">min</span>
-                  </div>
-                )}
-
-                {toleranceSettings.enabled && toleranceSettings.minutes > 0 && (
-                  <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">
-                    Con esta configuración, un alumno que ingrese hasta las {(() => {
-                      const [h, m] = entryLimit.split(':').map(Number)
-                      const total = Math.min(23 * 60 + 59, h * 60 + m + toleranceSettings.minutes)
-                      return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
-                    })()} no contará como tardanza.
-                  </p>
-                )}
-              </section>
-
-              <section>
-                <h3 className="font-black">Interfaz</h3>
-                <label className="mt-3 block text-sm font-semibold">Tamaño de interfaz</label>
-                <select
-                  className="mt-2 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-slate-900 outline-none transition-colors focus:border-slate-500 focus:ring-2 focus:ring-slate-200 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:ring-slate-800"
-                  value={preferences.interfaceSize}
-                  onChange={(e) => updatePreferences({ ...preferences, interfaceSize: e.target.value as 'normal' | 'large' })}
-                >
-                  <option value="normal">Normal</option>
-                  <option value="large">Grande</option>
-                </select>
-                <label className="mt-4 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-4 transition-colors dark:border-slate-700 dark:bg-slate-950/60">
-                  <span className="flex items-center gap-3">
-                    <Volume2 size={19} />
-                    <span>
-                      <b className="block">Sonido al registrar</b>
-                      <small className="text-slate-500 dark:text-slate-400">Confirmación breve al guardar una acción</small>
-                    </span>
-                  </span>
-                  <input type="checkbox" checked={preferences.soundEnabled} onChange={(e) => updatePreferences({ ...preferences, soundEnabled: e.target.checked })} className="h-5 w-5" />
-                </label>
-              </section>
-
-              <section>
-                <h3 className="font-black">Aula</h3>
-                <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-4 transition-colors dark:border-slate-700 dark:bg-slate-950/60">
-                  <span>
-                    <b className="block">Recordar última aula</b>
-                    <small className="text-slate-500 dark:text-slate-400">Abrir la próxima vez en el aula utilizada</small>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={preferences.rememberClassroom}
-                    onChange={(e) => updatePreferences({
-                      ...preferences,
-                      rememberClassroom: e.target.checked,
-                      lastClassroomId: e.target.checked ? classroom.id : null,
-                    })}
-                    className="h-5 w-5"
-                  />
-                </label>
-              </section>
-
-              <Button variant="outline" className="w-full" onClick={() => { resetTour(); window.location.reload() }}>
-                Ver el recorrido guiado de nuevo
-              </Button>
-
-              <Button variant="outline" className="w-full" onClick={() => { const next = resetPreferences(); setPreferences(next) }}>
-                <RotateCcw className="mr-2" size={17} /> Restablecer preferencias
-              </Button>
-            </div>
-          </motion.aside>
-        </motion.div>
-      )}</AnimatePresence>
     </main>
+    </MotionConfig>
   )
 }

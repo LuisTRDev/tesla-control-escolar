@@ -19,6 +19,9 @@ export type UserPreferences = {
   theme: ThemePreference
   interfaceSize: InterfaceSize
   soundEnabled: boolean
+  vibrationEnabled: boolean
+  /** Sin animaciones ni desenfoques: para celulares de gama baja. */
+  lowPowerMode: boolean
   rememberClassroom: boolean
   lastClassroomId: string | null
 }
@@ -29,6 +32,8 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   theme: 'system',
   interfaceSize: 'normal',
   soundEnabled: true,
+  vibrationEnabled: true,
+  lowPowerMode: false,
   rememberClassroom: true,
   lastClassroomId: null,
 }

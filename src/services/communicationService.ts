@@ -63,74 +63,67 @@ export function getWhatsAppTypeLabel(type: WhatsAppMessageType): string {
   }
 }
 
-export function buildWhatsAppMessage(payload: WhatsAppPayload): string {
-  const guardianGreeting = payload.guardianName && !payload.guardianName.startsWith('Sin ')
-    ? `Estimado(a) ${payload.guardianName}:`
-    : 'Estimado padre, madre o apoderado:'
-  const date = formatDate(payload.date)
-  const dateText = date ? ` del ${date}` : ''
-  const numberText = payload.notificationNumber ? ` (N° ${payload.notificationNumber})` : ''
+export type WhatsAppTemplates = Partial<Record<WhatsAppMessageType, string>>
 
-  switch (payload.type) {
-    case 'LATE':
-      return [
-        '*IEPr Nikola Tesla*', '', guardianGreeting, '',
-        `Se informa que *${payload.studentName}* registró una *tardanza en el ingreso*${dateText}${payload.time ? ` a las *${payload.time}*` : ''}.${numberText}`,
-        '', 'Agradecemos su apoyo para reforzar el cumplimiento de las disposiciones institucionales.', '',
-        'Atentamente,', 'IEPr Nikola Tesla',
-      ].join('\n')
+export const WHATSAPP_MESSAGE_TYPES: WhatsAppMessageType[] = [
+  'LATE', 'REGULATION', 'INAPPROPRIATE_CONDUCT', 'RECURRENCE_2', 'RECURRENCE_3', 'ABSENCE', 'FREQUENT_LATE',
+]
 
-    case 'INAPPROPRIATE_CONDUCT':
-      return [
-        '*IEPr Nikola Tesla*', '', guardianGreeting, '',
-        `Se informa que *${payload.studentName}* registra una observación por *conducta inapropiada*${dateText}.${numberText}`,
-        payload.observation?.trim() ? `\nDescripción de la observación: ${payload.observation.trim()}` : '',
-        '', 'Se solicita brindar el acompañamiento correspondiente.', '', 'Atentamente,', 'IEPr Nikola Tesla',
-      ].filter(Boolean).join('\n')
+/** Marcadores que el admin puede usar al editar una plantilla. */
+export const WHATSAPP_PLACEHOLDERS: Array<{ key: string; description: string }> = [
+  { key: '{saludo}', description: 'Estimado(a) <apoderado>: (o saludo genérico si no hay apoderado)' },
+  { key: '{apoderado}', description: 'Nombre del apoderado' },
+  { key: '{alumno}', description: 'Nombre completo del alumno' },
+  { key: '{fecha}', description: 'Fecha del hecho (dd/mm/aaaa)' },
+  { key: '{hora}', description: 'Hora de ingreso registrada' },
+  { key: '{numero}', description: '(N° de notificación), vacío si no aplica' },
+  { key: '{incumplimientos}', description: 'Lista de incumplimientos marcados, vacío si no hay' },
+  { key: '{observacion}', description: 'Descripción de la observación, vacío si no hay' },
+]
 
-    case 'REGULATION': {
-      const detail = payload.violations?.length
-        ? `\n\nIncumplimiento(s) registrado(s):\n${payload.violations.map((item) => `• ${item}`).join('\n')}`
-        : ''
-      const observation = payload.observation?.trim() ? `\n\nDescripción de la observación: ${payload.observation.trim()}` : ''
-      return [
-        '*IEPr Nikola Tesla*', '', guardianGreeting, '',
-        `Se informa que *${payload.studentName}* ha incurrido${dateText} en un *incumplimiento del reglamento interno de la institución*.${numberText}${detail}${observation}`,
-        '', 'Se solicita revisar la notificación y brindar el acompañamiento necesario.', '', 'Atentamente,', 'IEPr Nikola Tesla',
-      ].join('\n')
-    }
+const SIGNATURE = 'Atentamente,\nIEPr Nikola Tesla'
+const HEADER = '*IEPr Nikola Tesla*\n\n{saludo}'
 
-    case 'ABSENCE':
-      return [
-        '*IEPr Nikola Tesla*', '', guardianGreeting, '',
-        `Se informa que *${payload.studentName}* no registra ingreso a la institución${dateText}.`,
-        '', 'La asistencia del aula ha sido cerrada y se solicita confirmar o justificar la ausencia por los canales correspondientes.', '',
-        'Atentamente,', 'IEPr Nikola Tesla',
-      ].join('\n')
+export const DEFAULT_WHATSAPP_TEMPLATES: Record<WhatsAppMessageType, string> = {
+  LATE: `${HEADER}\n\nSe informa que *{alumno}* registró una *tardanza en el ingreso* del {fecha} a las *{hora}*. {numero}\n\nAgradecemos su apoyo para reforzar el cumplimiento de las disposiciones institucionales.\n\n${SIGNATURE}`,
+  INAPPROPRIATE_CONDUCT: `${HEADER}\n\nSe informa que *{alumno}* registra una observación por *conducta inapropiada* del {fecha}. {numero}\n\n{observacion}\n\nSe solicita brindar el acompañamiento correspondiente.\n\n${SIGNATURE}`,
+  REGULATION: `${HEADER}\n\nSe informa que *{alumno}* ha incurrido el {fecha} en un *incumplimiento del reglamento interno de la institución*. {numero}\n\n{incumplimientos}\n\n{observacion}\n\nSe solicita revisar la notificación y brindar el acompañamiento necesario.\n\n${SIGNATURE}`,
+  ABSENCE: `${HEADER}\n\nSe informa que *{alumno}* no registra ingreso a la institución el {fecha}.\n\nLa asistencia del aula ha sido cerrada y se solicita confirmar o justificar la ausencia por los canales correspondientes.\n\n${SIGNATURE}`,
+  FREQUENT_LATE: `${HEADER}\n\nSe informa que *{alumno}* registra *tardanzas frecuentes* durante las últimas semanas.\n\nSolicitamos su apoyo para reforzar la puntualidad y evitar nuevas incidencias.\n\n${SIGNATURE}`,
+  RECURRENCE_2: `${HEADER}\n\nSe informa que *{alumno}* registra su *segunda notificación* por incumplimiento de las disposiciones institucionales del {fecha}.\n\nSolicitamos su apoyo para evitar nuevas reincidencias.\n\n${SIGNATURE}`,
+  RECURRENCE_3: `${HEADER}\n\nSe informa que *{alumno}* registra su *tercera notificación* del {fecha}.\n\nDe acuerdo con el procedimiento institucional, se solicita al padre, madre o apoderado comunicarse con la institución para el seguimiento correspondiente.\n\n${SIGNATURE}`,
+}
 
-    case 'FREQUENT_LATE':
-      return [
-        '*IEPr Nikola Tesla*', '', guardianGreeting, '',
-        `Se informa que *${payload.studentName}* registra *tardanzas frecuentes* durante las últimas semanas.`,
-        '', 'Solicitamos su apoyo para reforzar la puntualidad y evitar nuevas incidencias.', '',
-        'Atentamente,', 'IEPr Nikola Tesla',
-      ].join('\n')
-
-    case 'RECURRENCE_2':
-      return [
-        '*IEPr Nikola Tesla*', '', guardianGreeting, '',
-        `Se informa que *${payload.studentName}* registra su *segunda notificación* por incumplimiento de las disposiciones institucionales${dateText}.`,
-        '', 'Solicitamos su apoyo para evitar nuevas reincidencias.', '', 'Atentamente,', 'IEPr Nikola Tesla',
-      ].join('\n')
-
-    case 'RECURRENCE_3':
-      return [
-        '*IEPr Nikola Tesla*', '', guardianGreeting, '',
-        `Se informa que *${payload.studentName}* registra su *tercera notificación*${dateText}.`,
-        '', 'De acuerdo con el procedimiento institucional, se solicita al padre, madre o apoderado comunicarse con la institución para el seguimiento correspondiente.', '',
-        'Atentamente,', 'IEPr Nikola Tesla',
-      ].join('\n')
+export function renderWhatsAppTemplate(template: string, payload: WhatsAppPayload): string {
+  const hasGuardian = Boolean(payload.guardianName && !payload.guardianName.startsWith('Sin '))
+  const values: Record<string, string> = {
+    '{saludo}': hasGuardian ? `Estimado(a) ${payload.guardianName}:` : 'Estimado padre, madre o apoderado:',
+    '{apoderado}': hasGuardian ? payload.guardianName ?? '' : 'padre, madre o apoderado',
+    '{alumno}': payload.studentName,
+    '{fecha}': formatDate(payload.date),
+    '{hora}': payload.time ?? '',
+    '{numero}': payload.notificationNumber ? `(N° ${payload.notificationNumber})` : '',
+    '{incumplimientos}': payload.violations?.length
+      ? `Incumplimiento(s) registrado(s):\n${payload.violations.map((item) => `• ${item}`).join('\n')}`
+      : '',
+    '{observacion}': payload.observation?.trim() ? `Descripción de la observación: ${payload.observation.trim()}` : '',
   }
+  let text = template
+  // Si falta la fecha o la hora se quita la frase completa ("del {fecha}", "a las *{hora}*")
+  // para no dejar textos como "registró una tardanza del  a las **".
+  if (!values['{fecha}']) text = text.replace(/\s+(?:del|el)\s+\{fecha\}/g, '')
+  if (!values['{hora}']) text = text.replace(/\s+a las\s+\*?\{hora\}\*?/g, '')
+  return text
+    .replace(/\{[a-z_]+\}/g, (key) => values[key] ?? key)
+    // Limpieza para marcadores vacíos: espacios colgando y párrafos en blanco repetidos.
+    .replace(/[ \t]+$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+export function buildWhatsAppMessage(payload: WhatsAppPayload, templates: WhatsAppTemplates = {}): string {
+  const custom = templates[payload.type]?.trim()
+  return renderWhatsAppTemplate(custom || DEFAULT_WHATSAPP_TEMPLATES[payload.type], payload)
 }
 
 export function buildWaMeUrl(phone: string, message: string): string {

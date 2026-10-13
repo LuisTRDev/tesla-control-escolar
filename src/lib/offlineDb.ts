@@ -99,6 +99,15 @@ export async function removePendingOperation(id: string): Promise<void> {
   window.dispatchEvent(new CustomEvent('tesla-sync-queue-changed'))
 }
 
+/** Quita de la cola la operación pendiente de un alumno y fecha (p. ej. al deshacer una marca offline). */
+export async function removePendingOperationFor(type: SyncOperationType, studentId: string, date: string): Promise<boolean> {
+  const key = operationKey(type, { studentId, date })
+  const existing = (await listPendingOperations()).find((item) => item.operationKey === key || operationKey(item.type, item.payload) === key)
+  if (!existing) return false
+  await removePendingOperation(existing.id)
+  return true
+}
+
 export async function updatePendingOperation(item: SyncQueueItem): Promise<void> {
   const db = await openDb()
   const tx = db.transaction(QUEUE, 'readwrite')
