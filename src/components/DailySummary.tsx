@@ -89,8 +89,8 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
 
   return (
     <AnimatePresence>{open && (
-    <motion.div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 p-3 backdrop-blur-sm dark:bg-black/70 sm:p-6" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
-      <motion.section className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-2xl dark:border-slate-800 dark:bg-slate-950" initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
+    <motion.div data-screen-overlay className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 p-3 backdrop-blur-sm dark:bg-black/70 sm:p-6" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
+      <motion.section data-screen className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-2xl dark:border-slate-800 dark:bg-slate-950" initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
         <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 sm:px-7">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div><p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-brand-navy dark:text-brand-gold"><Sparkles size={15}/> Automatización diaria</p><h2 className="mt-1 text-2xl font-black">Resumen y cierre de asistencia</h2><p className="mt-1 text-sm text-slate-500">{new Date(today + 'T12:00:00').toLocaleDateString('es-PE', { weekday:'long', day:'2-digit', month:'long', year:'numeric' })}</p></div>

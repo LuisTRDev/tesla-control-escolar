@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/Input'
 import { inactiveLabel, isInactive } from '@/lib/studentStatus'
 import type { AttendanceRecord, Classroom, Student } from '@/types'
 import { friendlyError } from '@/lib/errorMessages'
+import { useWakeLock } from '@/lib/nativeFeatures'
 
 type Props = {
   open: boolean
@@ -25,6 +26,8 @@ function androidMajor(): number | null {
 
 export default function PdaMode({ open, onClose, students, classrooms, records, online, onEntry, onExit }: Props) {
   const [dni, setDni] = useState('')
+  // Pantalla siempre encendida mientras se usa (hora de ingreso, pantalla del patio).
+  useWakeLock(open)
   const [selected, setSelected] = useState<Student | null>(null)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState<'ENTRY' | 'EXIT' | null>(null)
@@ -67,8 +70,8 @@ export default function PdaMode({ open, onClose, students, classrooms, records, 
 
   return (
     <AnimatePresence>{open && (
-    <motion.div className="fixed inset-0 z-[85] bg-slate-950 p-3 text-white sm:p-5" onMouseDown={onClose} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
-      <motion.section className="mx-auto flex h-full max-h-[95vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-900 shadow-2xl" onMouseDown={(event) => event.stopPropagation()} initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
+    <motion.div data-screen-overlay className="fixed inset-0 z-[85] bg-slate-950 p-3 text-white sm:p-5" onMouseDown={onClose} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
+      <motion.section data-screen className="mx-auto flex h-full max-h-[95vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-900 shadow-2xl" onMouseDown={(event) => event.stopPropagation()} initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
         <header className="flex items-start justify-between border-b border-white/10 p-5">
           <div><p className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-brand-gold"><Smartphone size={16}/> Modo PDA</p><h2 className="mt-1 text-2xl font-black">Control por DNI</h2><p className="mt-1 text-sm text-slate-400">Compatible con ingreso manual y lectores que escriben el DNI como teclado.</p></div>
           <Button variant="ghost" className="text-white" onClick={onClose}><X size={20}/></Button>

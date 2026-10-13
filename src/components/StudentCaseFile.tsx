@@ -178,8 +178,8 @@ export default function StudentCaseFile({ student, classroom, onClose, onOpenWha
   }
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 p-3 backdrop-blur-sm dark:bg-black/70 sm:p-6" onMouseDown={onClose}>
-      <section className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-2xl dark:border-slate-800 dark:bg-slate-950" onMouseDown={(e)=>e.stopPropagation()}>
+    <div data-screen-overlay className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 p-3 backdrop-blur-sm dark:bg-black/70 sm:p-6" onMouseDown={onClose}>
+      <section data-screen className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-2xl dark:border-slate-800 dark:bg-slate-950" onMouseDown={(e)=>e.stopPropagation()}>
         <header className="border-b border-slate-200 bg-white px-5 py-5 dark:border-slate-800 dark:bg-slate-900 sm:px-7">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div><p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400"><BookOpen size={15}/> Expediente digital</p><h2 className="mt-1 text-2xl font-black">{student.firstName} {student.lastName}</h2><p className="mt-1 text-sm text-slate-500">{classroom ? `${classroom.grade} ${classroom.section} · ${classroom.level}` : 'Aula no identificada'} · Apoderado: {student.guardianName}</p></div>

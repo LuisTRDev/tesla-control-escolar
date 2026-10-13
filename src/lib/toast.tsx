@@ -45,13 +45,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ show }}>
       {children}
-      <div className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+1rem)] z-[200] flex flex-col items-center gap-2 px-4 sm:items-end sm:right-4 sm:left-auto">
+      <div className="pointer-events-none fixed inset-x-0 bottom-[calc(var(--tabbar-h)+env(safe-area-inset-bottom)+0.75rem)] z-[200] flex flex-col items-center gap-2 px-4 sm:bottom-auto sm:left-auto sm:right-4 sm:top-4 sm:items-end">
         <AnimatePresence initial={false}>
           {toasts.map((t) => (
             <motion.div
               key={t.id}
               layout
-              initial={{ opacity: 0, y: -16, scale: 0.9 }}
+              initial={{ opacity: 0, y: 16, scale: 0.9 }}
+              // En celular el aviso se descarta deslizándolo hacia un lado, como en Android.
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.7}
+              onDragEnd={(_, info) => { if (Math.abs(info.offset.x) > 80) dismiss(t.id) }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, x: 80, scale: 0.9, transition: { duration: 0.18 } }}
               transition={{ type: 'spring', stiffness: 420, damping: 30 }}

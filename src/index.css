@@ -79,6 +79,38 @@ html.scroll-locked, html.scroll-locked body { overflow: hidden; }
   }
 }
 
+/* Módulos (Dashboard, Reportes, Alumnos...) en celular: pantalla completa con la
+   cabecera fija arriba, como una pantalla nativa. Overlay con data-screen-overlay,
+   panel con data-screen. */
+@media (max-width: 639px) {
+  [data-screen-overlay] {
+    padding: 0 !important;
+    background: #f8fafc !important;
+    backdrop-filter: none !important;
+  }
+  html.dark [data-screen-overlay] { background: #020617 !important; }
+  [data-screen] {
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 100dvh;
+    max-height: none !important;
+    border-width: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    overflow: clip !important; /* sin crear contenedor de scroll: la cabecera sticky funciona */
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* Módulos de alto fijo (WhatsApp en lote, PDA): ocupan la pantalla y su lista hace scroll. */
+  [data-screen].h-full { height: 100dvh !important; overflow: hidden !important; }
+  [data-screen] > header:first-child,
+  [data-screen] > [data-screen-header] {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    border-radius: 0 !important;
+  }
+}
+
 /* Barra de pestañas y zonas seguras (muesca / barra de gestos). */
 .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
 .pt-safe { padding-top: env(safe-area-inset-top); }

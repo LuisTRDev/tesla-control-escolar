@@ -161,8 +161,8 @@ export default function BackupCenter({ open, onClose, online, isAdmin }: Props) 
   const autoAge = daysSince(latestAuto?.takenAt ?? null)
 
   return <AnimatePresence>{open && (
-    <motion.div className="fixed inset-0 z-[70] overflow-y-auto bg-slate-950/55 p-3 backdrop-blur-sm sm:p-6" onMouseDown={onClose} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
-    <motion.section className="mx-auto w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900" onMouseDown={(e)=>e.stopPropagation()} initial={{scale:0.94,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.96,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
+    <motion.div data-screen-overlay className="fixed inset-0 z-[70] overflow-y-auto bg-slate-950/55 p-3 backdrop-blur-sm sm:p-6" onMouseDown={onClose} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
+    <motion.section data-screen className="mx-auto w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900" onMouseDown={(e)=>e.stopPropagation()} initial={{scale:0.94,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.96,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="flex items-center gap-2 text-2xl font-black"><DatabaseBackup size={23}/> Copias de seguridad</h2>
