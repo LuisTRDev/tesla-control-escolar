@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/Input'
 import { studentMatches } from '@/lib/search'
 import { isTypingTarget, pickEnterTarget } from '@/lib/shortcuts'
 import type { AttendanceRecord, Classroom, Student } from '@/types'
+import { useWakeLock } from '@/lib/nativeFeatures'
 
 type Props = {
   open: boolean
@@ -34,6 +35,8 @@ const byName = (a: Student, b: Student) => a.lastName.localeCompare(b.lastName, 
 
 export default function QuickMode({ open, onClose, classrooms, students, records, onMark, onExit, online, entryLimit, onBulkMark }: Props) {
   const [query, setQuery] = useState('')
+  // Pantalla siempre encendida mientras se usa (hora de ingreso, pantalla del patio).
+  useWakeLock(open)
   const [classroomId, setClassroomId] = useState<string>('ALL')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
   const [markingIds, setMarkingIds] = useState<Set<string>>(new Set())

@@ -175,10 +175,14 @@ function drawNotificationCard(doc: jsPDF, data: NotificationPrintData, top: numb
   doc.text('FIRMA DEL AUXILIAR/TUTOR/DOCENTE A CARGO: __________________________________________', 40, top + 92.8)
 }
 
-export function downloadNotificationPdf(data: NotificationPrintData) {
+function buildNotificationPdf(data: NotificationPrintData) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [CARD_HEIGHT_MM, A4_WIDTH_MM] })
   drawNotificationCard(doc, data, 0, true)
-  doc.save(individualFilename(data.student, 'pdf'))
+  return doc
+}
+
+export function downloadNotificationPdf(data: NotificationPrintData) {
+  buildNotificationPdf(data).save(individualFilename(data.student, 'pdf'))
 }
 
 export function downloadMultiNotificationPdf(items: NotificationPrintData[]) {
@@ -324,20 +328,51 @@ function drawNotificationCanvas(ctx: CanvasRenderingContext2D, data: Notificatio
   ctx.fillText('FIRMA DEL AUXILIAR/TUTOR/DOCENTE A CARGO: __________________________________________',mm(40),top+mm(96))
 }
 
-function canvasToPng(canvas: HTMLCanvasElement, filename: string) {
-  return new Promise<void>((resolve, reject) => canvas.toBlob((blob) => {
+function canvasToBlob(canvas: HTMLCanvasElement) {
+  return new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => {
     if (!blob) { reject(new Error('No se pudo generar la imagen.')); return }
-    downloadBlob(blob, filename); resolve()
+    resolve(blob)
   }, 'image/png', 1))
 }
 
-export async function downloadNotificationImage(data: NotificationPrintData) {
+async function canvasToPng(canvas: HTMLCanvasElement, filename: string) {
+  downloadBlob(await canvasToBlob(canvas), filename)
+}
+
+function renderNotificationImage(data: NotificationPrintData) {
   const width = 1680
   const height = Math.round(width * CARD_HEIGHT_MM / A4_WIDTH_MM)
   const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height
   const ctx = canvas.getContext('2d'); if (!ctx) throw new Error('El navegador no permite generar la imagen.')
   drawNotificationCanvas(ctx, data, 0, width, height)
-  await canvasToPng(canvas, individualFilename(data.student, 'png'))
+  return canvas
+}
+
+export async function downloadNotificationImage(data: NotificationPrintData) {
+  await canvasToPng(renderNotificationImage(data), individualFilename(data.student, 'png'))
+}
+
+/**
+ * Abre el menú "Compartir" del teléfono con la ficha (PDF o imagen) para enviarla
+ * directo por WhatsApp, correo o Drive. Si el teléfono no permite compartir archivos,
+ * la descarga como antes.
+ */
+export async function shareNotification(data: NotificationPrintData, format: 'pdf' | 'png') {
+  const name = individualFilename(data.student, format)
+  const blob = format === 'pdf'
+    ? buildNotificationPdf(data).output('blob')
+    : await canvasToBlob(renderNotificationImage(data))
+  const file = new File([blob], name, { type: format === 'pdf' ? 'application/pdf' : 'image/png' })
+  if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: `Notificación · ${data.student.firstName} ${data.student.lastName}` })
+      return
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return // el usuario cerró el menú
+      // NotAllowedError u otro: se descarga como respaldo.
+    }
+  }
+  downloadBlob(blob, name)
 }
 
 export async function downloadMultiNotificationImage(items: NotificationPrintData[]) {

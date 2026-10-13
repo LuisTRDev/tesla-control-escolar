@@ -1,8 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Download, FileText, X } from 'lucide-react'
+import { Download, FileText, Share2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import type { NotificationPrintData } from '@/lib/notificationTypes'
-import { downloadNotificationImage, downloadNotificationPdf, downloadNotificationWord } from '@/lib/notificationLoader'
+import { downloadNotificationImage, downloadNotificationPdf, downloadNotificationWord, shareNotification } from '@/lib/notificationLoader'
+import { canShareFiles } from '@/lib/nativeFeatures'
 import { getPresentationViolationLabels } from '@/lib/presentation'
 import { getNotificationLabel } from '@/services/notificationService'
 
@@ -53,7 +54,17 @@ export default function NotificationPreviewModal({ notificationPreviewData, setN
               </div>
             </div>
 
-            <div className="mt-6 grid gap-2 sm:grid-cols-2">
+            {canShareFiles() && (
+              <div className="mt-6 grid grid-cols-2 gap-2">
+                <Button className="bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:text-white dark:hover:bg-emerald-600" onClick={() => void shareNotification(notificationData, 'pdf')}>
+                  <Share2 className="mr-2" size={18} /> Compartir PDF
+                </Button>
+                <Button variant="outline" onClick={() => void shareNotification(notificationData, 'png')}>
+                  <Share2 className="mr-2" size={18} /> Compartir imagen
+                </Button>
+              </div>
+            )}
+            <div className={`${canShareFiles() ? 'mt-2' : 'mt-6'} grid gap-2 sm:grid-cols-2`}>
               <Button onClick={() => downloadNotificationPdf(notificationData)}>
                 <Download className="mr-2" size={18} /> Descargar PDF
               </Button>

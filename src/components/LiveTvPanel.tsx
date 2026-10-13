@@ -7,6 +7,7 @@ import {
   Wifi, WifiOff, X, EyeOff, Plus, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import type { AttendanceRecord, Classroom, PresentationRecord, Student } from '@/types'
+import { useWakeLock } from '@/lib/nativeFeatures'
 
 type Props = {
   open: boolean
@@ -117,6 +118,8 @@ export default function LiveTvPanel({
   realtimeConnected,
 }: Props) {
   const [now, setNow] = useState(() => new Date())
+  // Pantalla siempre encendida mientras se usa (hora de ingreso, pantalla del patio).
+  useWakeLock(open)
   const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement))
   const [editMode, setEditMode] = useState(false)
   const [layout, setLayout] = useState<LayoutCard[]>(() => loadLayout())
