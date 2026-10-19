@@ -12,7 +12,7 @@
 --      dejando la más antigua.
 --   2. Si aún quedan dos salidas del mismo alumno el mismo día con datos distintos
 --      (p. ej. otro nombre de quien recoge), se detiene SIN cambiar nada: decide cuál
---      borrar con la consulta A del final y vuelve a ejecutar el script.
+--      borrar con phase18_check_duplicates.sql y vuelve a ejecutar este script.
 --   3. Crea los índices únicos:
 --        early_exits (student_id, date)                          una salida por alumno y día
 --        student_permissions (student_id, kind, date_from, date_to)  sin permisos idénticos
@@ -56,7 +56,7 @@ begin
     select 1 from public.student_permissions group by student_id, kind, date_from, date_to having count(*) > 1
   ) x;
   if v_exits > 0 or v_permissions > 0 then
-    raise exception 'Quedan repetidos con datos distintos (salidas: %, permisos: %). Usa las consultas A y B al final de este archivo, borra los que sobren y vuelve a ejecutarlo. No se cambió nada.', v_exits, v_permissions;
+    raise exception 'Quedan repetidos con datos distintos (salidas: %, permisos: %). Usa phase18_check_duplicates.sql, borra los que sobren y vuelve a ejecutarlo. No se cambió nada.', v_exits, v_permissions;
   end if;
 end $$;
 
@@ -79,22 +79,4 @@ where e.student_id = a.student_id
 
 commit;
 
--- ---------------------------------------------------------------------------------
--- A. Salidas anticipadas repetidas (mismo alumno y día). Borra la que sobre con:
---      delete from public.early_exits where id = <id>;
--- select e.id, e.date, e.exit_time, s.last_name, s.first_name, e.picked_up_by_name, e.reason, e.created_at
--- from public.early_exits e join public.students s on s.id = e.student_id
--- where (e.student_id, e.date) in (
---   select student_id, date from public.early_exits group by student_id, date having count(*) > 1
--- )
--- order by e.student_id, e.date, e.id;
---
--- B. Permisos repetidos (mismo alumno, tipo y fechas). Borra el que sobre con:
---      delete from public.student_permissions where id = <id>;
--- select p.id, p.kind, p.date_from, p.date_to, s.last_name, s.first_name, p.reason, p.created_at
--- from public.student_permissions p join public.students s on s.id = p.student_id
--- where (p.student_id, p.kind, p.date_from, p.date_to) in (
---   select student_id, kind, date_from, date_to from public.student_permissions
---   group by student_id, kind, date_from, date_to having count(*) > 1
--- )
--- order by p.student_id, p.date_from, p.id;
+-- Para ver y borrar los repetidos con datos distintos usa supabase/phase18_check_duplicates.sql.
