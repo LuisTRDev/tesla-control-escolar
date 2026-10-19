@@ -5,7 +5,7 @@ import { useToast } from '@/lib/toast'
 import { MotionConfig } from 'framer-motion'
 import { isAdminRole } from '@/services/rosterService'
 import {
-  AlertTriangle, Ban, Bell, CalendarCheck2, CalendarOff, ChevronDown, Clock3, HelpCircle, Menu, MessageCircle, Monitor, Search, Settings2, Shirt, Users, X,
+  AlertTriangle, Ban, Bell, CalendarCheck2, CalendarOff, ChevronDown, Clock3, HelpCircle, Menu, MessageCircle, Monitor, Search, Settings2, Shirt, Users, UserX, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { TimePicker } from '@/components/ui/TimePicker'
@@ -31,6 +31,7 @@ import { LateNoTimeBanner, LateNoTimeSwitch, useLateNoTimeMode } from '@/compone
 import JustifyDialog, { type JustifyTarget } from '@/components/attendance/JustifyDialog'
 import PermissionDialog from '@/components/attendance/PermissionDialog'
 import EarlyExitDialog from '@/components/attendance/EarlyExitDialog'
+import MarkAbsenceDialog from '@/components/attendance/MarkAbsenceDialog'
 import ScheduleCalendarSettings from '@/components/attendance/ScheduleCalendarSettings'
 import AttendanceEditDialog from '@/components/attendance/AttendanceEditDialog'
 import StudentAttendanceCard from '@/components/attendance/StudentAttendanceCard'
@@ -72,7 +73,7 @@ import {
 import { getWhatsAppTemplates, saveWhatsAppTemplates } from '@/services/whatsappTemplateService'
 import { friendlyError } from '@/lib/errorMessages'
 import {
-  CALENDAR_KIND_LABELS, EMPTY_DAY_STATUS, findPermission, getDayStatusData, getEffectiveSchedule, saveLevelSchedule,
+  CALENDAR_KIND_LABELS, EMPTY_DAY_STATUS, findPermission, getDayStatusData, getEffectiveSchedule, removeAbsence, saveLevelSchedule,
   type DayStatusData,
 } from '@/services/dayStatusService'
 import type {
@@ -183,6 +184,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [justifyTarget, setJustifyTarget] = useState<JustifyTarget | null>(null)
   const [permissionStudent, setPermissionStudent] = useState<Student | null>(null)
   const [earlyExitStudent, setEarlyExitStudent] = useState<Student | null>(null)
+  /** Diálogo de faltas: un alumno (preseleccionado) o el aula (lista para elegir). */
+  const [absenceDialog, setAbsenceDialog] = useState<{ students: Student[]; selected: string[] } | null>(null)
   const [syncPanelOpen, setSyncPanelOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [usersOpen, setUsersOpen] = useState(false)
@@ -378,6 +381,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   useBackClose(justifyTarget !== null, () => setJustifyTarget(null))
   useBackClose(permissionStudent !== null, () => setPermissionStudent(null))
   useBackClose(earlyExitStudent !== null, () => setEarlyExitStudent(null))
+  useBackClose(absenceDialog !== null, () => setAbsenceDialog(null))
   // App instalada: número de cambios sin sincronizar sobre el ícono, y almacenamiento
   // persistente para que Android no borre la cola offline.
   useEffect(() => { setAppBadge(syncState.pending) }, [syncState.pending])
@@ -429,6 +433,31 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   }
   function upsertAbsence(absence: AbsenceRecord) {
     setDayStatus((curr) => ({ ...curr, absences: [...curr.absences.filter((a) => a.id !== absence.id), absence] }))
+  }
+  function addAbsences(saved: AbsenceRecord[]) {
+    setDayStatus((curr) => ({ ...curr, absences: [...curr.absences.filter((a) => !saved.some((s) => s.id === a.id)), ...saved] }))
+    if (saved.length === 0) { toast.info('No se registró ninguna falta', 'Esos alumnos ya tenían ingreso o falta hoy.'); return }
+    const justifiedCount = saved.filter((a) => a.status === 'JUSTIFIED').length
+    const single = saved.length === 1 ? studentMap.get(saved[0].studentId) : undefined
+    toast.success(
+      single ? `Falta registrada: ${single.firstName} ${single.lastName}` : `${saved.length} faltas registradas`,
+      justifiedCount ? (justifiedCount === saved.length ? 'Justificada' + (saved.length === 1 ? '' : 's') : `${justifiedCount} justificadas`) : 'Se puede justificar desde la tarjeta del alumno',
+    )
+  }
+  async function confirmRemoveAbsence(student: Student, absence: AbsenceRecord) {
+    if (!confirm(`¿Quitar la falta de ${student.firstName} ${student.lastName}? Quedará como pendiente de marcar.`)) return
+    try {
+      await removeAbsence(absence)
+      setDayStatus((curr) => ({ ...curr, absences: curr.absences.filter((a) => a.id !== absence.id) }))
+      toast.info(`Falta quitada: ${student.firstName} ${student.lastName}`)
+    } catch (error) {
+      reportError('Attendance', error)
+      toast.error('No se pudo quitar la falta', friendlyError(error))
+    }
+  }
+  function openGroupAbsences() {
+    const candidates = classroomStudents.filter((s) => !recordByStudent.has(s.id) && !absenceByStudent.has(s.id) && !findPermission(todayPermissions, s.id, today, 'ABSENCE'))
+    setAbsenceDialog({ students: candidates, selected: [] })
   }
   function addEarlyExit(exit: EarlyExit) {
     setDayStatus((curr) => ({ ...curr, earlyExits: [...curr.earlyExits, exit] }))
@@ -561,12 +590,14 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       const rec=await registerAttendance(studentId,schedule.entryLimit,today,lateNoTime ? '' : getCurrentTime(),schedule.tolerance, latePermission ? { reason: `Permiso: ${latePermission.reason}`, byName: userName } : undefined)
       setRecords((curr)=>[...curr.filter((r)=>!(r.studentId===studentId&&r.date===today)),rec])
       feedback(rec.status === 'LATE' && !rec.justified ? 'late' : 'ok')
-      if (absenceByStudent.has(studentId)) setDayStatus((curr) => ({ ...curr, absences: curr.absences.filter((a) => !(a.studentId === studentId && a.date === today)) }))
+      const hadAbsence = absenceByStudent.has(studentId)
+      // La base borra la falta sola al registrar el ingreso (trigger de phase14).
+      if (hadAbsence) setDayStatus((curr) => ({ ...curr, absences: curr.absences.filter((a) => !(a.studentId === studentId && a.date === today)) }))
       const name = student ? `${student.firstName} ${student.lastName}` : 'Alumno'
       // Sin diálogo de confirmación: un toque marca y el aviso permite deshacer durante 5 s.
       toast.show({
         title: `${name} — ${rec.status === 'LATE' ? (rec.justified ? 'Tardanza con permiso' : 'Tardanza') : 'A tiempo'}`,
-        description: rec.time ? `Hora registrada: ${rec.time}` : 'Sin hora registrada',
+        description: `${rec.time ? `Hora registrada: ${rec.time}` : 'Sin hora registrada'}${hadAbsence ? ' · Se quitó su falta' : ''}`,
         variant: rec.status === 'LATE' ? 'warning' : 'success',
         duration: 5000,
         action: { label: 'Deshacer', onClick: () => void undoMark(rec, name) },
@@ -1201,6 +1232,13 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 <Users className="mr-2" size={17} /> Marcar el resto a tiempo
               </Button>
             </Tooltip>
+            {dayStatus.available && (
+              <Tooltip content="Registra ahora a los alumnos que no vinieron, sin esperar al cierre del día">
+                <Button variant="outline" onClick={openGroupAbsences} disabled={unmarkedToday.length === 0}>
+                  <UserX className="mr-2" size={17} /> Marcar faltas
+                </Button>
+              </Tooltip>
+            )}
             <Tooltip content="Marca asistencia de un alumno a la vez, ideal para la hora de ingreso">
               <Button data-tour="quick" onClick={() => setQuickModeOpen(true)} title="Modo rápido (tecla Q)">
                 <Clock3 className="mr-2" size={17} /> Modo rápido
@@ -1340,6 +1378,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 onJustifyAbsence={(target, absence) => setJustifyTarget({ kind: 'ABSENCE', student: target, absence })}
                 onPermission={setPermissionStudent}
                 onEarlyExit={setEarlyExitStudent}
+                onMarkAbsence={(target) => setAbsenceDialog({ students: [target], selected: [target.id] })}
+                onRemoveAbsence={(target, absence) => void confirmRemoveAbsence(target, absence)}
                 setHistoryStudent={setHistoryStudent}
               />
               </div>
@@ -1539,6 +1579,15 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         userName={userName}
         onClose={() => setPermissionStudent(null)}
         onChanged={() => { void reloadDayStatus(); toast.success('Permisos actualizados') }}
+      />
+
+      <MarkAbsenceDialog
+        students={absenceDialog?.students ?? null}
+        initialSelected={absenceDialog?.selected}
+        date={today}
+        userName={userName}
+        onClose={() => setAbsenceDialog(null)}
+        onSaved={addAbsences}
       />
 
       <EarlyExitDialog

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { BookOpen, CalendarClock, Check, ClipboardCheck, Clock3, DoorOpen, Edit3, FileText, FolderOpen, LogOut, MessageCircle, MoreHorizontal, ShieldCheck, Shirt, TriangleAlert, UserX } from 'lucide-react'
+import { BookOpen, CalendarClock, Check, ClipboardCheck, Clock3, DoorOpen, Edit3, FileText, FolderOpen, LogOut, MessageCircle, MoreHorizontal, ShieldCheck, Shirt, TriangleAlert, Undo2, UserX } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { ActionSheet, type SheetAction } from '@/components/ui/ActionSheet'
@@ -33,6 +33,8 @@ type Props = {
   onJustifyAbsence: (student: Student, absence: AbsenceRecord) => void
   onPermission: (student: Student) => void
   onEarlyExit: (student: Student) => void
+  onMarkAbsence: (student: Student) => void
+  onRemoveAbsence: (student: Student, absence: AbsenceRecord) => void
 }
 
 const pillBase = 'flex min-h-12 min-w-0 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold'
@@ -73,7 +75,7 @@ const tones = {
  * tres botones (normas, WhatsApp, "Más"); el resto de acciones vive en la hoja "Más".
  * En pantallas anchas (lg) las acciones secundarias se ven en línea.
  */
-export default function StudentAttendanceCard({ student, classroom, record, presentation, violations, recurrence, whatsAppOptions, canOpenWhatsApp, mark, markExit, openAttendanceEdit, openPresentation, openNotification, openWhatsAppModal, setCaseFileStudent, setHistoryStudent, dayStatusEnabled, absence, permission, earlyExit, onJustifyLate, onJustifyAbsence, onPermission, onEarlyExit }: Props) {
+export default function StudentAttendanceCard({ student, classroom, record, presentation, violations, recurrence, whatsAppOptions, canOpenWhatsApp, mark, markExit, openAttendanceEdit, openPresentation, openNotification, openWhatsAppModal, setCaseFileStudent, setHistoryStudent, dayStatusEnabled, absence, permission, earlyExit, onJustifyLate, onJustifyAbsence, onPermission, onEarlyExit, onMarkAbsence, onRemoveAbsence }: Props) {
   const [moreOpen, setMoreOpen] = useState(false)
   const lateUnjustified = record?.status === 'LATE' && !record.justified
   const fullName = `${student.firstName} ${student.lastName}`
@@ -124,7 +126,9 @@ export default function StudentAttendanceCard({ student, classroom, record, pres
   const actions: SheetAction[] = []
   if (record) actions.push({ key: 'edit', label: 'Editar ingreso', description: record.time ? `Registrado a las ${record.time}` : 'Tardanza sin hora', icon: <Edit3 size={19} />, onSelect: () => openAttendanceEdit(record) })
   if (dayStatusEnabled && lateUnjustified && record) actions.push({ key: 'justify-late', label: 'Justificar tardanza', icon: <ShieldCheck size={19} />, tone: 'sky', onSelect: () => onJustifyLate(student, record) })
+  if (dayStatusEnabled && !record && !absence && permission?.kind !== 'ABSENCE') actions.push({ key: 'absence', label: 'Marcar falta', description: 'No vino hoy (se puede justificar al marcarla)', icon: <UserX size={19} />, tone: 'red', onSelect: () => onMarkAbsence(student) })
   if (absence?.status === 'UNJUSTIFIED') actions.push({ key: 'justify-absence', label: 'Justificar falta', icon: <ShieldCheck size={19} />, tone: 'sky', onSelect: () => onJustifyAbsence(student, absence) })
+  if (absence && absence.status !== 'PERMISSION') actions.push({ key: 'remove-absence', label: 'Quitar falta', description: 'Si se marcó por error', icon: <Undo2 size={19} />, onSelect: () => onRemoveAbsence(student, absence) })
   if (canEarlyExit) actions.push({ key: 'early-exit', label: 'Salida anticipada', description: 'Retiro antes de la hora, con quién lo recoge', icon: <DoorOpen size={19} />, tone: 'orange', onSelect: () => onEarlyExit(student) })
   if (dayStatusEnabled) actions.push({ key: 'permission', label: 'Permiso', description: 'Llegada tarde o inasistencia autorizada', icon: <CalendarClock size={19} />, onSelect: () => onPermission(student) })
   if (needsNotification) actions.push({ key: 'notification', label: 'Notificación', description: 'Ficha para el apoderado (PDF / Word)', icon: <FileText size={19} />, onSelect: () => void openNotification(student) })
@@ -197,8 +201,8 @@ export default function StudentAttendanceCard({ student, classroom, record, pres
         {actions.map((action) => (
           <Button
             key={action.key}
-            variant={action.tone === 'sky' || action.tone === 'orange' ? 'outline' : 'ghost'}
-            className={`h-9 min-h-9 px-3 ${action.tone === 'sky' ? 'border-sky-200 text-sky-700 hover:bg-sky-50 dark:border-sky-900/70 dark:text-sky-300 dark:hover:bg-sky-950/40' : action.tone === 'orange' ? 'border-orange-200 text-orange-700 hover:bg-orange-50 dark:border-orange-900/70 dark:text-orange-300 dark:hover:bg-orange-950/40' : ''}`}
+            variant={action.tone === 'sky' || action.tone === 'orange' || action.tone === 'red' ? 'outline' : 'ghost'}
+            className={`h-9 min-h-9 px-3 ${action.tone === 'sky' ? 'border-sky-200 text-sky-700 hover:bg-sky-50 dark:border-sky-900/70 dark:text-sky-300 dark:hover:bg-sky-950/40' : action.tone === 'orange' ? 'border-orange-200 text-orange-700 hover:bg-orange-50 dark:border-orange-900/70 dark:text-orange-300 dark:hover:bg-orange-950/40' : action.tone === 'red' ? 'border-red-200 text-red-700 hover:bg-red-50 dark:border-red-900/70 dark:text-red-300 dark:hover:bg-red-950/40' : ''}`}
             onClick={action.onSelect}
           >
             <span className="mr-1.5 [&>svg]:h-4 [&>svg]:w-4">{action.icon}</span>{action.label}

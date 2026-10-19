@@ -229,6 +229,56 @@ export async function unjustifyAbsence(absence: AbsenceRecord): Promise<AbsenceR
 }
 
 // ---------------------------------------------------------------------------
+// Faltas marcadas a mano (sin esperar al "Cerrar día")
+// ---------------------------------------------------------------------------
+
+const ABSENCE_COLUMNS = 'id, student_id, classroom_id, date, status, justification_reason, justification_document, justified_by_name, justified_at'
+
+/**
+ * Marca con falta a uno o varios alumnos. Se omite a quien ya tiene marca de ingreso
+ * o ya tiene falta ese día. Con `justification` quedan como faltas justificadas.
+ * Si el alumno llega después, la base borra su falta sola (trigger de phase14).
+ */
+export async function markAbsences(input: {
+  students: Array<{ id: string; classroomId: string }>; date: string; justification?: JustificationInput
+}): Promise<AbsenceRecord[]> {
+  requireOnline('Marcar faltas')
+  if (input.students.length === 0) return []
+  const ids = input.students.map((s) => Number(s.id))
+  const [attended, existing] = await Promise.all([
+    supabase.from('attendance').select('student_id').eq('date', input.date).in('student_id', ids),
+    supabase.from('student_absences').select('student_id').eq('date', input.date).in('student_id', ids),
+  ])
+  if (attended.error) throw attended.error
+  if (existing.error) throw existing.error
+  const skip = new Set([...(attended.data ?? []), ...(existing.data ?? [])].map((row: { student_id: number }) => String(row.student_id)))
+  const pending = input.students.filter((s) => !skip.has(s.id))
+  if (pending.length === 0) return []
+
+  const justification = input.justification ? {
+    status: 'JUSTIFIED' as const,
+    justification_reason: cleanReason(input.justification.reason),
+    justification_document: input.justification.documentPath ?? null,
+    justified_by: await currentUserId(),
+    justified_by_name: input.justification.byName,
+    justified_at: new Date().toISOString(),
+  } : { status: 'UNJUSTIFIED' as const }
+  const { data, error } = await supabase.from('student_absences')
+    .upsert(pending.map((s) => ({ student_id: Number(s.id), classroom_id: Number(s.classroomId) || null, date: input.date, ...justification })), { onConflict: 'student_id,date', ignoreDuplicates: true })
+    .select(ABSENCE_COLUMNS)
+  if (error) throw error
+  return ((data ?? []) as DbAbsence[]).map(mapAbsence)
+}
+
+/** Para faltas marcadas por error. Las de permiso previo se quitan borrando el permiso. */
+export async function removeAbsence(absence: AbsenceRecord): Promise<void> {
+  requireOnline('Quitar la falta')
+  if (absence.status === 'PERMISSION') throw new NoticeError('Esta falta viene de un permiso previo: borra el permiso para quitarla.')
+  const { error } = await supabase.from('student_absences').delete().eq('id', Number(absence.id))
+  if (error) throw error
+}
+
+// ---------------------------------------------------------------------------
 // Permisos anticipados
 // ---------------------------------------------------------------------------
 

@@ -10,7 +10,7 @@ const { fake } = await vi.hoisted(async () => {
 vi.mock('@/lib/supabase', () => ({ supabase: fake }))
 vi.mock('@/lib/offlineDb', () => ({ getSnapshot: vi.fn(), setSnapshot: vi.fn() }))
 
-const { createPermission, registerEarlyExit } = await import('@/services/dayStatusService')
+const { createPermission, markAbsences, registerEarlyExit, removeAbsence } = await import('@/services/dayStatusService')
 
 const input = { studentId: '10', dateFrom: '2026-10-19', dateTo: '2026-10-21', kind: 'ABSENCE' as const, reason: 'Salud / cita médica', byName: 'Auxiliar' }
 
@@ -62,5 +62,37 @@ describe('registerEarlyExit', () => {
     fake.failNext('attendance', 'update', { code: '23514', message: 'violates check constraint' })
     await expect(registerEarlyExit({ ...exit, attendance })).rejects.toMatchObject({ code: '23514' })
     expect(fake.rows('early_exits')).toHaveLength(0)
+  })
+})
+
+describe('markAbsences / removeAbsence', () => {
+  const students = [{ id: '10', classroomId: '1' }, { id: '11', classroomId: '1' }, { id: '12', classroomId: '1' }]
+
+  it('marca faltas sin justificar y omite a quien ya tiene ingreso o falta', async () => {
+    fake.seed('attendance', [{ id: 1, student_id: 11, date: '2026-10-19', entry_time: '07:40', status: 'ON_TIME' }])
+    fake.seed('student_absences', [{ id: 1, student_id: 12, classroom_id: 1, date: '2026-10-19', status: 'PERMISSION' }])
+    const saved = await markAbsences({ students, date: '2026-10-19' })
+    expect(saved).toHaveLength(1)
+    expect(saved[0]).toMatchObject({ studentId: '10', status: 'UNJUSTIFIED' })
+    expect(fake.rows('student_absences').find((r) => r.student_id === 12)).toMatchObject({ status: 'PERMISSION' })
+  })
+
+  it('puede marcarlas ya justificadas', async () => {
+    Object.assign(fake, { auth: { getSession: async () => ({ data: { session: { user: { id: 'u-1' } } } }) } })
+    const saved = await markAbsences({ students: students.slice(0, 2), date: '2026-10-19', justification: { reason: 'Salud / cita médica', byName: 'Auxiliar' } })
+    expect(saved.map((a) => a.status)).toEqual(['JUSTIFIED', 'JUSTIFIED'])
+    expect(saved[0]).toMatchObject({ justificationReason: 'Salud / cita médica', justifiedByName: 'Auxiliar' })
+  })
+
+  it('quita una falta marcada por error, pero no una de permiso previo', async () => {
+    const [absence] = await markAbsences({ students: students.slice(0, 1), date: '2026-10-19' })
+    await removeAbsence(absence)
+    expect(fake.rows('student_absences')).toHaveLength(0)
+    await expect(removeAbsence({ ...absence, status: 'PERMISSION' })).rejects.toThrow(/permiso previo/)
+  })
+
+  it('requiere conexión', async () => {
+    vi.stubGlobal('navigator', { onLine: false })
+    await expect(markAbsences({ students, date: '2026-10-19' })).rejects.toThrow(/conexión/)
   })
 })

@@ -48,7 +48,6 @@ export default function PermissionDialog({ student, permissions, today, userName
       const documentPath = file ? await uploadJustificationDocument(file, student.id, (message) => toast.info(message)) : null
       await createPermission({ studentId: student.id, dateFrom, dateTo: kind === 'LATE' ? dateFrom : dateTo, kind, reason: [reason, detail.trim()].filter(Boolean).join(': '), documentPath, byName: userName })
       // Se cierra al guardar: si queda abierto con los mismos datos, invita a registrarlo otra vez.
-      toast.success('Permiso registrado', `${KIND_LABEL[kind]} · ${student.firstName} ${student.lastName}`)
       onChanged()
       onClose()
     } catch (err) {
