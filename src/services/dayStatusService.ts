@@ -236,6 +236,11 @@ export async function createPermission(input: { studentId: string; dateFrom: str
   requireOnline('Registrar un permiso')
   if (!input.dateFrom || !input.dateTo) throw new Error('Elige las fechas del permiso.')
   if (input.dateTo < input.dateFrom) throw new Error('La fecha final no puede ser anterior a la inicial.')
+  // Evita repetidos (p. ej. doble toque): no se crea si otro permiso del mismo tipo ya cubre esas fechas.
+  const { data: covering, error: coverError } = await supabase.from('student_permissions').select('id')
+    .eq('student_id', Number(input.studentId)).eq('kind', input.kind).lte('date_from', input.dateFrom).gte('date_to', input.dateTo).limit(1)
+  if (coverError) throw coverError
+  if (covering?.length) throw new NoticeError('El alumno ya tiene un permiso de este tipo que cubre esas fechas. Revisa los permisos vigentes.')
   const { data, error } = await supabase.from('student_permissions').insert({
     student_id: Number(input.studentId), date_from: input.dateFrom, date_to: input.dateTo, kind: input.kind,
     reason: cleanReason(input.reason), document_path: input.documentPath ?? null, created_by_name: input.byName,

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tesla-control-v0.7.5'
+const CACHE_NAME = 'tesla-control-v0.7.6'
 const APP_SHELL = [
   '/',
   '/index.html',

@@ -42,13 +42,15 @@ export default function PermissionDialog({ student, permissions, today, userName
   const own = student ? permissions.filter((item) => item.studentId === student.id && item.dateTo >= today) : []
 
   async function save() {
-    if (!student) return
+    if (!student || saving) return
     setSaving(true); setError('')
     try {
       const documentPath = file ? await uploadJustificationDocument(file, student.id, (message) => toast.info(message)) : null
       await createPermission({ studentId: student.id, dateFrom, dateTo: kind === 'LATE' ? dateFrom : dateTo, kind, reason: [reason, detail.trim()].filter(Boolean).join(': '), documentPath, byName: userName })
-      setDetail(''); setFile(null)
+      // Se cierra al guardar: si queda abierto con los mismos datos, invita a registrarlo otra vez.
+      toast.success('Permiso registrado', `${KIND_LABEL[kind]} · ${student.firstName} ${student.lastName}`)
       onChanged()
+      onClose()
     } catch (err) {
       reportError('PermissionDialog', err)
       setError(friendlyError(err, 'No se pudo registrar el permiso.'))
