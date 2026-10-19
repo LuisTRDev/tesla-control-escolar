@@ -9,6 +9,8 @@ export type NetworkSyncState = {
   lastSync: string | null
   /** Operaciones que ya fallaron al menos una vez (se muestran en rojo en el panel). */
   failing: number
+  /** Operaciones que el servidor rechazó: ya no se reintentan solas, necesitan revisión. */
+  blocked: number
   /** Conflictos resueltos automáticamente que el auxiliar aún no revisó. */
   conflicts: number
   lastResult: SyncResult | null
@@ -22,6 +24,7 @@ export function useNetworkSync(onPull?: () => Promise<void>, intervalMs = 15_000
   const [pending, setPending] = useState(0)
   const [lastSync, setLastSync] = useState<string | null>(null)
   const [failing, setFailing] = useState(0)
+  const [blocked, setBlocked] = useState(0)
   const [conflicts, setConflicts] = useState(0)
   const [lastResult, setLastResult] = useState<SyncResult | null>(null)
 
@@ -29,6 +32,7 @@ export function useNetworkSync(onPull?: () => Promise<void>, intervalMs = 15_000
     const [items, last, conflictList] = await Promise.all([listPendingOperations(), getMeta<string>('last_sync'), getSyncConflicts()])
     setPending(items.length)
     setFailing(items.filter((item) => item.lastError).length)
+    setBlocked(items.filter((item) => item.blocked).length)
     setConflicts(conflictList.length)
     setLastSync(last)
   }, [])
@@ -38,7 +42,7 @@ export function useNetworkSync(onPull?: () => Promise<void>, intervalMs = 15_000
     setSyncing(true)
     try {
       const result = await flushSyncQueue()
-      if (result.sent || result.failed || result.conflicts) setLastResult(result)
+      if (result.sent || result.failed || result.conflicts || result.blocked) setLastResult(result)
       if (onPull) await onPull()
     } finally {
       setSyncing(false)
@@ -81,5 +85,5 @@ export function useNetworkSync(onPull?: () => Promise<void>, intervalMs = 15_000
     return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', visibility) }
   }, [intervalMs, syncNow])
 
-  return { online, syncing, pending, lastSync, failing, conflicts, lastResult, syncNow, retry }
+  return { online, syncing, pending, lastSync, failing, blocked, conflicts, lastResult, syncNow, retry }
 }

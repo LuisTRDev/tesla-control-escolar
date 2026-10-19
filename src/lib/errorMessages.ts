@@ -43,6 +43,31 @@ function errorParts(error: unknown): { message: string; code: string; isAppError
   return { message: '', code: '', isAppError: false }
 }
 
+/**
+ * Aviso esperable para el usuario (p. ej. "esta marca aún no se envió"): se muestra
+ * tal cual, pero no es una falla de la app y el monitoreo no lo registra.
+ */
+export class NoticeError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'NoticeError'
+  }
+}
+
+/**
+ * El servidor respondió y rechazó el dato (CHECK, permisos, falta un SQL...).
+ * Reintentar no lo arregla: guardarlo en la cola solo esconde el problema.
+ * Sin red, tiempo agotado, demasiados intentos, sesión vencida o un error HTTP
+ * sin código de la base se consideran pasajeros (devuelve false).
+ */
+export function isPermanentServerError(error: unknown): boolean {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false
+  const { code } = errorParts(error)
+  if (!code || /^\d{3}$/.test(code)) return false
+  const hint = knownErrorHint(error)
+  return hint !== ERROR_HINTS.offline && hint !== ERROR_HINTS.timeout && hint !== ERROR_HINTS.rateLimit && hint !== ERROR_HINTS.session
+}
+
 /** Mensaje técnico reconocido → instrucción clara. Devuelve null si no se reconoce. */
 export function knownErrorHint(error: unknown): string | null {
   const { message, code } = errorParts(error)

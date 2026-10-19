@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { setErrorSink } from '@/lib/security'
-import { ERROR_HINTS, knownErrorHint } from '@/lib/errorMessages'
+import { ERROR_HINTS, knownErrorHint, NoticeError } from '@/lib/errorMessages'
 
 export type ApplicationErrorContext = {
   module?: string
@@ -123,8 +123,9 @@ export async function logApplicationError(context: ApplicationErrorContext) {
   }
 }
 
-/** Errores esperables (sin Internet, sesión vencida) no son fallas de la app: no se registran. */
+/** Errores esperables (sin Internet, sesión vencida, avisos al usuario) no son fallas de la app: no se registran. */
 function isExpectedError(error: unknown) {
+  if (error instanceof NoticeError) return true
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true
   const hint = knownErrorHint(error)
   return hint === ERROR_HINTS.offline || hint === ERROR_HINTS.session

@@ -16,7 +16,7 @@ vi.mock('@/lib/offlineDb', () => ({
   removePendingOperationFor: vi.fn(async () => false),
 }))
 
-const { registerAttendance, registerBulkAttendance, getAttendanceRange } = await import('@/services/schoolService')
+const { registerAttendance, registerBulkAttendance, getAttendanceRange, updateAttendanceEntryTime } = await import('@/services/schoolService')
 
 beforeEach(() => {
   fake.tables = {}
@@ -70,6 +70,13 @@ describe('registerAttendance', () => {
     const rec = await registerAttendance('1', '07:45', '2026-10-12', '07:40')
     expect(rec.id).toMatch(/^offline-/)
     expect(queue).toHaveLength(1)
+    expect(queue[0].payload.entryRecordedAt).toEqual(expect.any(String))
+  })
+
+  it('si el servidor rechaza la marca (CHECK), avisa en el momento y no la esconde en la cola', async () => {
+    fake.failNext('attendance', 'upsert', { code: '23514', message: 'new row violates check constraint "notifications_notification_number_check"' })
+    await expect(registerAttendance('1', '07:45', '2026-10-12', '08:15')).rejects.toMatchObject({ code: '23514' })
+    expect(queue).toHaveLength(0)
   })
 })
 
@@ -92,5 +99,25 @@ describe('getAttendanceRange', () => {
     const records = await getAttendanceRange('2026-10-01', '2026-10-31')
     expect(records).toHaveLength(2345)
     expect(fake.calls.filter((c) => c.table === 'attendance').length).toBe(3)
+  })
+})
+
+describe('updateAttendanceEntryTime con una marca aún en la cola', () => {
+  it('corrige la hora en la cola local, aun sin Internet', async () => {
+    vi.stubGlobal('navigator', { onLine: false })
+    const { listPendingOperations } = await import('@/lib/offlineDb')
+    vi.mocked(listPendingOperations).mockResolvedValueOnce([{
+      id: 'op-1', type: 'ATTENDANCE_UPSERT', createdAt: '2026-10-12T13:15:00.000Z', retryCount: 27, lastError: 'x', blocked: true,
+      payload: { studentId: '1', date: '2026-10-12', time: '08:15', status: 'LATE', entryRecordedAt: '2026-10-12T13:15:00.000Z' },
+    }])
+    const rec = await updateAttendanceEntryTime({ id: 'offline-attendance-1-2026-10-12', studentId: '1', date: '2026-10-12', time: '08:15', status: 'LATE' }, '07:15', '07:45')
+    expect(rec).toMatchObject({ time: '07:15', status: 'ON_TIME' })
+    expect(queue).toEqual([{ type: 'ATTENDANCE_UPSERT', payload: expect.objectContaining({ time: '07:15', status: 'ON_TIME', entryRecordedAt: '2026-10-12T13:15:00.000Z' }) }])
+    expect(fake.calls).toHaveLength(0)
+  })
+
+  it('si la marca ya salió de la cola, pide actualizar la lista', async () => {
+    await expect(updateAttendanceEntryTime({ id: 'offline-attendance-1-2026-10-12', studentId: '1', date: '2026-10-12', time: '08:15', status: 'LATE' }, '07:15', '07:45'))
+      .rejects.toThrow(/ya se envió/)
   })
 })

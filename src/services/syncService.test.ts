@@ -108,6 +108,26 @@ describe('flushSyncQueue — entradas', () => {
     expect(state.queue[0].lastAttemptAt).toBeTruthy()
   })
 
+  it('guarda como hora de registro el momento real del toque, no el del envío', async () => {
+    state.queue = [op('ATTENDANCE_UPSERT', { studentId: '1', date: '2026-10-12', time: '07:40', status: 'ON_TIME', entryRecordedAt: '2026-10-12T12:40:05.000Z' })]
+    await flushSyncQueue()
+    expect(fake.rows('attendance')[0]).toMatchObject({ entry_recorded_at: '2026-10-12T12:40:05.000Z' })
+  })
+
+  it('un rechazo del servidor queda bloqueado y ya no se reintenta solo, pero sí a pedido', async () => {
+    fake.failNext('attendance', 'upsert', { code: '23514', message: 'violates check constraint' })
+    state.queue = [entry('08:15', 'LATE')]
+    const first = await flushSyncQueue()
+    expect(first).toMatchObject({ failed: 1, blocked: 1, remaining: 1 })
+    expect(state.queue[0].blocked).toBe(true)
+
+    const auto = await flushSyncQueue()
+    expect(auto).toMatchObject({ sent: 0, failed: 0, remaining: 1 })
+
+    const manual = await flushSyncQueue({ onlyIds: [state.queue[0].id] })
+    expect(manual).toMatchObject({ sent: 1, remaining: 0 })
+  })
+
   it('traduce errores técnicos de la base a un mensaje claro', async () => {
     fake.failNext('attendance', 'upsert', { code: '42501', message: 'new row violates row-level security policy' })
     state.queue = [entry('07:40')]
@@ -179,7 +199,7 @@ describe('flushSyncQueue — control', () => {
     vi.stubGlobal('navigator', { onLine: false })
     state.queue = [entry('07:40')]
     const result = await flushSyncQueue()
-    expect(result).toEqual({ sent: 0, failed: 0, remaining: 1, conflicts: 0 })
+    expect(result).toEqual({ sent: 0, failed: 0, remaining: 1, conflicts: 0, blocked: 0 })
     expect(fake.calls).toHaveLength(0)
   })
 

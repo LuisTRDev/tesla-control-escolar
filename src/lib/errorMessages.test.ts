@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ERROR_HINTS, friendlyError, knownErrorHint } from '@/lib/errorMessages'
+import { ERROR_HINTS, friendlyError, isPermanentServerError, knownErrorHint } from '@/lib/errorMessages'
 
 afterEach(() => { vi.unstubAllGlobals() })
 
@@ -44,5 +44,28 @@ describe('friendlyError', () => {
   it('knownErrorHint devuelve null si no reconoce el error', () => {
     expect(knownErrorHint(new Error('algo raro'))).toBeNull()
     expect(knownErrorHint(null)).toBeNull()
+  })
+})
+
+describe('isPermanentServerError', () => {
+  it('un CHECK o un permiso rechazado por la base no se arregla reintentando', () => {
+    vi.stubGlobal('navigator', { onLine: true })
+    expect(isPermanentServerError({ code: '23514', message: 'violates check constraint' })).toBe(true)
+    expect(isPermanentServerError({ code: '42501', message: 'permission denied' })).toBe(true)
+  })
+
+  it('la red, el tiempo agotado, la sesión y los errores HTTP sin código son pasajeros', () => {
+    vi.stubGlobal('navigator', { onLine: true })
+    expect(isPermanentServerError(new TypeError('Failed to fetch'))).toBe(false)
+    expect(isPermanentServerError({ code: '', message: 'TypeError: Failed to fetch' })).toBe(false)
+    expect(isPermanentServerError({ code: '57014', message: 'canceling statement due to statement timeout' })).toBe(false)
+    expect(isPermanentServerError({ code: 'PGRST301', message: 'JWT expired' })).toBe(false)
+    expect(isPermanentServerError({ status: 503, message: 'Service Unavailable' })).toBe(false)
+    expect(isPermanentServerError(new Error('mensaje propio'))).toBe(false)
+  })
+
+  it('sin conexión nunca es permanente', () => {
+    vi.stubGlobal('navigator', { onLine: false })
+    expect(isPermanentServerError({ code: '23514', message: 'violates check constraint' })).toBe(false)
   })
 })

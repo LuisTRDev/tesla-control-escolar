@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { AlertTriangle, CheckCircle2, Cloud, CloudOff, Download, GitMerge, RefreshCw, RotateCcw, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Ban, CheckCircle2, Cloud, CloudOff, Download, GitMerge, RefreshCw, RotateCcw, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { useToast } from '@/lib/toast'
@@ -35,7 +35,7 @@ function shortDateTime(iso: string) {
 
 function operationDetail(item: SyncQueueItem) {
   const p = item.payload
-  if (item.type === 'ATTENDANCE_UPSERT') return `${String(p.time ?? '').slice(0, 5)} · ${p.status === 'LATE' ? 'tardanza' : 'a tiempo'}`
+  if (item.type === 'ATTENDANCE_UPSERT') return `${String(p.time ?? '').slice(0, 5) || 'sin hora'} · ${p.status === 'LATE' ? 'tardanza' : 'a tiempo'}`
   if (item.type === 'ATTENDANCE_EXIT_UPSERT') return `${String(p.exitTime ?? '').slice(0, 5)}`
   return p.status === 'NON_COMPLIANT' ? 'con incidencia' : 'conforme'
 }
@@ -97,7 +97,8 @@ export default function SyncPanel({ open, onClose, sync, students, classrooms }:
     downloadJson({ generatedAt: new Date().toISOString(), ...state, conflicts }, `tesla-cola-${toDateKey()}.json`)
   }
 
-  const failing = items.filter((item) => item.lastError)
+  const rejected = items.filter((item) => item.blocked)
+  const failing = items.filter((item) => item.lastError && !item.blocked)
   const waiting = items.filter((item) => !item.lastError)
 
   function renderItem(item: SyncQueueItem) {
@@ -173,6 +174,18 @@ export default function SyncPanel({ open, onClose, sync, students, classrooms }:
                 </Card>
               ) : (
                 <>
+                  {rejected.length > 0 && (
+                    <section>
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <h3 className="flex items-center gap-2 text-sm font-black text-red-700 dark:text-red-300"><Ban size={16} /> Rechazados por el servidor ({rejected.length})</h3>
+                        <Button variant="outline" className="min-h-9 px-3 text-xs" disabled={!sync.online || sync.syncing} onClick={() => void sync.retry(rejected.map((item) => item.id))}>
+                          <RotateCcw className="mr-1.5" size={14} /> Reintentar todos
+                        </Button>
+                      </div>
+                      <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">El servidor no aceptó estos datos y ya no se reintentan solos. Avisa al administrador; cuando lo haya resuelto, pulsa Reintentar. Una entrada se puede corregir desde la lista con "Editar marca".</p>
+                      <ul className="space-y-2">{rejected.map(renderItem)}</ul>
+                    </section>
+                  )}
                   {failing.length > 0 && (
                     <section>
                       <h3 className="mb-2 flex items-center gap-2 text-sm font-black text-red-700 dark:text-red-300"><AlertTriangle size={16} /> Con error ({failing.length})</h3>

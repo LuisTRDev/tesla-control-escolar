@@ -1,5 +1,6 @@
 import { compressImage } from '@/lib/imageCompression'
 import { reportError } from '@/lib/security'
+import { NoticeError } from '@/lib/errorMessages'
 import { supabase } from '@/lib/supabase'
 import { trimTime } from '@/lib/dates'
 import { ensureNotificationForLateAttendance } from '@/services/notificationService'
@@ -172,7 +173,7 @@ function cleanReason(reason: string) {
 /** Tardanza justificada: deja de contar como incidencia y se borra su notificación automática. */
 export async function justifyLate(record: AttendanceRecord, input: JustificationInput): Promise<AttendanceRecord> {
   requireOnline('Justificar')
-  if (!record.id || record.id.startsWith('offline-')) throw new Error('Esta entrada aún no está sincronizada; espera a que vuelva la conexión.')
+  if (!record.id || record.id.startsWith('offline-')) throw new NoticeError('Esta entrada aún no está sincronizada; espera a que vuelva la conexión.')
   const patch = {
     justified: true,
     justification_reason: cleanReason(input.reason),

@@ -5,7 +5,7 @@ import { useToast } from '@/lib/toast'
 import { MotionConfig } from 'framer-motion'
 import { isAdminRole } from '@/services/rosterService'
 import {
-  Ban, Bell, CalendarCheck2, CalendarOff, ChevronDown, Clock3, HelpCircle, Menu, MessageCircle, Monitor, Search, Settings2, Shirt, Users, X,
+  AlertTriangle, Ban, Bell, CalendarCheck2, CalendarOff, ChevronDown, Clock3, HelpCircle, Menu, MessageCircle, Monitor, Search, Settings2, Shirt, Users, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { TimePicker } from '@/components/ui/TimePicker'
@@ -244,6 +244,15 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         description: 'Otro equipo había registrado a los mismos alumnos. Se guardó la hora más temprana.',
         variant: 'info',
         duration: 8000,
+        action: { label: 'Ver', onClick: () => setSyncPanelOpen(true) },
+      })
+    }
+    if (lastSyncResult.blocked > 0) {
+      toast.show({
+        title: `El servidor rechazó ${lastSyncResult.blocked} marca${lastSyncResult.blocked === 1 ? '' : 's'}`,
+        description: 'Ya no se reintentan solas. Avisa al administrador.',
+        variant: 'error',
+        duration: 10000,
         action: { label: 'Ver', onClick: () => setSyncPanelOpen(true) },
       })
     }
@@ -1105,6 +1114,16 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
             <span className="flex-1">{dataError}</span>
             <button type="button" onClick={() => setDataError('')} className="-m-1 rounded-lg p-1 hover:bg-red-100 dark:hover:bg-red-900/40" aria-label="Cerrar aviso"><X size={16} /></button>
           </div>
+        )}
+        {syncState.failing > 0 && (
+          <button type="button" onClick={() => setSyncPanelOpen(true)} className="mb-4 flex w-full items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-left text-sm font-semibold text-red-700 active:scale-[0.99] dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
+            <AlertTriangle size={18} className="shrink-0" />
+            <span className="flex-1">
+              {syncState.failing} marca{syncState.failing === 1 ? '' : 's'} de este equipo no se envi{syncState.failing === 1 ? 'ó' : 'aron'} al servidor
+              {syncState.blocked > 0 ? ` (${syncState.blocked} rechazada${syncState.blocked === 1 ? '' : 's'}: avisa al administrador)` : ''}.
+            </span>
+            <span className="shrink-0 font-black underline">Ver</span>
+          </button>
         )}
         {calendarToday && (
           <div className="mb-4 flex items-center gap-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-800 dark:border-indigo-900/60 dark:bg-indigo-950/40 dark:text-indigo-300">

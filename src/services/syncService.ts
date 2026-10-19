@@ -2,11 +2,13 @@ import { supabase } from '@/lib/supabase'
 import { trimTime } from '@/lib/dates'
 import { addSyncConflict, listPendingOperations, removePendingOperation, setMeta, updatePendingOperation, type SyncQueueItem } from '@/lib/offlineDb'
 import { resolveEarliestTime, resolvePresentation, type SyncConflict } from '@/lib/syncConflicts'
-import { cleanText, positiveInteger, safeUserMessage, validIsoDate, validTime } from '@/lib/security'
+import { cleanText, positiveInteger, reportError, safeUserMessage, validIsoDate, validTime } from '@/lib/security'
+import { isPermanentServerError } from '@/lib/errorMessages'
 import { ensureNotificationForLateAttendance, ensureNotificationForPresentation } from '@/services/notificationService'
 import type { AttendanceRecord, AttendanceStatus, PresentationRecord } from '@/types'
 
-export type SyncResult = { sent: number; failed: number; remaining: number; conflicts: number }
+/** `blocked`: operaciones que el servidor rechazó en esta pasada (dejan de reintentarse solas). */
+export type SyncResult = { sent: number; failed: number; remaining: number; conflicts: number; blocked: number }
 
 const VIOLATION_LABELS: Record<string, string> = {
   HAIRSTYLE: 'peinado', UNIFORM_INCOMPLETE: 'uniforme', NON_INSTITUTIONAL_GARMENT: 'prenda no institucional',
@@ -31,11 +33,13 @@ function validatedAttendance(item: SyncQueueItem) {
   const status = String(p.status ?? '') as AttendanceStatus
   const source = String(p.source ?? 'WEB') as 'WEB' | 'PDA' | 'MANUAL'
   const deviceLabel = cleanText(p.deviceLabel, 120)
+  // Momento real del toque (las marcas antiguas de la cola no lo traen: se usa el envío).
+  const recordedAt = typeof p.entryRecordedAt === 'string' && !Number.isNaN(Date.parse(p.entryRecordedAt)) ? p.entryRecordedAt : new Date().toISOString()
   if (!validIsoDate(date)) throw new Error('Fecha de asistencia inválida en la cola local.')
   // Hora vacía = tardanza marcada sin hora.
   if (time ? !validTime(time) : status !== 'LATE') throw new Error('Hora de asistencia inválida en la cola local.')
   if (status !== 'ON_TIME' && status !== 'LATE') throw new Error('Estado de asistencia inválido en la cola local.')
-  return { studentId, date, time: time.slice(0, 5), status, source, deviceLabel }
+  return { studentId, date, time: time.slice(0, 5), status, source, deviceLabel, recordedAt }
 }
 
 function validatedExit(item: SyncQueueItem) {
@@ -106,7 +110,7 @@ async function syncAttendance(item: SyncQueueItem, counter: { conflicts: number 
     entry_time: recordInput.time || null,
     status: recordInput.status,
     entry_source: recordInput.source,
-    entry_recorded_at: new Date().toISOString(),
+    entry_recorded_at: recordInput.recordedAt,
   }
   const { data, error } = await supabase
     .from('attendance')
@@ -224,10 +228,12 @@ function queueErrorMessage(error: unknown) {
 
 async function runFlush({ onlyIds }: { onlyIds?: string[] }): Promise<SyncResult> {
   const all = await listPendingOperations()
-  if (!navigator.onLine) return { sent: 0, failed: 0, remaining: all.length, conflicts: 0 }
-  const pending = onlyIds ? all.filter((item) => onlyIds.includes(item.id)) : all
+  if (!navigator.onLine) return { sent: 0, failed: 0, remaining: all.length, conflicts: 0, blocked: 0 }
+  // Los rechazados por el servidor solo se reintentan a pedido (botón Reintentar).
+  const pending = onlyIds ? all.filter((item) => onlyIds.includes(item.id)) : all.filter((item) => !item.blocked)
   let sent = 0
   let failed = 0
+  let blocked = 0
   const counter = { conflicts: 0 }
   for (const item of pending) {
     try {
@@ -239,15 +245,20 @@ async function runFlush({ onlyIds }: { onlyIds?: string[] }): Promise<SyncResult
       sent += 1
     } catch (error) {
       failed += 1
+      const permanent = isPermanentServerError(error)
+      if (permanent) blocked += 1
+      // Al monitoreo va el error real del servidor, una sola vez por operación.
+      if (item.retryCount === 0 || (permanent && !item.blocked)) reportError(`Sincronización (${item.type})`, error)
       await updatePendingOperation({
         ...item,
         retryCount: Math.min(item.retryCount + 1, 999),
         lastError: queueErrorMessage(error),
         lastAttemptAt: new Date().toISOString(),
+        blocked: permanent,
       })
     }
   }
   const remaining = (await listPendingOperations()).length
   if (remaining === 0) await setMeta('last_sync', new Date().toISOString())
-  return { sent, failed, remaining, conflicts: counter.conflicts }
+  return { sent, failed, remaining, conflicts: counter.conflicts, blocked }
 }

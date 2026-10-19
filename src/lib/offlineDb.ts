@@ -17,6 +17,8 @@ export type SyncQueueItem = {
   lastError?: string
   lastAttemptAt?: string
   operationKey?: string
+  /** El servidor lo rechazó (no es la red): ya no se reintenta solo, espera revisión. */
+  blocked?: boolean
 }
 
 type SnapshotRow = { key: string; value: unknown; updatedAt: string }

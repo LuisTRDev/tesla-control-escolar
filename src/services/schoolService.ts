@@ -4,6 +4,7 @@ import { lateEntryObservation } from '@/lib/displayLabels'
 import { enqueueOperation, getSnapshot, listPendingOperations, removePendingOperationFor, setSnapshot } from '@/lib/offlineDb'
 import type { AttendanceRecord, AttendanceStatus, Classroom, Guardian, PresentationRecord, Student } from '@/types'
 import { fetchAllPages } from '@/lib/paging'
+import { isPermanentServerError, NoticeError } from '@/lib/errorMessages'
 
 const DEFAULT_LIMIT = '07:45'
 const K = {
@@ -82,7 +83,7 @@ async function overlayPendingAttendance(base: AttendanceRecord[], from: string, 
     const date = String(p.date ?? '')
     if (date < from || date > to) continue
     const studentId = String(p.studentId ?? '')
-    const record: AttendanceRecord = { id: offlineId('attendance', studentId, date), studentId, date, time: String(p.time ?? ''), status: String(p.status ?? 'ON_TIME') as AttendanceStatus }
+    const record: AttendanceRecord = { id: offlineId('attendance', studentId, date), studentId, date, time: String(p.time ?? ''), status: String(p.status ?? 'ON_TIME') as AttendanceStatus, entryRecordedAt: typeof p.entryRecordedAt === 'string' ? p.entryRecordedAt : null }
     const index = merged.findIndex((r) => r.studentId === studentId && r.date === date)
     if (index >= 0) merged[index] = record; else merged.push(record)
   }
@@ -328,7 +329,8 @@ export async function getAttendanceRange(from: string, to: string): Promise<Atte
  */
 export async function registerAttendance(studentId: string, entryLimit: string, date: string, time: string, tolerance?: ToleranceSettings, lateJustification?: { reason: string; byName: string }): Promise<AttendanceRecord> {
   const status = calculateStatus(time, entryLimit, tolerance)
-  const optimistic: AttendanceRecord = { id: offlineId('attendance', studentId, date), studentId, date, time, status }
+  // entryRecordedAt = momento real del toque; se conserva aunque se envíe más tarde.
+  const optimistic: AttendanceRecord = { id: offlineId('attendance', studentId, date), studentId, date, time, status, entryRecordedAt: new Date().toISOString() }
   if (!navigator.onLine) {
     await enqueueOperation('ATTENDANCE_UPSERT', optimistic as unknown as Record<string, unknown>)
     return optimistic
@@ -346,7 +348,9 @@ export async function registerAttendance(studentId: string, entryLimit: string, 
       return { id: String(existing.id), studentId: String(existing.student_id), date: existing.date, time: trimTime(existing.entry_time), status: existing.status, exitTime: trimTime(existing.exit_time), exitRecordedAt: existing.exit_recorded_at ?? null, exitRecordedBy: existing.exit_recorded_by ?? null, entryRecordedAt: existing.entry_recorded_at ?? null, entryRecordedBy: existing.entry_recorded_by ?? null, entrySource: existing.entry_source ?? null, exitSource: existing.exit_source ?? null }
     }
     return { ...mapAttendance(data as DbAttendance), justified: justification.justified === true, justificationReason: justification.justification_reason ?? null, justifiedByName: justification.justified_by_name ?? null, justifiedAt: justification.justified_at ?? null }
-  } catch {
+  } catch (error) {
+    // Si el servidor rechazó la marca, guardarla en la cola solo escondería el error.
+    if (isPermanentServerError(error)) throw error
     await enqueueOperation('ATTENDANCE_UPSERT', optimistic as unknown as Record<string, unknown>)
     return optimistic
   }
@@ -368,7 +372,7 @@ export async function registerBulkAttendance(studentIds: string[], entryLimit: s
   if (!navigator.onLine) {
     const results: AttendanceRecord[] = []
     for (const studentId of studentIds) {
-      const optimistic: AttendanceRecord = { id: offlineId('attendance', studentId, date), studentId, date, time: entryLimit, status }
+      const optimistic: AttendanceRecord = { id: offlineId('attendance', studentId, date), studentId, date, time: entryLimit, status, entryRecordedAt: new Date().toISOString() }
       await enqueueOperation('ATTENDANCE_UPSERT', optimistic as unknown as Record<string, unknown>)
       results.push(optimistic)
     }
@@ -405,24 +409,27 @@ export async function updateAttendanceEntryTime(
   entryLimit: string,
   tolerance?: ToleranceSettings,
 ): Promise<AttendanceRecord> {
-  if (!record.id || record.id.startsWith('offline-')) {
-    throw new Error(
-      'Esta entrada todavía no está sincronizada; espera a que vuelva la conexión.',
-    )
-  }
-
-  if (!navigator.onLine) {
-    throw new Error(
-      'La corrección de la hora de ingreso requiere conexión a Internet.',
-    )
-  }
-
   // Hora vacía = convertir la marca en tardanza sin hora.
   if (newTime && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(newTime)) {
     throw new Error('La hora de ingreso no es válida.')
   }
 
   const status = calculateStatus(newTime, entryLimit, tolerance)
+
+  // Marca que aún está en la cola de este equipo: se corrige ahí mismo (funciona sin Internet).
+  if (!record.id || record.id.startsWith('offline-')) {
+    const pending = (await listPendingOperations()).find((item) => item.type === 'ATTENDANCE_UPSERT'
+      && String(item.payload.studentId ?? '') === record.studentId && String(item.payload.date ?? '') === record.date)
+    if (!pending) throw new NoticeError('Esta marca ya se envió al servidor. Actualiza la lista y vuelve a corregirla.')
+    await enqueueOperation('ATTENDANCE_UPSERT', { ...pending.payload, time: newTime, status })
+    return { ...record, time: newTime, status }
+  }
+
+  if (!navigator.onLine) {
+    throw new NoticeError(
+      'La corrección de la hora de ingreso requiere conexión a Internet.',
+    )
+  }
   const attendanceId = Number(record.id)
 
   const { data, error } = await supabase
@@ -484,7 +491,7 @@ export async function updateAttendanceEntryTime(
 
 export async function registerExitAttendance(record: AttendanceRecord, time: string): Promise<AttendanceRecord> {
   if (!record.id || record.id.startsWith('offline-')) {
-    throw new Error('La entrada aún no está sincronizada; espera a que vuelva la conexión antes de marcar la salida.')
+    throw new NoticeError('La entrada aún no está sincronizada; espera a que vuelva la conexión antes de marcar la salida.')
   }
   if (!navigator.onLine) throw new Error('La salida requiere conexión a Internet en esta versión.')
 
@@ -605,7 +612,8 @@ export async function savePresentation(record: PresentationRecord): Promise<Pres
     const violations = [record.hairstyleViolation && 'HAIRSTYLE', record.uniformUsageViolation && 'UNIFORM_INCOMPLETE', record.nonInstitutionalGarment && 'NON_INSTITUTIONAL_GARMENT', record.lateEntryViolation && 'LATE_ENTRY', record.inappropriateConductViolation && 'INAPPROPRIATE_CONDUCT'].filter(Boolean) as string[]
     if (violations.length) { const { error: insertError } = await supabase.from('presentation_violations').insert(violations.map((violation_type) => ({ presentation_control_id: control.id, violation_type }))); if (insertError) throw insertError }
     return { ...record, id: String(control.id) }
-  } catch {
+  } catch (error) {
+    if (isPermanentServerError(error)) throw error
     await enqueueOperation('PRESENTATION_UPSERT', record as unknown as Record<string, unknown>)
     return optimistic
   }
