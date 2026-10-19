@@ -379,7 +379,13 @@ export async function registerBulkAttendance(studentIds: string[], entryLimit: s
     return results
   }
 
-  const rows = studentIds.map((studentId) => ({ student_id: Number(studentId), date, entry_time: entryLimit, status }))
+  // Quien ya tiene falta (o falta con permiso) ese día no se marca a tiempo: si no, la
+  // base borraría su falta creyendo que llegó. Cubre faltas hechas desde otro equipo.
+  const { data: absent, error: absentError } = await supabase.from('student_absences').select('student_id').eq('date', date).in('student_id', studentIds.map(Number))
+  if (absentError && !['42P01', 'PGRST205'].includes(String((absentError as { code?: string }).code))) throw absentError
+  const absentIds = new Set((absent ?? []).map((row: { student_id: number }) => String(row.student_id)))
+  const rows = studentIds.filter((id) => !absentIds.has(id)).map((studentId) => ({ student_id: Number(studentId), date, entry_time: entryLimit, status }))
+  if (rows.length === 0) return []
   const { data, error } = await supabase
     .from('attendance')
     .upsert(rows, { onConflict: 'student_id,date', ignoreDuplicates: true })

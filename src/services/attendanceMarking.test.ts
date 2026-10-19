@@ -91,6 +91,15 @@ describe('registerBulkAttendance', () => {
   })
 })
 
+describe('registerBulkAttendance con faltas', () => {
+  it('no marca a tiempo a quien ya tiene falta ese día (su falta se respeta)', async () => {
+    fake.seed('student_absences', [{ id: 1, student_id: 2, date: '2026-10-12', status: 'UNJUSTIFIED' }])
+    const inserted = await registerBulkAttendance(['1', '2'], '07:45', '2026-10-12')
+    expect(inserted.map((r) => r.studentId)).toEqual(['1'])
+    expect(fake.rows('attendance').map((r) => r.student_id)).toEqual([1])
+  })
+})
+
 describe('getAttendanceRange', () => {
   it('trae todas las filas aunque pasen de 1000 (pide por páginas)', async () => {
     fake.seed('attendance', Array.from({ length: 2345 }, (_, i) => ({

@@ -22,6 +22,8 @@ type Props = {
   online: boolean
   entryLimit: string
   onBulkMark: (studentIds: string[]) => Promise<void>
+  /** Con falta o permiso de inasistencia hoy: no se ofrecen para marcar a tiempo en bloque. */
+  absentIds: Set<string>
   lateNoTime: boolean
   onLateNoTimeChange: (value: boolean) => void
 }
@@ -37,7 +39,7 @@ const statusFilters: Array<{ id: StatusFilter; label: string }> = [
 
 const byName = (a: Student, b: Student) => a.lastName.localeCompare(b.lastName, 'es') || a.firstName.localeCompare(b.firstName, 'es')
 
-export default function QuickMode({ open, onClose, classrooms, students, records, onMark, onExit, online, entryLimit, onBulkMark, lateNoTime, onLateNoTimeChange }: Props) {
+export default function QuickMode({ open, onClose, classrooms, students, records, onMark, onExit, online, entryLimit, onBulkMark, absentIds, lateNoTime, onLateNoTimeChange }: Props) {
   const [query, setQuery] = useState('')
   // Pantalla siempre encendida mientras se usa (hora de ingreso, pantalla del patio).
   useWakeLock(open)
@@ -94,7 +96,7 @@ export default function QuickMode({ open, onClose, classrooms, students, records
 
   // Alumnos sin ninguna asistencia hoy, respetando el filtro de aula/búsqueda
   // actual (pero no el filtro de estado, para no confundir qué se va a marcar).
-  const unmarkedInView = useMemo(() => inScope.filter((student) => !recordByStudent.has(student.id)).sort(byName), [inScope, recordByStudent])
+  const unmarkedInView = useMemo(() => inScope.filter((student) => !recordByStudent.has(student.id) && !absentIds.has(student.id)).sort(byName), [inScope, recordByStudent, absentIds])
 
   function openBulk() {
     setBulkSelected(new Set(unmarkedInView.map((s) => s.id)))
@@ -278,7 +280,7 @@ export default function QuickMode({ open, onClose, classrooms, students, records
           saving={bulkSaving}
           onConfirm={() => void confirmBulk()}
           classroomMap={classroomId === 'ALL' ? classroomMap : undefined}
-          description={<>Se guardará <b>{entryLimit}</b> (hora límite) como hora de ingreso, en {classroomId === 'ALL' ? 'todo el colegio' : 'el aula filtrada'}. Desmarca a quien sepas que <b>faltó</b> hoy.</>}
+          description={<>Se guardará <b>{entryLimit}</b> (hora límite) como hora de ingreso, en {classroomId === 'ALL' ? 'todo el colegio' : 'el aula filtrada'}. Los alumnos con tardanza, falta o permiso no aparecen. Desmarca a quien sepas que <b>faltó</b>.</>}
         />
       </motion.section>
     </motion.div>

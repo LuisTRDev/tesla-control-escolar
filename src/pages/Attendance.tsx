@@ -506,6 +506,12 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   }), [classroomStudents, query, recordByStudent, presentationByStudent, filter, presentationFilter, absenceByStudent, todayPermissions, today])
 
   const unmarkedToday = classroomStudents.filter((student) => !recordByStudent.has(student.id))
+  // Con falta o permiso de inasistencia hoy: "Marcar el resto a tiempo" no los toca.
+  const absentTodayIds = useMemo(() => new Set([
+    ...absenceByStudent.keys(),
+    ...todayPermissions.filter((p) => p.kind === 'ABSENCE').map((p) => p.studentId),
+  ]), [absenceByStudent, todayPermissions])
+  const bulkCandidates = unmarkedToday.filter((student) => !absentTodayIds.has(student.id))
 
   /** Enter en el buscador marca la entrada si queda un solo alumno sin marcar; Esc limpia. */
   function handleSearchKey(event: KeyboardEvent<HTMLInputElement>) {
@@ -543,11 +549,12 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     // Todos pre-seleccionados por defecto: el auxiliar desmarca solo
     // a quienes sabe que faltaron hoy, en vez de tener que elegir uno
     // por uno a quién SÍ marcar.
-    setBulkAttendanceSelected(new Set(unmarkedToday.map((s) => s.id)))
+    setBulkAttendanceSelected(new Set(bulkCandidates.map((s) => s.id)))
     setBulkAttendanceOpen(true)
   }
 
-  async function bulkMarkStudents(ids: string[]): Promise<void> {
+  async function bulkMarkStudents(requested: string[]): Promise<void> {
+    const ids = requested.filter((id) => !absentTodayIds.has(id))
     if (ids.length === 0) return
     const byLimit = new Map<string, string[]>()
     for (const id of ids) {
@@ -1228,7 +1235,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
               )}
             </div>
             <Tooltip content="Para cuando entran muchos alumnos a la vez: marca a los que ya entraron y no fueron marcados individualmente">
-              <Button variant="outline" onClick={openBulkAttendance} disabled={unmarkedToday.length === 0}>
+              <Button variant="outline" onClick={openBulkAttendance} disabled={bulkCandidates.length === 0}>
                 <Users className="mr-2" size={17} /> Marcar el resto a tiempo
               </Button>
             </Tooltip>
@@ -1420,12 +1427,12 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       <BulkMarkDialog
         open={bulkAttendanceOpen}
         onClose={() => setBulkAttendanceOpen(false)}
-        students={unmarkedToday}
+        students={bulkCandidates}
         selected={bulkAttendanceSelected}
         onSelectedChange={setBulkAttendanceSelected}
         saving={bulkAttendanceSaving}
         onConfirm={() => void confirmBulkAttendance()}
-        description={<>Se guardará <b>{entryLimit}</b> (hora límite) como hora de ingreso. Desmarca a quien sepas que <b>faltó</b> hoy — el resto quedará con asistencia normal, igual que si se hubiera marcado uno por uno.</>}
+        description={<>Se guardará <b>{entryLimit}</b> (hora límite) como hora de ingreso. Los alumnos con tardanza, falta o permiso no aparecen: se respetan. Desmarca a quien sepas que <b>faltó</b> y no tenga falta registrada.</>}
       />
 
       <AttendanceEditDialog
@@ -1452,6 +1459,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         online={syncState.online}
         entryLimit={entryLimit}
         onBulkMark={bulkMarkStudents}
+        absentIds={absentTodayIds}
         lateNoTime={lateNoTime}
         onLateNoTimeChange={setLateNoTime}
       />
