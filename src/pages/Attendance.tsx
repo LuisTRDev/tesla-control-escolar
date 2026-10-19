@@ -432,7 +432,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   }
   function addEarlyExit(exit: EarlyExit) {
     setDayStatus((curr) => ({ ...curr, earlyExits: [...curr.earlyExits, exit] }))
-    setRecords((curr) => curr.map((r) => (r.studentId === exit.studentId && r.date === exit.date && !r.exitTime ? { ...r, exitTime: exit.exitTime, exitSource: 'EARLY_EXIT' } : r)))
+    setRecords((curr) => curr.map((r) => (r.studentId === exit.studentId && r.date === exit.date && !r.exitTime ? { ...r, exitTime: exit.exitTime, exitSource: 'MANUAL' } : r)))
     toast.success('Salida anticipada registrada', exit.isAuthorizedPerson ? `Recogió: ${exit.pickedUpByName}` : `Recogió: ${exit.pickedUpByName} (no estaba en la lista)`)
   }
   async function reloadDayStatus() {

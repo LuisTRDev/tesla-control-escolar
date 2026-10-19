@@ -11,6 +11,7 @@ import { getAuthorizedPickups, registerEarlyExit, saveAuthorizedPickup } from '@
 import type { AttendanceRecord, EarlyExit, Student } from '@/types'
 import { friendlyError } from '@/lib/errorMessages'
 import { entryTimeLabel } from '@/lib/displayLabels'
+import { useToast } from '@/lib/toast'
 
 type Person = { key: string; fullName: string; dni: string; relationship: string; source: 'Apoderado' | 'Autorizado' }
 
@@ -38,6 +39,7 @@ export default function EarlyExitDialog({ student, attendance, today, userName, 
   const [confirmedUnlisted, setConfirmedUnlisted] = useState(false)
   const [addToList, setAddToList] = useState(false)
   const [saving, setSaving] = useState(false)
+  const toast = useToast()
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -69,15 +71,19 @@ export default function EarlyExitDialog({ student, attendance, today, userName, 
   }
 
   async function save() {
-    if (!student) return
+    if (!student || saving) return
     setSaving(true); setError('')
     try {
       const exit = await registerEarlyExit({
         studentId: student.id, date: today, exitTime: getCurrentTime(), pickedUpByName: name, pickedUpByDni: dni,
         relationship, reason: [reason, detail.trim()].filter(Boolean).join(': '), isAuthorizedPerson: authorized, byName: userName, attendance,
       })
-      if (!authorized && addToList && isAdmin) await saveAuthorizedPickup({ studentId: student.id, fullName: name, dni, relationship, phone: '' })
       onSaved(exit)
+      // La salida ya quedó guardada: si falla agregar a la lista, se avisa sin invitar a repetir la salida.
+      if (!authorized && addToList && isAdmin) {
+        try { await saveAuthorizedPickup({ studentId: student.id, fullName: name, dni, relationship, phone: '' }) }
+        catch (pickupError) { reportError('EarlyExitDialog', pickupError); toast.error('Salida registrada, pero no se agregó a la lista de autorizados', friendlyError(pickupError)) }
+      }
       onClose()
     } catch (err) {
       reportError('EarlyExitDialog', err)

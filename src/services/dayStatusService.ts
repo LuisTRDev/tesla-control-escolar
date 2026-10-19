@@ -295,6 +295,10 @@ export async function registerEarlyExit(input: {
   if (!name) throw new Error('Indica quién recoge al alumno.')
   const dni = input.pickedUpByDni.replace(/\D/g, '')
   if (dni && dni.length !== 8) throw new Error('El DNI de quien recoge debe tener 8 dígitos.')
+  const { data: previous, error: previousError } = await supabase.from('early_exits').select('id')
+    .eq('student_id', Number(input.studentId)).eq('date', input.date).limit(1)
+  if (previousError) throw previousError
+  if (previous?.length) throw new NoticeError('El alumno ya tiene una salida anticipada registrada hoy. Revisa las alertas del día antes de registrar otra.')
   const { data, error } = await supabase.from('early_exits').insert({
     student_id: Number(input.studentId), date: input.date, exit_time: input.exitTime, picked_up_by_name: name.slice(0, 160),
     picked_up_by_dni: dni || null, relationship: input.relationship.trim().slice(0, 60) || null, reason: cleanReason(input.reason),
@@ -303,11 +307,16 @@ export async function registerEarlyExit(input: {
   if (error) throw error
 
   // Si tiene marca de entrada, la salida anticipada también queda como su salida del día.
+  // exit_source solo admite WEB/PDA/MANUAL (CHECK de phase8): el detalle queda en early_exits.
   if (input.attendance?.id && !input.attendance.id.startsWith('offline-') && !input.attendance.exitTime) {
     const { error: exitError } = await supabase.from('attendance')
-      .update({ exit_time: input.exitTime, exit_recorded_at: new Date().toISOString(), exit_source: 'EARLY_EXIT' })
+      .update({ exit_time: input.exitTime, exit_recorded_at: new Date().toISOString(), exit_source: 'MANUAL' })
       .eq('id', Number(input.attendance.id))
-    if (exitError) throw exitError
+    if (exitError) {
+      // Sin esto la salida quedaba guardada pese al error y el reintento la duplicaba.
+      await supabase.from('early_exits').delete().eq('id', Number((data as DbEarlyExit).id))
+      throw exitError
+    }
   }
   return mapEarlyExit(data as DbEarlyExit)
 }

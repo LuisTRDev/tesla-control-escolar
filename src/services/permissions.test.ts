@@ -10,7 +10,7 @@ const { fake } = await vi.hoisted(async () => {
 vi.mock('@/lib/supabase', () => ({ supabase: fake }))
 vi.mock('@/lib/offlineDb', () => ({ getSnapshot: vi.fn(), setSnapshot: vi.fn() }))
 
-const { createPermission } = await import('@/services/dayStatusService')
+const { createPermission, registerEarlyExit } = await import('@/services/dayStatusService')
 
 const input = { studentId: '10', dateFrom: '2026-10-19', dateTo: '2026-10-21', kind: 'ABSENCE' as const, reason: 'Salud / cita médica', byName: 'Auxiliar' }
 
@@ -38,5 +38,29 @@ describe('createPermission', () => {
     await createPermission({ ...input, studentId: '11' })
     await createPermission({ ...input, dateFrom: '2026-10-21', dateTo: '2026-10-23' })
     expect(fake.rows('student_permissions')).toHaveLength(4)
+  })
+})
+
+describe('registerEarlyExit', () => {
+  const exit = { studentId: '10', date: '2026-10-19', exitTime: '09:28', pickedUpByName: 'Luchito', pickedUpByDni: '', relationship: 'Tío', reason: 'Salud / malestar', isAuthorizedPerson: false, byName: 'Auxiliar' }
+  const attendance = { id: '5', studentId: '10', date: '2026-10-19', time: '07:40', status: 'ON_TIME' as const }
+
+  it('marca la salida del día con un origen que la base acepta', async () => {
+    fake.seed('attendance', [{ id: 5, student_id: 10, date: '2026-10-19', entry_time: '07:40', status: 'ON_TIME' }])
+    await registerEarlyExit({ ...exit, attendance })
+    expect(fake.rows('attendance')[0]).toMatchObject({ exit_time: '09:28', exit_source: 'MANUAL' })
+  })
+
+  it('no deja registrar dos salidas anticipadas el mismo día', async () => {
+    await registerEarlyExit(exit)
+    await expect(registerEarlyExit({ ...exit, pickedUpByName: 'Luchito 2' })).rejects.toThrow(/ya tiene una salida anticipada/)
+    expect(fake.rows('early_exits')).toHaveLength(1)
+  })
+
+  it('si falla marcar la salida en la asistencia, no deja la salida a medias', async () => {
+    fake.seed('attendance', [{ id: 5, student_id: 10, date: '2026-10-19', entry_time: '07:40', status: 'ON_TIME' }])
+    fake.failNext('attendance', 'update', { code: '23514', message: 'violates check constraint' })
+    await expect(registerEarlyExit({ ...exit, attendance })).rejects.toMatchObject({ code: '23514' })
+    expect(fake.rows('early_exits')).toHaveLength(0)
   })
 })
