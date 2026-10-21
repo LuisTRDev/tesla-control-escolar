@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
 import {
   Activity, AlertTriangle, BarChart3, CheckCircle2, Clock3, Expand,
@@ -11,6 +11,8 @@ import { useWakeLock } from '@/lib/nativeFeatures'
 import { entryTimeLabel } from '@/lib/displayLabels'
 import { LiveClock, LiveDate } from '@/components/livetv/LiveClock'
 import { LiveSheet } from '@/components/livetv/LiveSheet'
+import { FilteredStudentList } from '@/components/livetv/FilteredStudentList'
+import { StudentSheetBody } from '@/components/livetv/StudentSheetBody'
 import { useMobileLayout } from '@/hooks/useMobileLayout'
 
 type Props = {
@@ -104,6 +106,22 @@ const CATALOG: Array<{ kind: CardKind; title: string; description: string; defau
   { kind: 'incidentsByClassroom', title: 'Incidencias por aula', description: 'Concentración de incidencias por sección.', defaultSize: 'md' },
 ]
 
+type SelectStudent = (studentId: string) => void
+
+/** En celular tocar una fila abre la ficha del alumno; en TV las filas no son interactivas. */
+const TAP_CLASS = 'cursor-pointer active:bg-white/10'
+function tap(onSelect: SelectStudent | undefined, studentId: string) {
+  if (!onSelect) return {}
+  return {
+    role: 'button' as const,
+    tabIndex: 0,
+    onClick: () => onSelect(studentId),
+    onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(studentId) }
+    },
+  }
+}
+
 const LEVELS: Classroom['level'][] = ['Primaria', 'Secundaria']
 
 /** En primaria se dice "grado" y en secundaria "año" (salvo que el aula ya lo diga). */
@@ -178,6 +196,8 @@ export default function LiveTvPanel({
   const [catalogOpen, setCatalogOpen] = useState(false)
   const [savedNotice, setSavedNotice] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  // 'open' se separa del id para que el contenido siga visible mientras la hoja baja al cerrarse.
+  const [sheet, setSheet] = useState<{ id: string; open: boolean } | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -288,6 +308,7 @@ export default function LiveTvPanel({
       entered, onTime, late, pending: Math.max(0, students.length - entered), exited,
       complianceChecked, complianceOk, attendancePercentage, presentationPercentage,
       totalIncidents, recentEntries, lateStudents, lateByLevel, pendingStudents, enrichedIncidents,
+      attendanceByStudent, studentById, incidents,
       topTypes, topStudents, classroomById, classroomSummary, incidentsByClassroom,
     }
   }, [attendanceRecords, classrooms, presentationRecords, students, today])
@@ -532,7 +553,7 @@ export default function LiveTvPanel({
                         <button type="button" onClick={() => removeCard(item.id)} className="grid h-10 w-10 place-items-center rounded-xl text-red-300 active:bg-red-500/15" aria-label="Quitar tarjeta"><EyeOff size={18} /></button>
                       </div>
                     )}
-                    {renderCard(item.kind, data, students.length, true)}
+                    {renderCard(item.kind, data, students.length, true, (id) => setSheet({ id, open: true }))}
                   </div>
                 ))}
               </motion.div>
@@ -601,6 +622,15 @@ export default function LiveTvPanel({
               )}
             </AnimatePresence>
 
+            {(() => {
+              const sheetStudent = sheet ? data.studentById.get(sheet.id) : undefined
+              return (
+                <LiveSheet open={Boolean(sheet?.open && sheetStudent)} onClose={() => setSheet((current) => current && { ...current, open: false })} title={sheetStudent ? `${sheetStudent.firstName} ${sheetStudent.lastName}` : 'Alumno'} subtitle="Estado de hoy">
+                  {sheetStudent && <StudentSheetBody student={sheetStudent} classroom={data.classroomById.get(sheetStudent.classroomId)} record={data.attendanceByStudent.get(sheetStudent.id)} incidents={data.incidents.filter((incident) => incident.studentId === sheetStudent.id)} />}
+                </LiveSheet>
+              )
+            })()}
+
             <LiveSheet open={menuOpen} onClose={() => setMenuOpen(false)} title="Panel en vivo" subtitle="Opciones">
               <LiveDate active={menuOpen} className="px-1 pb-3 text-sm font-semibold capitalize text-slate-400" />
               <div className="space-y-1">
@@ -637,10 +667,11 @@ function buildPanelDataShape() {
     topTypes: [] as Array<{ label: string; count: number }>, topStudents: [] as Array<{ student: Student; count: number }>,
     classroomById: new Map<string, Classroom>(), classroomSummary: [] as Array<{ classroom: Classroom; total: number; entered: number; late: number; pending: number }>,
     incidentsByClassroom: [] as Array<{ classroom: Classroom; count: number }>,
+    attendanceByStudent: new Map<string, AttendanceRecord>(), studentById: new Map<string, Student>(), incidents: [] as IncidentEvent[],
   }
 }
 
-function renderCard(kind: CardKind, data: PanelData, totalStudents: number, mobile: boolean) {
+function renderCard(kind: CardKind, data: PanelData, totalStudents: number, mobile: boolean, onSelect?: SelectStudent) {
   // En celular la página hace todo el scroll: una lista con scroll propio atrapa el dedo.
   const scroll30 = mobile ? '' : 'max-h-[30rem] overflow-auto pr-1'
   const scroll34 = mobile ? '' : 'max-h-[34rem] overflow-auto pr-1'
@@ -648,23 +679,23 @@ function renderCard(kind: CardKind, data: PanelData, totalStudents: number, mobi
     case 'metrics':
       return <MetricStrip data={data} totalStudents={totalStudents} />
     case 'recentEntries':
-      return <TvCard title="Últimos ingresos" subtitle="Movimientos registrados hoy" icon={<LogIn size={20} />}><div className="space-y-2">{data.recentEntries.length === 0 ? <Empty text="Aún no hay ingresos registrados." /> : data.recentEntries.map(({ record, student }) => <StudentRow key={record.id ?? `${student.id}-${record.time}`} student={student} classroom={data.classroomById.get(student.classroomId)} time={record.time} status={record.status} icon={record.status === 'LATE' ? <AlertTriangle size={18} /> : <LogIn size={18} />} />)}</div></TvCard>
+      return <TvCard title="Últimos ingresos" subtitle="Movimientos registrados hoy" icon={<LogIn size={20} />}><div className="space-y-2">{data.recentEntries.length === 0 ? <Empty text="Aún no hay ingresos registrados." /> : data.recentEntries.map(({ record, student }) => <StudentRow key={record.id ?? `${student.id}-${record.time}`} student={student} classroom={data.classroomById.get(student.classroomId)} time={record.time} status={record.status} icon={record.status === 'LATE' ? <AlertTriangle size={18} /> : <LogIn size={18} />} onSelect={onSelect} />)}</div></TvCard>
     case 'lateStudents':
-      return <TvCard title="Alumnos con tardanza" subtitle={`${data.lateStudents.length} registrados hoy`} icon={<Clock3 size={20} />} strong><div className={`space-y-2 ${scroll30}`}>{data.lateStudents.length === 0 ? <Empty text="No hay tardanzas registradas hoy." /> : data.lateStudents.map(({ record, student }) => <StudentRow key={record.id ?? `${student.id}-${record.time}`} student={student} classroom={data.classroomById.get(student.classroomId)} time={record.time} status="LATE" icon={<AlertTriangle size={18} />} showStatus={false}/>)}</div></TvCard>
+      return <TvCard title="Alumnos con tardanza" subtitle={`${data.lateStudents.length} registrados hoy`} icon={<Clock3 size={20} />} strong><FilteredStudentList items={data.lateStudents.map(({ record, student }) => ({ record, student, classroom: data.classroomById.get(student.classroomId) }))} mobile={mobile} scrollClass={scroll30} empty={<Empty text="No hay tardanzas registradas hoy." />} keyOf={({ record, student }) => record.id ?? `${student.id}-${record.time}`} renderItem={({ record, student, classroom }) => <StudentRow student={student} classroom={classroom} time={record.time} status="LATE" icon={<AlertTriangle size={18} />} showStatus={false} onSelect={onSelect} />} /></TvCard>
     case 'lateByGrade':
-      return <TvCard title="Tardanzas por nivel y grado" subtitle={`${data.late} tardanzas hoy · actualización automática`} icon={<Clock3 size={20} />} strong><div className="grid gap-4 xl:grid-cols-2">{data.lateByLevel.map((group) => <LateLevelColumn key={group.level} group={group} mobile={mobile} />)}</div></TvCard>
+      return <TvCard title="Tardanzas por nivel y grado" subtitle={`${data.late} tardanzas hoy · actualización automática`} icon={<Clock3 size={20} />} strong><div className="grid gap-4 xl:grid-cols-2">{data.lateByLevel.map((group) => <LateLevelColumn key={group.level} group={group} mobile={mobile} onSelect={onSelect} />)}</div></TvCard>
     case 'lateByPrimaria':  
     case 'lateBySecundaria': {
       const level: Classroom['level'] = kind === 'lateByPrimaria' ? 'Primaria' : 'Secundaria'
       const group = data.lateByLevel.find((item) => item.level === level)
-      return <TvCard title={`Tardanzas de ${level.toLowerCase()}`} subtitle={`${group?.total ?? 0} tardanzas hoy · actualización automática`} icon={<Clock3 size={20} />} strong>{group && <LateLevelColumn group={group} mobile={mobile} />}</TvCard>
+      return <TvCard title={`Tardanzas de ${level.toLowerCase()}`} subtitle={`${group?.total ?? 0} tardanzas hoy · actualización automática`} icon={<Clock3 size={20} />} strong>{group && <LateLevelColumn group={group} mobile={mobile} onSelect={onSelect} />}</TvCard>
     }
     case 'todayIncidents':
-      return <TvCard title="Incidencias del día" subtitle={`${data.totalIncidents} incidencias registradas · actualización automática`} icon={<ShieldAlert size={20} />} strong><div className={`space-y-2 ${scroll34}`}>{data.enrichedIncidents.length === 0 ? <Empty text="No hay incidencias registradas hoy." /> : data.enrichedIncidents.map((event) => <div key={event.key} className={`grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-2xl border p-3.5 ${event.severity === 'conduct' ? 'border-red-400/20 bg-red-500/[.07]' : event.severity === 'late' ? 'border-amber-400/20 bg-amber-500/[.07]' : 'border-orange-400/20 bg-orange-500/[.06]'}`}><div className={`grid h-11 w-11 place-items-center rounded-xl ${event.severity === 'conduct' ? 'bg-red-500/15 text-red-300' : event.severity === 'late' ? 'bg-amber-500/15 text-amber-300' : 'bg-orange-500/15 text-orange-300'}`}><AlertTriangle size={20}/></div><div className="min-w-0"><p className="truncate text-base font-black">{event.student.firstName} {event.student.lastName}</p><p className="mt-1 truncate text-sm font-bold text-slate-300">{event.labels.join(' · ')}</p><p className="mt-0.5 text-xs font-semibold text-slate-500">{event.classroom ? `${event.classroom.grade} ${event.classroom.section} · ${event.classroom.level}` : 'Aula no encontrada'}</p></div><div className="font-mono text-lg font-black tabular-nums text-slate-300">{event.time || '—'}</div></div>)}</div></TvCard>
+      return <TvCard title="Incidencias del día" subtitle={`${data.totalIncidents} incidencias registradas · actualización automática`} icon={<ShieldAlert size={20} />} strong><div className={`space-y-2 ${scroll34}`}>{data.enrichedIncidents.length === 0 ? <Empty text="No hay incidencias registradas hoy." /> : data.enrichedIncidents.map((event) => <div key={event.key} {...tap(onSelect, event.student.id)} className={`grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-2xl border p-3.5 ${onSelect ? TAP_CLASS : ''} ${event.severity === 'conduct' ? 'border-red-400/20 bg-red-500/[.07]' : event.severity === 'late' ? 'border-amber-400/20 bg-amber-500/[.07]' : 'border-orange-400/20 bg-orange-500/[.06]'}`}><div className={`grid h-11 w-11 place-items-center rounded-xl ${event.severity === 'conduct' ? 'bg-red-500/15 text-red-300' : event.severity === 'late' ? 'bg-amber-500/15 text-amber-300' : 'bg-orange-500/15 text-orange-300'}`}><AlertTriangle size={20}/></div><div className="min-w-0"><p className="truncate text-base font-black">{event.student.firstName} {event.student.lastName}</p><p className="mt-1 truncate text-sm font-bold text-slate-300">{event.labels.join(' · ')}</p><p className="mt-0.5 text-xs font-semibold text-slate-500">{event.classroom ? `${event.classroom.grade} ${event.classroom.section} · ${event.classroom.level}` : 'Aula no encontrada'}</p></div><div className="font-mono text-lg font-black tabular-nums text-slate-300">{event.time || '—'}</div></div>)}</div></TvCard>
     case 'topIncidents':
       return <TvCard title="Top incidencias" subtitle="Tipos más repetidos hoy" icon={<BarChart3 size={20} />}><div className="space-y-4">{data.topTypes.length === 0 ? <Empty text="Sin datos todavía." /> : data.topTypes.map((item) => <div key={item.label}><div className="mb-1.5 flex items-center justify-between gap-3 text-sm"><span className="font-bold text-slate-300">{item.label}</span><b className="text-lg">{item.count}</b></div><div className="h-2.5 overflow-hidden rounded-full bg-white/5"><motion.div initial={{ width: 0 }} animate={{ width: `${Math.max(8, (item.count / Math.max(1, ...data.topTypes.map((entry) => entry.count))) * 100)}%` }} transition={{ duration: .45, ease: [0.22, 1, 0.36, 1] }} className="h-full rounded-full bg-amber-400" /></div></div>)}</div></TvCard>
     case 'topStudents':
-      return <TvCard title="Alumnos con más incidencias" subtitle="Ranking del día" icon={<Users size={20} />}><div className="space-y-2">{data.topStudents.length === 0 ? <Empty text="Sin incidencias hoy." /> : data.topStudents.map(({ student, count }, index) => <div key={student.id} className="flex items-center gap-3 rounded-xl bg-white/[.035] px-3 py-2.5"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/[.06] text-sm font-black text-slate-400">{index + 1}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-black">{student.firstName} {student.lastName}</p><p className="text-xs font-semibold text-slate-500">{data.classroomById.get(student.classroomId)?.grade ?? 'Aula'} {data.classroomById.get(student.classroomId)?.section ?? ''}</p></div><span className="rounded-lg bg-red-500/10 px-2.5 py-1 text-sm font-black text-red-300">{count}</span></div>)}</div></TvCard>
+      return <TvCard title="Alumnos con más incidencias" subtitle="Ranking del día" icon={<Users size={20} />}><div className="space-y-2">{data.topStudents.length === 0 ? <Empty text="Sin incidencias hoy." /> : data.topStudents.map(({ student, count }, index) => <div key={student.id} {...tap(onSelect, student.id)} className={`flex items-center gap-3 rounded-xl bg-white/[.035] px-3 py-2.5 ${onSelect ? TAP_CLASS : ''}`}><span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/[.06] text-sm font-black text-slate-400">{index + 1}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-black">{student.firstName} {student.lastName}</p><p className="text-xs font-semibold text-slate-500">{data.classroomById.get(student.classroomId)?.grade ?? 'Aula'} {data.classroomById.get(student.classroomId)?.section ?? ''}</p></div><span className="rounded-lg bg-red-500/10 px-2.5 py-1 text-sm font-black text-red-300">{count}</span></div>)}</div></TvCard>
     case 'attendanceSummary':
       return <TvCard title="Resumen de asistencia" subtitle="Estado del día" icon={<BarChart3 size={20} />}><div className="grid grid-cols-2 gap-3"><MiniStat label="Ingresaron" value={data.entered} /> <MiniStat label="A tiempo" value={data.onTime} /> <MiniStat label="Tardanzas" value={data.late} /> <MiniStat label="Cobertura" value={`${data.attendancePercentage}%`} /></div></TvCard>
     case 'exitSummary':
@@ -672,9 +703,9 @@ function renderCard(kind: CardKind, data: PanelData, totalStudents: number, mobi
     case 'presentationCompliance':
       return <TvCard title="Cumplimiento de presentación" subtitle="Control del reglamento" icon={<CheckCircle2 size={20} />}><div className="flex items-center gap-5"><div className="relative grid h-24 w-24 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(#d4a94f ${data.presentationPercentage * 3.6}deg, rgba(255,255,255,.07) 0deg)` }}><div className="grid h-16 w-16 place-items-center rounded-full bg-[#09111e] text-lg font-black">{data.presentationPercentage}%</div></div><div><p className="text-2xl font-black">{data.complianceOk}</p><p className="text-sm font-semibold text-slate-500">sin incidencias de presentación</p><p className="mt-2 text-xs font-bold text-slate-500">{data.complianceChecked} registros con incumplimiento</p></div></div></TvCard>
     case 'pendingStudents':
-      return <TvCard title="Alumnos sin ingreso" subtitle={`${data.pendingStudents.length} pendientes de marcar`} icon={<Users size={20} />}><div className={`space-y-2 ${scroll30}`}>{data.pendingStudents.length === 0 ? <Empty text="Todos los alumnos tienen registro de ingreso." /> : data.pendingStudents.map(({ student, classroom }) => <div key={student.id} className="flex items-center gap-3 rounded-2xl border border-white/7 bg-white/[.035] p-3"><div className="grid h-9 w-9 place-items-center rounded-xl bg-white/5 text-slate-400"><Clock3 size={17}/></div><div className="min-w-0 flex-1"><p className="truncate font-black">{student.firstName} {student.lastName}</p><p className="text-xs font-semibold text-slate-500">{classroom ? `${classroom.grade} ${classroom.section}` : 'Aula'}</p></div><span className="rounded-full bg-white/5 px-2 py-1 text-[11px] font-black uppercase tracking-wider text-slate-400">Pendiente</span></div>)}</div></TvCard>
+      return <TvCard title="Alumnos sin ingreso" subtitle={`${data.pendingStudents.length} pendientes de marcar`} icon={<Users size={20} />}><FilteredStudentList items={data.pendingStudents} mobile={mobile} scrollClass={scroll30} empty={<Empty text="Todos los alumnos tienen registro de ingreso." />} keyOf={({ student }) => student.id} renderItem={({ student, classroom }) => <div {...tap(onSelect, student.id)} className={`flex items-center gap-3 rounded-2xl border border-white/7 bg-white/[.035] p-3 ${onSelect ? TAP_CLASS : ''}`}><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/5 text-slate-400"><Clock3 size={17} /></div><div className="min-w-0 flex-1"><p className={mobile ? 'break-words font-black leading-tight' : 'truncate font-black'}>{student.firstName} {student.lastName}</p><p className="text-xs font-semibold text-slate-500">{classroom ? `${classroom.grade} ${classroom.section}` : 'Aula'}</p></div><span className="rounded-full bg-white/5 px-2 py-1 text-[11px] font-black uppercase tracking-wider text-slate-400">Pendiente</span></div>} /></TvCard>
     case 'classroomSummary':
-      return <TvCard title="Resumen por aula" subtitle="Visión completa del colegio" icon={<LayoutDashboard size={20} />}><div className={`grid gap-2 sm:grid-cols-2 ${scroll34}`}>{data.classroomSummary.map(({ classroom, total, entered, late, pending }) => <div key={classroom.id} className="rounded-2xl border border-white/7 bg-white/[.035] p-3.5"><div className="flex items-center justify-between gap-3"><div><p className="font-black">{classroom.grade} {classroom.section}</p><p className="text-xs font-semibold text-slate-500">{classroom.level}</p></div><span className="rounded-lg bg-white/5 px-2 py-1 text-xs font-black">{entered}/{total}</span></div><div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs"><div className="rounded-xl bg-emerald-500/8 px-2 py-2"><b className="block text-emerald-300">{Math.max(0, entered - late)}</b><span className="text-slate-500">a tiempo</span></div><div className="rounded-xl bg-amber-500/8 px-2 py-2"><b className="block text-amber-300">{late}</b><span className="text-slate-500">tarde</span></div><div className="rounded-xl bg-white/5 px-2 py-2"><b className="block text-slate-300">{pending}</b><span className="text-slate-500">pend.</span></div></div></div>)}</div></TvCard>
+      return <TvCard title="Resumen por aula" subtitle="Visión completa del colegio" icon={<LayoutDashboard size={20} />}><div className={`grid grid-cols-2 gap-2 ${scroll34}`}>{data.classroomSummary.map(({ classroom, total, entered, late, pending }) => <div key={classroom.id} className="rounded-2xl border border-white/7 bg-white/[.035] p-3.5"><div className="flex items-center justify-between gap-3"><div><p className="font-black">{classroom.grade} {classroom.section}</p><p className="text-xs font-semibold text-slate-500">{classroom.level}</p></div><span className="rounded-lg bg-white/5 px-2 py-1 text-xs font-black">{entered}/{total}</span></div><div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs"><div className="rounded-xl bg-emerald-500/8 px-2 py-2"><b className="block text-emerald-300">{Math.max(0, entered - late)}</b><span className="text-slate-500">a tiempo</span></div><div className="rounded-xl bg-amber-500/8 px-2 py-2"><b className="block text-amber-300">{late}</b><span className="text-slate-500">tarde</span></div><div className="rounded-xl bg-white/5 px-2 py-2"><b className="block text-slate-300">{pending}</b><span className="text-slate-500">pend.</span></div></div></div>)}</div></TvCard>
     case 'incidentsByClassroom':
       return <TvCard title="Incidencias por aula" subtitle="Dónde se concentran hoy" icon={<ShieldAlert size={20} />}><div className="space-y-2">{data.incidentsByClassroom.length === 0 ? <Empty text="Sin incidencias por aula." /> : data.incidentsByClassroom.map(({ classroom, count }) => <div key={classroom.id} className="flex items-center gap-3 rounded-xl bg-white/[.035] px-3 py-3"><div className="min-w-0 flex-1"><p className="truncate font-black">{classroom.grade} {classroom.section}</p><p className="text-xs font-semibold text-slate-500">{classroom.level}</p></div><span className={`rounded-lg px-2.5 py-1 text-sm font-black ${count ? 'bg-amber-500/10 text-amber-300' : 'bg-white/5 text-slate-500'}`}>{count}</span></div>)}</div></TvCard>
   }
@@ -684,11 +715,11 @@ function MetricStrip({ data, totalStudents }: { data: PanelData; totalStudents: 
   return <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-5 [&>*:last-child]:col-span-2 md:[&>*:last-child]:col-span-1"><Metric icon={<Users size={21} />} label="Alumnos" value={totalStudents} /><Metric icon={<LogIn size={21} />} label="Ingresaron" value={data.entered} accent="emerald" /><Metric icon={<Clock3 size={21} />} label="A tiempo" value={data.onTime} accent="blue" /><Metric icon={<AlertTriangle size={21} />} label="Tardanzas" value={data.late} accent="amber" /><Metric icon={<Users size={21} />} label="Sin marcar" value={data.pending} accent="slate" /></div>
 }
 
-function StudentRow({ student, classroom, time, status, icon, showStatus = true }: { student: Student; classroom?: Classroom; time: string; status: 'ON_TIME' | 'LATE'; icon: ReactNode; showStatus?: boolean }) {
-  return <div className="flex items-center gap-2.5 rounded-2xl border border-white/7 bg-white/[.035] p-2.5 sm:gap-3 sm:p-3"><div className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl sm:h-10 sm:w-10 ${status === 'LATE' ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300'}`}>{icon}</div><div className="min-w-0 flex-1"><p className="break-words font-black leading-tight sm:truncate">{student.firstName} {student.lastName}</p><p className="mt-0.5 text-xs font-semibold text-slate-500">{classroom ? `${classroom.grade} ${classroom.section} · ${classroom.level}` : 'Aula'}</p></div><div className="shrink-0 text-right"><p className="font-mono text-sm font-black sm:text-lg">{entryTimeLabel(time)}</p>{showStatus && <p className={`text-[11px] font-black uppercase tracking-wider ${status === 'LATE' ? 'text-amber-300' : 'text-emerald-300'}`}>{status === 'LATE' ? 'Tardanza' : 'A tiempo'}</p>}</div></div>
+function StudentRow({ student, classroom, time, status, icon, showStatus = true, onSelect }: { student: Student; classroom?: Classroom; time: string; status: 'ON_TIME' | 'LATE'; icon: ReactNode; showStatus?: boolean; onSelect?: SelectStudent }) {
+  return <div {...tap(onSelect, student.id)} className={`flex items-center gap-2.5 rounded-2xl border border-white/7 bg-white/[.035] p-2.5 sm:gap-3 sm:p-3 ${onSelect ? TAP_CLASS : ''}`}><div className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl sm:h-10 sm:w-10 ${status === 'LATE' ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300'}`}>{icon}</div><div className="min-w-0 flex-1"><p className="break-words font-black leading-tight sm:truncate">{student.firstName} {student.lastName}</p><p className="mt-0.5 text-xs font-semibold text-slate-500">{classroom ? `${classroom.grade} ${classroom.section} · ${classroom.level}` : 'Aula'}</p></div><div className="shrink-0 text-right"><p className="font-mono text-sm font-black sm:text-lg">{entryTimeLabel(time)}</p>{showStatus && <p className={`text-[11px] font-black uppercase tracking-wider ${status === 'LATE' ? 'text-amber-300' : 'text-emerald-300'}`}>{status === 'LATE' ? 'Tardanza' : 'A tiempo'}</p>}</div></div>
 }
 
-function LateLevelColumn({ group, mobile }: { group: LateLevelGroup; mobile: boolean }) {
+function LateLevelColumn({ group, mobile, onSelect }: { group: LateLevelGroup; mobile: boolean; onSelect?: SelectStudent }) {
   // En celular los grados se pliegan; si hay pocas tardanzas arrancan abiertos.
   const startOpen = !mobile || group.total <= 8
   return (
@@ -699,14 +730,14 @@ function LateLevelColumn({ group, mobile }: { group: LateLevelGroup; mobile: boo
       </div>
       {group.grades.length === 0 ? <Empty text={`Sin tardanzas en ${group.level.toLowerCase()} hoy.`} /> : (
         <div className={`space-y-3 ${mobile ? '' : 'max-h-[34rem] overflow-auto pr-1'}`}>
-          {group.grades.map(({ grade, rows }) => <LateGradeGroup key={grade} level={group.level} grade={grade} rows={rows} collapsible={mobile} startOpen={startOpen} />)}
+          {group.grades.map(({ grade, rows }) => <LateGradeGroup key={grade} level={group.level} grade={grade} rows={rows} collapsible={mobile} startOpen={startOpen} onSelect={onSelect} />)}
         </div>
       )}
     </div>
   )
 }
 
-function LateGradeGroup({ level, grade, rows, collapsible, startOpen }: { level: Classroom['level']; grade: string; rows: LateRow[]; collapsible: boolean; startOpen: boolean }) {
+function LateGradeGroup({ level, grade, rows, collapsible, startOpen, onSelect }: { level: Classroom['level']; grade: string; rows: LateRow[]; collapsible: boolean; startOpen: boolean; onSelect?: SelectStudent }) {
   const [open, setOpen] = useState(startOpen)
   const expanded = !collapsible || open
   const title = <><span>{gradeLabel(level, grade)}</span><span className="flex items-center gap-1.5">{rows.length}{collapsible && (expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}</span></>
@@ -718,7 +749,7 @@ function LateGradeGroup({ level, grade, rows, collapsible, startOpen }: { level:
       {expanded && (
         <div className="space-y-1.5">
           {rows.map(({ record, student, classroom }) => (
-            <div key={record.id ?? student.id} className="flex items-center gap-3 rounded-xl border border-white/7 bg-white/[.035] px-3 py-2">
+            <div key={record.id ?? student.id} {...tap(onSelect, student.id)} className={`flex items-center gap-3 rounded-xl border border-white/7 bg-white/[.035] px-3 py-2 ${onSelect ? TAP_CLASS : ''}`}>
               <span className="grid h-8 min-w-8 shrink-0 place-items-center rounded-lg bg-white/5 px-1.5 text-xs font-black text-slate-300" title="Sección">{classroom.section}</span>
               <p className={`min-w-0 flex-1 font-black ${collapsible ? 'break-words leading-tight' : 'truncate'}`}>{student.lastName}, {student.firstName}</p>
               {record.justified && <span className="rounded-md bg-sky-500/15 px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wider text-sky-300">Justificada</span>}
