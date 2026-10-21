@@ -19,7 +19,7 @@ export function gradeLabel(level: Classroom['level'], grade: string) {
 export type LateRow = { record: AttendanceRecord; student: Student; classroom: Classroom }
 export type LateLevelGroup = { level: Classroom['level']; total: number; justified: number; grades: Array<{ grade: string; rows: LateRow[] }> }
 
-function presentationLabels(record: PresentationRecord, attendanceLate: boolean) {
+export function presentationLabels(record: PresentationRecord, attendanceLate: boolean) {
   const labels: string[] = []
   if (record.hairstyleViolation) labels.push('Peinado')
   if (record.uniformUsageViolation) labels.push('Uniforme incompleto')

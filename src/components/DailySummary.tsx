@@ -1,13 +1,15 @@
 import type { ReactNode } from 'react'
 import { reportError } from '@/lib/security'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Bell, CalendarCheck2, CalendarOff, CheckCircle2, Clock3, MessageCircle, RotateCcw, Sparkles, TriangleAlert, Users, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { closeClassroomAttendance, getDailySchoolSummary, getSmartInsights, isAttendanceClosed, type DailySummary as Summary, type SmartInsight } from '@/services/phase6Service'
 import { CALENDAR_KIND_LABELS, closeAttendanceDay, reopenAttendanceDay } from '@/services/dayStatusService'
-import type { CalendarDay, Classroom } from '@/types'
+import type { AbsenceRecord, AttendanceRecord, CalendarDay, Classroom, NotificationRecord, PresentationRecord, Student, StudentPermission } from '@/types'
+import { buildSummaryList, type SummaryListKind } from '@/components/dailySummaryLists'
+import { SummaryStudentList } from '@/components/SummaryStudentList'
 import { friendlyError } from '@/lib/errorMessages'
 
 type Props = {
@@ -23,13 +25,23 @@ type Props = {
   calendarToday?: CalendarDay
   onDayChanged?: () => void
   onOpenWhatsAppQueue?: () => void
+  /** Datos del día para ver a los alumnos detrás de cada cifra (al tocarla). Sin ellos las cifras no son tocables. */
+  students?: Student[]
+  attendanceRecords?: AttendanceRecord[]
+  presentationRecords?: PresentationRecord[]
+  absences?: AbsenceRecord[]
+  permissions?: StudentPermission[]
+  notifications?: NotificationRecord[]
 }
 
-function metric(label: string, value: number, icon: ReactNode, className = '') {
-  return <Card className="p-4"><div className="flex items-center justify-between"><p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>{icon}</div><p className={`mt-2 text-2xl font-black ${className}`}>{value}</p></Card>
+function metric(label: string, value: number, icon: ReactNode, className = '', onClick?: () => void, hint = 'Ver alumnos') {
+  const card = <Card className={`p-4 ${onClick ? 'transition group-hover:border-sky-300 group-active:scale-[.98] dark:group-hover:border-sky-700' : ''}`}><div className="flex items-center justify-between"><p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>{icon}</div><p className={`mt-2 text-2xl font-black ${className}`}>{value}</p>{onClick && <p className="mt-1 text-[11px] font-bold text-sky-700 dark:text-sky-400">{hint}</p>}</Card>
+  if (!onClick) return card
+  return <button type="button" onClick={onClick} aria-label={`${label}: ${value}. ${hint}`} className="group block w-full rounded-2xl text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500">{card}</button>
 }
 
-export default function DailySummary({ open, onClose, classrooms, currentClassroom, today, onOpenAlerts, refreshKey = 0, dayStatusEnabled = false, calendarToday, onDayChanged, onOpenWhatsAppQueue }: Props) {
+export default function DailySummary({ open, onClose, classrooms, currentClassroom, today, onOpenAlerts, refreshKey = 0, dayStatusEnabled = false, calendarToday, onDayChanged, onOpenWhatsAppQueue, students = [], attendanceRecords = [], presentationRecords = [], absences = [], permissions = [], notifications = [] }: Props) {
+  const [listKind, setListKind] = useState<SummaryListKind | null>(null)
   const [closeResult, setCloseResult] = useState<{ absences: number; permissions: number } | null>(null)
   const [classroomId, setClassroomId] = useState<string | 'ALL'>(currentClassroom.id)
   const [summary, setSummary] = useState<Summary | null>(null)
@@ -85,6 +97,15 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
     finally { setClosing(false) }
   }
 
+  const canList = students.length > 0
+  const listRows = useMemo(
+    () => (listKind ? buildSummaryList(listKind, { date: today, classroomId, students, classrooms, attendance: attendanceRecords, presentation: presentationRecords, absences, permissions, notifications }) : []),
+    [listKind, today, classroomId, students, classrooms, attendanceRecords, presentationRecords, absences, permissions, notifications],
+  )
+  const absentLabel = closed ? 'Ausencias confirmadas' : 'Sin ingreso'
+  const listTitles: Record<SummaryListKind, string> = { students: 'Alumnos', present: 'Presentes', onTime: 'A tiempo', late: 'Tardanzas', absent: absentLabel, incidents: 'Incidencias', notifications: 'Notificaciones' }
+  const open_ = (kind: SummaryListKind, value: number) => (canList && value > 0 ? () => setListKind(kind) : undefined)
+
   const presentPct = summary?.totalStudents ? Math.round((summary.present / summary.totalStudents) * 100) : 0
 
   return (
@@ -105,14 +126,14 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
           {loading && <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Calculando resumen...</div>}
           {summary && <>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              {metric('Alumnos', summary.totalStudents, <Users size={17} className="text-slate-500 dark:text-slate-400"/>)}
-              {metric('Presentes', summary.present, <CheckCircle2 size={17} className="text-emerald-500"/>, 'text-emerald-700 dark:text-emerald-400')}
-              {metric('Tardanzas', summary.late, <Clock3 size={17} className="text-amber-500"/>, 'text-amber-700 dark:text-amber-400')}
-              {metric(closed ? 'Ausencias confirmadas' : 'Sin ingreso', summary.absent, <TriangleAlert size={17} className="text-violet-500"/>, 'text-violet-700 dark:text-violet-400')}
-              {metric('A tiempo', summary.onTime, <CheckCircle2 size={17} className="text-emerald-500"/>)}
-              {metric('Incidencias', summary.incidents, <TriangleAlert size={17} className="text-amber-500"/>)}
-              {metric('Notificaciones', summary.notifications, <CalendarCheck2 size={17} className="text-brand-gold"/>)}
-              {metric('Alertas abiertas', summary.openAlerts, <Bell size={17} className="text-red-500"/>, summary.openAlerts ? 'text-red-600 dark:text-red-400' : '')}
+              {metric('Alumnos', summary.totalStudents, <Users size={17} className="text-slate-500 dark:text-slate-400"/>, '', open_('students', summary.totalStudents))}
+              {metric('Presentes', summary.present, <CheckCircle2 size={17} className="text-emerald-500"/>, 'text-emerald-700 dark:text-emerald-400', open_('present', summary.present))}
+              {metric('Tardanzas', summary.late, <Clock3 size={17} className="text-amber-500"/>, 'text-amber-700 dark:text-amber-400', open_('late', summary.late))}
+              {metric(closed ? 'Ausencias confirmadas' : 'Sin ingreso', summary.absent, <TriangleAlert size={17} className="text-violet-500"/>, 'text-violet-700 dark:text-violet-400', open_('absent', summary.absent))}
+              {metric('A tiempo', summary.onTime, <CheckCircle2 size={17} className="text-emerald-500"/>, '', open_('onTime', summary.onTime))}
+              {metric('Incidencias', summary.incidents, <TriangleAlert size={17} className="text-amber-500"/>, '', open_('incidents', summary.incidents))}
+              {metric('Notificaciones', summary.notifications, <CalendarCheck2 size={17} className="text-brand-gold"/>, '', open_('notifications', summary.notifications))}
+              {metric('Alertas abiertas', summary.openAlerts, <Bell size={17} className="text-red-500"/>, summary.openAlerts ? 'text-red-600 dark:text-red-400' : '', summary.openAlerts > 0 ? onOpenAlerts : undefined, 'Revisar alertas')}
             </div>
 
             <div className="mt-5 grid gap-4 lg:grid-cols-[.9fr_1.1fr]">
@@ -152,6 +173,7 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
           </>}
         </div>
       </motion.section>
+      <SummaryStudentList open={listKind !== null} onClose={() => setListKind(null)} title={listKind ? listTitles[listKind] : ''} scopeLabel={scopeLabel} rows={listRows} groupByClassroom={classroomId === 'ALL'} />
     </motion.div>
     )}</AnimatePresence>
   )

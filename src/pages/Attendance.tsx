@@ -1573,6 +1573,12 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         calendarToday={calendarToday}
         onDayChanged={() => void reloadDayStatus()}
         onOpenWhatsAppQueue={() => { setDailySummaryOpen(false); setWhatsAppQueueOpen(true) }}
+        students={activeStudents}
+        attendanceRecords={records}
+        presentationRecords={presentationRecords}
+        absences={dayStatus.absences}
+        permissions={dayStatus.permissions}
+        notifications={notifications}
       />
 
       <JustifyDialog
