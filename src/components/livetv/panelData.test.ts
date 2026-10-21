@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AttendanceRecord, Classroom, PresentationRecord, Student } from '@/types'
-import { buildPanelData, gradeLabel } from './panelData'
+import { buildPanelData, gradeLabel, lateCountLabel } from './panelData'
 
 const TODAY = '2026-10-21'
 
@@ -75,5 +75,50 @@ describe('gradeLabel', () => {
     expect(gradeLabel('Primaria', '3.°')).toBe('3.° grado')
     expect(gradeLabel('Secundaria', '3.°')).toBe('3.° año')
     expect(gradeLabel('Secundaria', '3.° año')).toBe('3.° año')
+  })
+})
+
+describe('cumplimiento de presentación', () => {
+  it('se calcula solo sobre los alumnos revisados', () => {
+    const data = build([], [
+      presentation('s1', 'COMPLIANT'),
+      presentation('s2', 'NON_COMPLIANT', { hairstyleViolation: true }),
+    ])
+    expect(data.presentationReviewed).toBe(2)
+    expect(data.presentationCompliant).toBe(1)
+    expect(data.presentationNonCompliant).toBe(1)
+    expect(data.presentationUnreviewed).toBe(1)
+    expect(data.presentationPercentage).toBe(50)
+  })
+
+  it('sin revisiones no inventa un porcentaje', () => {
+    const data = build([])
+    expect(data.presentationReviewed).toBe(0)
+    expect(data.presentationPercentage).toBe(0)
+    expect(data.presentationUnreviewed).toBe(3)
+  })
+
+  it('ignora registros de alumnos que ya no están activos', () => {
+    const data = build([], [presentation('desconocido', 'NON_COMPLIANT', { hairstyleViolation: true })])
+    expect(data.presentationReviewed).toBe(0)
+  })
+})
+
+describe('tardanzas justificadas', () => {
+  it('las separa del total y por nivel', () => {
+    const data = build([
+      attendance('s1', 'LATE', { justified: true }),
+      attendance('s2', 'LATE'),
+      attendance('s3', 'ON_TIME', { justified: true }),
+    ])
+    expect(data.late).toBe(2)
+    expect(data.lateJustified).toBe(1)
+    expect(data.lateByLevel.find((group) => group.level === 'Primaria')?.justified).toBe(1)
+  })
+
+  it('arma la etiqueta con singular y plural', () => {
+    expect(lateCountLabel(16, 3)).toBe('16 tardanzas (3 justificadas)')
+    expect(lateCountLabel(1, 1)).toBe('1 tardanza (1 justificada)')
+    expect(lateCountLabel(5, 0)).toBe('5 tardanzas')
   })
 })

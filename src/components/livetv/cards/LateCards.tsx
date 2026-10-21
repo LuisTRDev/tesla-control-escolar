@@ -2,20 +2,20 @@ import { useState } from 'react'
 import { AlertTriangle, ChevronDown, ChevronUp, Clock3 } from 'lucide-react'
 import type { Classroom } from '@/types'
 import { FilteredStudentList } from '@/components/livetv/FilteredStudentList'
-import { gradeLabel, type LateLevelGroup, type LateRow } from '../panelData'
+import { gradeLabel, lateCountLabel, type LateLevelGroup, type LateRow } from '../panelData'
 import { Empty, StudentRow, TAP_CLASS, TvCard, scrollClass, tap, type CardProps, type SelectStudent } from './shared'
 
 export function LateStudentsCard({ data, mobile, onSelect }: CardProps) {
-  return <TvCard title="Alumnos con tardanza" subtitle={`${data.lateStudents.length} registrados hoy`} icon={<Clock3 size={20} />} strong><FilteredStudentList items={data.lateStudents.map(({ record, student }) => ({ record, student, classroom: data.classroomById.get(student.classroomId) }))} mobile={mobile} scrollClass={scrollClass(mobile, 30)} empty={<Empty text="No hay tardanzas registradas hoy." />} keyOf={({ record, student }) => record.id ?? `${student.id}-${record.time}`} renderItem={({ record, student, classroom }) => <StudentRow student={student} classroom={classroom} time={record.time} status="LATE" icon={<AlertTriangle size={18} />} showStatus={false} hideTime onSelect={onSelect} />} /></TvCard>
+  return <TvCard title="Alumnos con tardanza" subtitle={`${lateCountLabel(data.late, data.lateJustified)} hoy`} icon={<Clock3 size={20} />} strong><FilteredStudentList items={data.lateStudents.map(({ record, student }) => ({ record, student, classroom: data.classroomById.get(student.classroomId) }))} mobile={mobile} scrollClass={scrollClass(mobile, 30)} empty={<Empty text="No hay tardanzas registradas hoy." />} keyOf={({ record, student }) => record.id ?? `${student.id}-${record.time}`} renderItem={({ record, student, classroom }) => <StudentRow student={student} classroom={classroom} time={record.time} status="LATE" icon={<AlertTriangle size={18} />} showStatus={false} hideTime onSelect={onSelect} />} /></TvCard>
 }
 
 export function LateByGradeCard({ data, mobile, onSelect }: CardProps) {
-  return <TvCard title="Tardanzas por nivel y grado" subtitle={`${data.late} tardanzas hoy · actualización automática`} icon={<Clock3 size={20} />} strong><div className="grid gap-4 xl:grid-cols-2">{data.lateByLevel.map((group) => <LateLevelColumn key={group.level} group={group} mobile={mobile} onSelect={onSelect} />)}</div></TvCard>
+  return <TvCard title="Tardanzas por nivel y grado" subtitle={`${lateCountLabel(data.late, data.lateJustified)} hoy · actualización automática`} icon={<Clock3 size={20} />} strong><div className="grid gap-4 xl:grid-cols-2">{data.lateByLevel.map((group) => <LateLevelColumn key={group.level} group={group} mobile={mobile} onSelect={onSelect} />)}</div></TvCard>
 }
 
 export function LateByLevelCard({ data, mobile, onSelect, level }: CardProps & { level: Classroom['level'] }) {
   const group = data.lateByLevel.find((item) => item.level === level)
-  return <TvCard title={`Tardanzas de ${level.toLowerCase()}`} subtitle={`${group?.total ?? 0} tardanzas hoy · actualización automática`} icon={<Clock3 size={20} />} strong>{group && <LateLevelColumn group={group} mobile={mobile} onSelect={onSelect} />}</TvCard>
+  return <TvCard title={`Tardanzas de ${level.toLowerCase()}`} subtitle={`${lateCountLabel(group?.total ?? 0, group?.justified ?? 0)} hoy · actualización automática`} icon={<Clock3 size={20} />} strong>{group && <LateLevelColumn group={group} mobile={mobile} onSelect={onSelect} />}</TvCard>
 }
 
 function LateLevelColumn({ group, mobile, onSelect }: { group: LateLevelGroup; mobile: boolean; onSelect?: SelectStudent }) {

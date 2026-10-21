@@ -17,7 +17,7 @@ export function gradeLabel(level: Classroom['level'], grade: string) {
 }
 
 export type LateRow = { record: AttendanceRecord; student: Student; classroom: Classroom }
-export type LateLevelGroup = { level: Classroom['level']; total: number; grades: Array<{ grade: string; rows: LateRow[] }> }
+export type LateLevelGroup = { level: Classroom['level']; total: number; justified: number; grades: Array<{ grade: string; rows: LateRow[] }> }
 
 function presentationLabels(record: PresentationRecord, attendanceLate: boolean) {
   const labels: string[] = []
@@ -27,6 +27,13 @@ function presentationLabels(record: PresentationRecord, attendanceLate: boolean)
   if (record.lateEntryViolation && !attendanceLate) labels.push('Tardanza')
   if (record.inappropriateConductViolation) labels.push('Conducta inapropiada')
   return labels
+}
+
+/** "16 tardanzas (3 justificadas)": las justificadas se separan para no inflar la cifra. */
+export function lateCountLabel(late: number, justified: number) {
+  const base = `${late} ${late === 1 ? 'tardanza' : 'tardanzas'}`
+  if (justified <= 0) return base
+  return `${base} (${justified} ${justified === 1 ? 'justificada' : 'justificadas'})`
 }
 
 export type PanelInput = {
@@ -40,7 +47,8 @@ export type PanelInput = {
 /** Todo lo que muestran las tarjetas del panel, calculado a partir de los datos del día. Sin React: se puede probar. */
 export function buildPanelData({ students, classrooms, attendanceRecords, presentationRecords, today }: PanelInput) {
   const todayAttendance = attendanceRecords.filter((record) => record.date === today)
-  const todayPresentation = presentationRecords.filter((record) => record.date === today && record.status === 'NON_COMPLIANT')
+  const todayPresentationAll = presentationRecords.filter((record) => record.date === today)
+  const todayPresentation = todayPresentationAll.filter((record) => record.status === 'NON_COMPLIANT')
   const attendanceByStudent = new Map(todayAttendance.map((record) => [record.studentId, record]))
   const studentById = new Map(students.map((student) => [student.id, student]))
   const classroomById = new Map(classrooms.map((classroom) => [classroom.id, classroom]))
@@ -102,7 +110,7 @@ export function buildPanelData({ students, classrooms, attendanceRecords, presen
         grade,
         rows: rows.sort((a, b) => a.classroom.section.localeCompare(b.classroom.section, 'es') || `${a.student.lastName} ${a.student.firstName}`.localeCompare(`${b.student.lastName} ${b.student.firstName}`, 'es')),
       }))
-    return { level, total: grades.reduce((sum, item) => sum + item.rows.length, 0), grades }
+    return { level, total: grades.reduce((sum, item) => sum + item.rows.length, 0), justified: grades.reduce((sum, item) => sum + item.rows.filter((row) => row.record.justified).length, 0), grades }
   })
 
   const pendingStudents = students
@@ -120,10 +128,16 @@ export function buildPanelData({ students, classrooms, attendanceRecords, presen
   const late = todayAttendance.filter((record) => record.status === 'LATE').length
   const entered = enteredStudentIds.size
   const exited = todayAttendance.filter((record) => Boolean(record.exitTime)).length
-  const complianceChecked = todayPresentation.length
-  const complianceOk = students.length > 0 ? Math.max(0, students.length - complianceChecked) : 0
+  const lateJustified = todayAttendance.filter((record) => record.status === 'LATE' && record.justified).length
+  // Presentación: solo cuentan los alumnos que alguien revisó; el resto está "sin revisar", no "conforme".
+  const reviewedIds = new Set(todayPresentationAll.filter((record) => studentById.has(record.studentId)).map((record) => record.studentId))
+  const nonCompliantIds = new Set(todayPresentation.filter((record) => studentById.has(record.studentId)).map((record) => record.studentId))
+  const presentationReviewed = reviewedIds.size
+  const presentationNonCompliant = nonCompliantIds.size
+  const presentationCompliant = Math.max(0, presentationReviewed - presentationNonCompliant)
+  const presentationUnreviewed = Math.max(0, students.length - presentationReviewed)
   const attendancePercentage = students.length ? Math.round((entered / students.length) * 100) : 0
-  const presentationPercentage = students.length ? Math.round((complianceOk / students.length) * 100) : 0
+  const presentationPercentage = presentationReviewed ? Math.round((presentationCompliant / presentationReviewed) * 100) : 0
 
   const classroomSummary = classrooms.map((classroom) => {
     const classStudents = students.filter((student) => student.classroomId === classroom.id)
@@ -138,7 +152,8 @@ export function buildPanelData({ students, classrooms, attendanceRecords, presen
 
   return {
     entered, onTime, late, pending: Math.max(0, students.length - entered), exited,
-    complianceChecked, complianceOk, attendancePercentage, presentationPercentage,
+    lateJustified, presentationReviewed, presentationNonCompliant, presentationCompliant, presentationUnreviewed,
+    attendancePercentage, presentationPercentage,
     totalIncidents, recentEntries, lateStudents, lateByLevel, pendingStudents, enrichedIncidents,
     attendanceByStudent, studentById, incidents,
     topTypes, topStudents, classroomById, classroomSummary, incidentsByClassroom,

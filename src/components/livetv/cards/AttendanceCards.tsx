@@ -11,7 +11,7 @@ export function RecentEntriesCard({ data, onSelect }: CardProps) {
 }
 
 export function AttendanceSummaryCard({ data }: CardProps) {
-  return <TvCard title="Resumen de asistencia" subtitle="Estado del día" icon={<BarChart3 size={20} />}><div className="grid grid-cols-2 gap-3"><MiniStat label="Ingresaron" value={data.entered} /> <MiniStat label="A tiempo" value={data.onTime} /> <MiniStat label="Tardanzas" value={data.late} /> <MiniStat label="Cobertura" value={`${data.attendancePercentage}%`} /></div></TvCard>
+  return <TvCard title="Resumen de asistencia" subtitle="Estado del día" icon={<BarChart3 size={20} />}><div className="grid grid-cols-2 gap-3"><MiniStat label="Ingresaron" value={data.entered} /> <MiniStat label="A tiempo" value={data.onTime} /> <MiniStat label="Tardanzas" value={data.late} /> <MiniStat label="Cobertura" value={`${data.attendancePercentage}%`} /></div>{data.lateJustified > 0 && <p className="mt-3 text-xs font-bold text-sky-300">{data.lateJustified} de las tardanzas {data.lateJustified === 1 ? 'está justificada' : 'están justificadas'}</p>}</TvCard>
 }
 
 export function ExitSummaryCard({ data }: CardProps) {
