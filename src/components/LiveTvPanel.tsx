@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type DragEvent, type ReactNode } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
 import {
   Activity, AlertTriangle, BarChart3, CheckCircle2, Clock3, Expand,
   GripVertical, LayoutDashboard, LogIn, LogOut, Maximize2, Minimize,
@@ -9,6 +9,7 @@ import {
 import type { AttendanceRecord, Classroom, PresentationRecord, Student } from '@/types'
 import { useWakeLock } from '@/lib/nativeFeatures'
 import { entryTimeLabel } from '@/lib/displayLabels'
+import { LiveClock, LiveDate } from '@/components/livetv/LiveClock'
 
 type Props = {
   open: boolean
@@ -92,10 +93,6 @@ function gradeLabel(level: Classroom['level'], grade: string) {
 type LateRow = { record: AttendanceRecord; student: Student; classroom: Classroom }
 type LateLevelGroup = { level: Classroom['level']; total: number; grades: Array<{ grade: string; rows: LateRow[] }> }
 
-const pad = (value: number) => String(value).padStart(2, '0')
-const formatClock = (date: Date) => `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-const formatDate = (date: Date) => date.toLocaleDateString('es-PE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
-
 function presentationLabels(record: PresentationRecord, attendanceLate: boolean) {
   const labels: string[] = []
   if (record.hairstyleViolation) labels.push('Peinado')
@@ -135,7 +132,6 @@ export default function LiveTvPanel({
   today,
   realtimeConnected,
 }: Props) {
-  const [now, setNow] = useState(() => new Date())
   // Pantalla siempre encendida mientras se usa (hora de ingreso, pantalla del patio).
   useWakeLock(open)
   const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement))
@@ -148,11 +144,9 @@ export default function LiveTvPanel({
 
   useEffect(() => {
     if (!open) return
-    const timer = window.setInterval(() => setNow(new Date()), 1000)
     const handleFullscreen = () => setFullscreen(Boolean(document.fullscreenElement))
     document.addEventListener('fullscreenchange', handleFullscreen)
     return () => {
-      window.clearInterval(timer)
       document.removeEventListener('fullscreenchange', handleFullscreen)
     }
   }, [open])
@@ -360,17 +354,17 @@ export default function LiveTvPanel({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
         >
-          <div className="min-h-screen p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-6 xl:p-8">
+          <MotionConfig reducedMotion="user"><div className="min-h-screen p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(.75rem+env(safe-area-inset-top))] sm:p-6 xl:p-8">
             <header className="flex flex-col gap-3 border-b border-white/10 pb-4 sm:gap-5 sm:pb-5 xl:flex-row xl:items-center xl:justify-between">
               <div>
                 <div className="flex items-center gap-3">
                   <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white/10 text-sky-300 sm:h-12 sm:w-12"><Activity size={23} /></div>
                   <div className="min-w-0">
-                    <p className="text-[10px] font-black uppercase tracking-[.24em] text-sky-300 sm:text-xs">Tesla Control Escolar</p>
+                    <p className="text-[11px] font-black uppercase tracking-[.24em] text-sky-300 sm:text-xs">Tesla Control Escolar</p>
                     <h1 className="mt-0.5 text-xl font-black tracking-tight sm:mt-1 sm:text-3xl">Panel en vivo</h1>
                   </div>
                 </div>
-                <p className="mt-2 capitalize text-xs font-semibold text-slate-400 sm:mt-3 sm:text-sm">{formatDate(now)}</p>
+                <LiveDate active={open} className="mt-2 text-xs font-semibold capitalize text-slate-400 sm:mt-3 sm:text-sm" />
               </div>
 
               <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
@@ -378,8 +372,8 @@ export default function LiveTvPanel({
                   {realtimeConnected ? <Wifi size={17} /> : <WifiOff size={17} />}
                   <span className="sm:hidden">{realtimeConnected ? 'En vivo' : 'Reconectando…'}</span><span className="hidden sm:inline">{realtimeConnected ? 'Tiempo real conectado' : 'Reconectando…'}</span>
                 </div>
-                <div className="flex h-11 items-center rounded-xl border border-white/10 bg-white/5 px-3 font-mono text-lg font-black tabular-nums text-slate-100 sm:px-4 sm:text-2xl">{formatClock(now)}</div>
-                <motion.button whileTap={{ scale: 0.96 }} type="button" onClick={() => setEditMode((value) => !value)} className={`grid h-11 w-11 place-items-center rounded-xl border ${editMode ? 'border-brand-gold/50 bg-brand-gold/15 text-brand-gold' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'}`} aria-label="Personalizar panel">
+                <div className="flex h-11 items-center rounded-xl border border-white/10 bg-white/5 px-3 font-mono text-lg font-black tabular-nums text-slate-100 sm:px-4 sm:text-2xl"><LiveClock active={open} /></div>
+                <motion.button whileTap={{ scale: 0.96 }} type="button" onClick={() => setEditMode((value) => !value)} className={`grid h-11 w-11 place-items-center rounded-xl border ${editMode ? 'border-sky-400/50 bg-sky-400/15 text-sky-400' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'}`} aria-label="Personalizar panel">
                   <SlidersHorizontal size={19} />
                 </motion.button>
                 <motion.button whileTap={{ scale: 0.96 }} type="button" onClick={() => void toggleFullscreen()} className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10" aria-label="Pantalla completa">
@@ -396,11 +390,11 @@ export default function LiveTvPanel({
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                  className="mt-5 overflow-hidden rounded-3xl border border-brand-gold/20 bg-gradient-to-r from-brand-gold/[.10] via-white/[.04] to-transparent"
+                  className="mt-5 overflow-hidden rounded-3xl border border-sky-400/20 bg-gradient-to-r from-sky-400/[.10] via-white/[.04] to-transparent"
                 >
                   <div className="flex flex-col gap-4 p-4 sm:p-5 xl:flex-row xl:items-center xl:justify-between">
                     <div className="flex items-start gap-3">
-                      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-brand-gold/15 text-brand-gold"><GripVertical size={20} /></div>
+                      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-sky-400/15 text-sky-400"><GripVertical size={20} /></div>
                       <div>
                         <p className="font-black">Personaliza tu panel</p>
                         <p className="mt-1 max-w-2xl text-sm font-medium text-slate-400">Arrastra cualquier tarjeta para cambiar su posición. Usa el tamaño para hacer una tarjeta de ancho completo y colocarla debajo o encima de otra.</p>
@@ -418,9 +412,9 @@ export default function LiveTvPanel({
                       <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }} className="border-t border-white/10">
                         <div className="grid gap-2 p-4 sm:grid-cols-2 xl:grid-cols-3">
                           {CATALOG.filter((card) => !activeKinds.has(card.kind)).map((card) => (
-                            <button key={card.kind} type="button" onClick={() => addCard(card.kind)} className="group rounded-2xl border border-white/8 bg-white/[.035] p-4 text-left transition hover:-translate-y-0.5 hover:border-brand-gold/20 hover:bg-white/[.06]">
+                            <button key={card.kind} type="button" onClick={() => addCard(card.kind)} className="group rounded-2xl border border-white/8 bg-white/[.035] p-4 text-left transition hover:-translate-y-0.5 hover:border-sky-400/20 hover:bg-white/[.06]">
                               <div className="flex items-start gap-3">
-                                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/5 text-brand-gold"><LayoutDashboard size={18} /></div>
+                                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/5 text-sky-400"><LayoutDashboard size={18} /></div>
                                 <div className="min-w-0"><p className="font-black text-slate-100">{card.title}</p><p className="mt-1 text-xs leading-5 text-slate-500">{card.description}</p></div>
                               </div>
                             </button>
@@ -455,7 +449,7 @@ export default function LiveTvPanel({
                         <motion.div
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
-                          className={`pointer-events-none absolute inset-1 z-20 rounded-[28px] border-2 border-dashed ${dropTargetId === item.id ? 'border-brand-gold/80 bg-brand-gold/[.05]' : 'border-white/10'}`}
+                          className={`pointer-events-none absolute inset-1 z-20 rounded-[28px] border-2 border-dashed ${dropTargetId === item.id ? 'border-sky-400/80 bg-sky-400/[.05]' : 'border-white/10'}`}
                         />
                       )}
                       {editMode && (
@@ -466,7 +460,7 @@ export default function LiveTvPanel({
                         </div>
                       )}
                       {renderCard(item.kind, data, students.length)}
-                      {editMode && <span className="absolute bottom-3 left-3 z-30 rounded-lg bg-black/35 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 backdrop-blur">{catalog?.title}</span>}
+                      {editMode && <span className="absolute bottom-3 left-3 z-30 rounded-lg bg-black/35 px-2 py-1 text-[11px] font-black uppercase tracking-wider text-slate-400 backdrop-blur">{catalog?.title}</span>}
                     </motion.div>
                   )
                 })}
@@ -475,10 +469,11 @@ export default function LiveTvPanel({
 
             <AnimatePresence>
               {savedNotice && (
-                <motion.div initial={{ opacity: 0, y: 12, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.98 }} transition={{ duration: 0.2 }} className="fixed bottom-6 right-6 z-[120] flex items-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm font-black text-emerald-300 shadow-2xl backdrop-blur-xl"><CheckCircle2 size={17} /> Distribución guardada</motion.div>
+                <motion.div initial={{ opacity: 0, y: 12, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.98 }} transition={{ duration: 0.2 }} className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-4 z-[120] sm:right-6 flex items-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm font-black text-emerald-300 shadow-2xl backdrop-blur-xl"><CheckCircle2 size={17} /> Distribución guardada</motion.div>
               )}
             </AnimatePresence>
           </div>
+          </MotionConfig>
         </motion.section>
       )}
     </AnimatePresence>
@@ -507,7 +502,7 @@ function renderCard(kind: CardKind, data: PanelData, totalStudents: number) {
     case 'recentEntries':
       return <TvCard title="Últimos ingresos" subtitle="Movimientos registrados hoy" icon={<LogIn size={20} />}><div className="space-y-2">{data.recentEntries.length === 0 ? <Empty text="Aún no hay ingresos registrados." /> : data.recentEntries.map(({ record, student }) => <StudentRow key={record.id ?? `${student.id}-${record.time}`} student={student} classroom={data.classroomById.get(student.classroomId)} time={record.time} status={record.status} icon={record.status === 'LATE' ? <AlertTriangle size={18} /> : <LogIn size={18} />} />)}</div></TvCard>
     case 'lateStudents':
-      return <TvCard title="Alumnos con tardanza" subtitle={`${data.lateStudents.length} registrados hoy`} icon={<Clock3 size={20} />} strong><div className="max-h-[30rem] space-y-2 overflow-auto pr-1">{data.lateStudents.length === 0 ? <Empty text="No hay tardanzas registradas hoy." /> : data.lateStudents.map(({ record, student }) => <StudentRow key={record.id ?? `${student.id}-${record.time}`} student={student} classroom={data.classroomById.get(student.classroomId)} time={record.time} status="LATE" icon={<AlertTriangle size={18} />} />)}</div></TvCard>
+      return <TvCard title="Alumnos con tardanza" subtitle={`${data.lateStudents.length} registrados hoy`} icon={<Clock3 size={20} />} strong><div className="max-h-[30rem] space-y-2 overflow-auto pr-1">{data.lateStudents.length === 0 ? <Empty text="No hay tardanzas registradas hoy." /> : data.lateStudents.map(({ record, student }) => <StudentRow key={record.id ?? `${student.id}-${record.time}`} student={student} classroom={data.classroomById.get(student.classroomId)} time={record.time} status="LATE" icon={<AlertTriangle size={18} />} showStatus={false}/>)}</div></TvCard>
     case 'lateByGrade':
       return <TvCard title="Tardanzas por nivel y grado" subtitle={`${data.late} tardanzas hoy · actualización automática`} icon={<Clock3 size={20} />} strong><div className="grid gap-4 xl:grid-cols-2">{data.lateByLevel.map((group) => <LateLevelColumn key={group.level} group={group} />)}</div></TvCard>
     case 'lateByPrimaria':  
@@ -521,7 +516,7 @@ function renderCard(kind: CardKind, data: PanelData, totalStudents: number) {
     case 'topIncidents':
       return <TvCard title="Top incidencias" subtitle="Tipos más repetidos hoy" icon={<BarChart3 size={20} />}><div className="space-y-4">{data.topTypes.length === 0 ? <Empty text="Sin datos todavía." /> : data.topTypes.map((item) => <div key={item.label}><div className="mb-1.5 flex items-center justify-between gap-3 text-sm"><span className="font-bold text-slate-300">{item.label}</span><b className="text-lg">{item.count}</b></div><div className="h-2.5 overflow-hidden rounded-full bg-white/5"><motion.div initial={{ width: 0 }} animate={{ width: `${Math.max(8, (item.count / Math.max(1, ...data.topTypes.map((entry) => entry.count))) * 100)}%` }} transition={{ duration: .45, ease: [0.22, 1, 0.36, 1] }} className="h-full rounded-full bg-amber-400" /></div></div>)}</div></TvCard>
     case 'topStudents':
-      return <TvCard title="Alumnos con más incidencias" subtitle="Ranking del día" icon={<Users size={20} />}><div className="space-y-2">{data.topStudents.length === 0 ? <Empty text="Sin incidencias hoy." /> : data.topStudents.map(({ student, count }, index) => <div key={student.id} className="flex items-center gap-3 rounded-xl bg-white/[.035] px-3 py-2.5"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/[.06] text-sm font-black text-slate-400">{index + 1}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-black">{student.firstName} {student.lastName}</p><p className="text-[11px] font-semibold text-slate-500">{data.classroomById.get(student.classroomId)?.grade ?? 'Aula'} {data.classroomById.get(student.classroomId)?.section ?? ''}</p></div><span className="rounded-lg bg-red-500/10 px-2.5 py-1 text-sm font-black text-red-300">{count}</span></div>)}</div></TvCard>
+      return <TvCard title="Alumnos con más incidencias" subtitle="Ranking del día" icon={<Users size={20} />}><div className="space-y-2">{data.topStudents.length === 0 ? <Empty text="Sin incidencias hoy." /> : data.topStudents.map(({ student, count }, index) => <div key={student.id} className="flex items-center gap-3 rounded-xl bg-white/[.035] px-3 py-2.5"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/[.06] text-sm font-black text-slate-400">{index + 1}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-black">{student.firstName} {student.lastName}</p><p className="text-xs font-semibold text-slate-500">{data.classroomById.get(student.classroomId)?.grade ?? 'Aula'} {data.classroomById.get(student.classroomId)?.section ?? ''}</p></div><span className="rounded-lg bg-red-500/10 px-2.5 py-1 text-sm font-black text-red-300">{count}</span></div>)}</div></TvCard>
     case 'attendanceSummary':
       return <TvCard title="Resumen de asistencia" subtitle="Estado del día" icon={<BarChart3 size={20} />}><div className="grid grid-cols-2 gap-3"><MiniStat label="Ingresaron" value={data.entered} /> <MiniStat label="A tiempo" value={data.onTime} /> <MiniStat label="Tardanzas" value={data.late} /> <MiniStat label="Cobertura" value={`${data.attendancePercentage}%`} /></div></TvCard>
     case 'exitSummary':
@@ -529,11 +524,11 @@ function renderCard(kind: CardKind, data: PanelData, totalStudents: number) {
     case 'presentationCompliance':
       return <TvCard title="Cumplimiento de presentación" subtitle="Control del reglamento" icon={<CheckCircle2 size={20} />}><div className="flex items-center gap-5"><div className="relative grid h-24 w-24 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(#d4a94f ${data.presentationPercentage * 3.6}deg, rgba(255,255,255,.07) 0deg)` }}><div className="grid h-16 w-16 place-items-center rounded-full bg-[#09111e] text-lg font-black">{data.presentationPercentage}%</div></div><div><p className="text-2xl font-black">{data.complianceOk}</p><p className="text-sm font-semibold text-slate-500">sin incidencias de presentación</p><p className="mt-2 text-xs font-bold text-slate-500">{data.complianceChecked} registros con incumplimiento</p></div></div></TvCard>
     case 'pendingStudents':
-      return <TvCard title="Alumnos sin ingreso" subtitle={`${data.pendingStudents.length} pendientes de marcar`} icon={<Users size={20} />}><div className="max-h-[30rem] space-y-2 overflow-auto pr-1">{data.pendingStudents.length === 0 ? <Empty text="Todos los alumnos tienen registro de ingreso." /> : data.pendingStudents.map(({ student, classroom }) => <div key={student.id} className="flex items-center gap-3 rounded-2xl border border-white/7 bg-white/[.035] p-3"><div className="grid h-9 w-9 place-items-center rounded-xl bg-white/5 text-slate-400"><Clock3 size={17}/></div><div className="min-w-0 flex-1"><p className="truncate font-black">{student.firstName} {student.lastName}</p><p className="text-xs font-semibold text-slate-500">{classroom ? `${classroom.grade} ${classroom.section}` : 'Aula'}</p></div><span className="rounded-full bg-white/5 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Pendiente</span></div>)}</div></TvCard>
+      return <TvCard title="Alumnos sin ingreso" subtitle={`${data.pendingStudents.length} pendientes de marcar`} icon={<Users size={20} />}><div className="max-h-[30rem] space-y-2 overflow-auto pr-1">{data.pendingStudents.length === 0 ? <Empty text="Todos los alumnos tienen registro de ingreso." /> : data.pendingStudents.map(({ student, classroom }) => <div key={student.id} className="flex items-center gap-3 rounded-2xl border border-white/7 bg-white/[.035] p-3"><div className="grid h-9 w-9 place-items-center rounded-xl bg-white/5 text-slate-400"><Clock3 size={17}/></div><div className="min-w-0 flex-1"><p className="truncate font-black">{student.firstName} {student.lastName}</p><p className="text-xs font-semibold text-slate-500">{classroom ? `${classroom.grade} ${classroom.section}` : 'Aula'}</p></div><span className="rounded-full bg-white/5 px-2 py-1 text-[11px] font-black uppercase tracking-wider text-slate-400">Pendiente</span></div>)}</div></TvCard>
     case 'classroomSummary':
-      return <TvCard title="Resumen por aula" subtitle="Visión completa del colegio" icon={<LayoutDashboard size={20} />}><div className="grid max-h-[34rem] gap-2 overflow-auto pr-1 sm:grid-cols-2">{data.classroomSummary.map(({ classroom, total, entered, late, pending }) => <div key={classroom.id} className="rounded-2xl border border-white/7 bg-white/[.035] p-3.5"><div className="flex items-center justify-between gap-3"><div><p className="font-black">{classroom.grade} {classroom.section}</p><p className="text-[11px] font-semibold text-slate-500">{classroom.level}</p></div><span className="rounded-lg bg-white/5 px-2 py-1 text-xs font-black">{entered}/{total}</span></div><div className="mt-3 grid grid-cols-3 gap-2 text-center text-[11px]"><div className="rounded-xl bg-emerald-500/8 px-2 py-2"><b className="block text-emerald-300">{Math.max(0, entered - late)}</b><span className="text-slate-500">a tiempo</span></div><div className="rounded-xl bg-amber-500/8 px-2 py-2"><b className="block text-amber-300">{late}</b><span className="text-slate-500">tarde</span></div><div className="rounded-xl bg-white/5 px-2 py-2"><b className="block text-slate-300">{pending}</b><span className="text-slate-500">pend.</span></div></div></div>)}</div></TvCard>
+      return <TvCard title="Resumen por aula" subtitle="Visión completa del colegio" icon={<LayoutDashboard size={20} />}><div className="grid max-h-[34rem] gap-2 overflow-auto pr-1 sm:grid-cols-2">{data.classroomSummary.map(({ classroom, total, entered, late, pending }) => <div key={classroom.id} className="rounded-2xl border border-white/7 bg-white/[.035] p-3.5"><div className="flex items-center justify-between gap-3"><div><p className="font-black">{classroom.grade} {classroom.section}</p><p className="text-xs font-semibold text-slate-500">{classroom.level}</p></div><span className="rounded-lg bg-white/5 px-2 py-1 text-xs font-black">{entered}/{total}</span></div><div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs"><div className="rounded-xl bg-emerald-500/8 px-2 py-2"><b className="block text-emerald-300">{Math.max(0, entered - late)}</b><span className="text-slate-500">a tiempo</span></div><div className="rounded-xl bg-amber-500/8 px-2 py-2"><b className="block text-amber-300">{late}</b><span className="text-slate-500">tarde</span></div><div className="rounded-xl bg-white/5 px-2 py-2"><b className="block text-slate-300">{pending}</b><span className="text-slate-500">pend.</span></div></div></div>)}</div></TvCard>
     case 'incidentsByClassroom':
-      return <TvCard title="Incidencias por aula" subtitle="Dónde se concentran hoy" icon={<ShieldAlert size={20} />}><div className="space-y-2">{data.incidentsByClassroom.length === 0 ? <Empty text="Sin incidencias por aula." /> : data.incidentsByClassroom.map(({ classroom, count }) => <div key={classroom.id} className="flex items-center gap-3 rounded-xl bg-white/[.035] px-3 py-3"><div className="min-w-0 flex-1"><p className="truncate font-black">{classroom.grade} {classroom.section}</p><p className="text-[11px] font-semibold text-slate-500">{classroom.level}</p></div><span className={`rounded-lg px-2.5 py-1 text-sm font-black ${count ? 'bg-amber-500/10 text-amber-300' : 'bg-white/5 text-slate-500'}`}>{count}</span></div>)}</div></TvCard>
+      return <TvCard title="Incidencias por aula" subtitle="Dónde se concentran hoy" icon={<ShieldAlert size={20} />}><div className="space-y-2">{data.incidentsByClassroom.length === 0 ? <Empty text="Sin incidencias por aula." /> : data.incidentsByClassroom.map(({ classroom, count }) => <div key={classroom.id} className="flex items-center gap-3 rounded-xl bg-white/[.035] px-3 py-3"><div className="min-w-0 flex-1"><p className="truncate font-black">{classroom.grade} {classroom.section}</p><p className="text-xs font-semibold text-slate-500">{classroom.level}</p></div><span className={`rounded-lg px-2.5 py-1 text-sm font-black ${count ? 'bg-amber-500/10 text-amber-300' : 'bg-white/5 text-slate-500'}`}>{count}</span></div>)}</div></TvCard>
   }
 }
 
@@ -541,8 +536,8 @@ function MetricStrip({ data, totalStudents }: { data: PanelData; totalStudents: 
   return <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-5 [&>*:last-child]:col-span-2 md:[&>*:last-child]:col-span-1"><Metric icon={<Users size={21} />} label="Alumnos" value={totalStudents} /><Metric icon={<LogIn size={21} />} label="Ingresaron" value={data.entered} accent="emerald" /><Metric icon={<Clock3 size={21} />} label="A tiempo" value={data.onTime} accent="blue" /><Metric icon={<AlertTriangle size={21} />} label="Tardanzas" value={data.late} accent="amber" /><Metric icon={<Users size={21} />} label="Sin marcar" value={data.pending} accent="slate" /></div>
 }
 
-function StudentRow({ student, classroom, time, status, icon }: { student: Student; classroom?: Classroom; time: string; status: 'ON_TIME' | 'LATE'; icon: ReactNode }) {
-  return <div className="flex items-center gap-3 rounded-2xl border border-white/7 bg-white/[.035] p-3"><div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${status === 'LATE' ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300'}`}>{icon}</div><div className="min-w-0 flex-1"><p className="truncate font-black">{student.firstName} {student.lastName}</p><p className="mt-0.5 text-xs font-semibold text-slate-500">{classroom ? `${classroom.grade} ${classroom.section} · ${classroom.level}` : 'Aula'}</p></div><div className="shrink-0 text-right"><p className="font-mono text-sm font-black sm:text-lg">{entryTimeLabel(time)}</p><p className={`text-[10px] font-black uppercase tracking-wider ${status === 'LATE' ? 'text-amber-300' : 'text-emerald-300'}`}>{status === 'LATE' ? 'Tardanza' : 'A tiempo'}</p></div></div>
+function StudentRow({ student, classroom, time, status, icon, showStatus = true }: { student: Student; classroom?: Classroom; time: string; status: 'ON_TIME' | 'LATE'; icon: ReactNode; showStatus?: boolean }) {
+  return <div className="flex items-center gap-2.5 rounded-2xl border border-white/7 bg-white/[.035] p-2.5 sm:gap-3 sm:p-3"><div className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl sm:h-10 sm:w-10 ${status === 'LATE' ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300'}`}>{icon}</div><div className="min-w-0 flex-1"><p className="break-words font-black leading-tight sm:truncate">{student.firstName} {student.lastName}</p><p className="mt-0.5 text-xs font-semibold text-slate-500">{classroom ? `${classroom.grade} ${classroom.section} · ${classroom.level}` : 'Aula'}</p></div><div className="shrink-0 text-right"><p className="font-mono text-sm font-black sm:text-lg">{entryTimeLabel(time)}</p>{showStatus && <p className={`text-[11px] font-black uppercase tracking-wider ${status === 'LATE' ? 'text-amber-300' : 'text-emerald-300'}`}>{status === 'LATE' ? 'Tardanza' : 'A tiempo'}</p>}</div></div>
 }
 
 function LateLevelColumn({ group }: { group: LateLevelGroup }) {
@@ -564,7 +559,7 @@ function LateLevelColumn({ group }: { group: LateLevelGroup }) {
                   <div key={record.id ?? student.id} className="flex items-center gap-3 rounded-xl border border-white/7 bg-white/[.035] px-3 py-2">
                     <span className="grid h-8 min-w-8 shrink-0 place-items-center rounded-lg bg-white/5 px-1.5 text-xs font-black text-slate-300" title="Sección">{classroom.section}</span>
                     <p className="min-w-0 flex-1 truncate font-black">{student.lastName}, {student.firstName}</p>
-                    {record.justified && <span className="rounded-md bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-sky-300">Justificada</span>}
+                    {record.justified && <span className="rounded-md bg-sky-500/15 px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wider text-sky-300">Justificada</span>}
                     <span className="font-mono text-base font-black tabular-nums text-amber-300">{entryTimeLabel(record.time)}</span>
                   </div>
                 ))}
@@ -579,15 +574,15 @@ function LateLevelColumn({ group }: { group: LateLevelGroup }) {
 
 function Metric({ icon, label, value, accent = 'slate' }: { icon: ReactNode; label: string; value: number; accent?: 'slate' | 'emerald' | 'blue' | 'amber' }) {
   const accentClass = accent === 'emerald' ? 'text-emerald-300 bg-emerald-500/10' : accent === 'blue' ? 'text-sky-300 bg-sky-500/10' : accent === 'amber' ? 'text-amber-300 bg-amber-500/10' : 'text-slate-300 bg-white/5'
-  return <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[.035] p-3 sm:p-4 xl:p-5"><div className={`inline-flex max-w-full items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-black uppercase tracking-wider sm:gap-2 sm:px-3 sm:py-2 sm:text-xs ${accentClass}`}><span className="shrink-0 [&>svg]:h-4 [&>svg]:w-4 sm:[&>svg]:h-5 sm:[&>svg]:w-5">{icon}</span><span className="truncate">{label}</span></div><p className="mt-3 text-3xl font-black tabular-nums sm:mt-4 sm:text-4xl xl:text-5xl">{value}</p></div>
+  return <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[.035] p-3 sm:p-4 xl:p-5"><div className={`inline-flex max-w-full items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-black uppercase tracking-wider sm:gap-2 sm:px-3 sm:py-2 sm:text-xs ${accentClass}`}><span className="shrink-0 [&>svg]:h-4 [&>svg]:w-4 sm:[&>svg]:h-5 sm:[&>svg]:w-5">{icon}</span><span className="truncate">{label}</span></div><p className="mt-3 text-3xl font-black tabular-nums sm:mt-4 sm:text-4xl xl:text-5xl">{value}</p></div>
 }
 
 function MiniStat({ label, value }: { label: string; value: number | string }) {
-  return <div className="rounded-2xl bg-white/[.035] p-3"><p className="text-xl font-black tabular-nums">{value}</p><p className="mt-1 text-[11px] font-black uppercase tracking-widest text-slate-500">{label}</p></div>
+  return <div className="rounded-2xl bg-white/[.035] p-3"><p className="text-xl font-black tabular-nums">{value}</p><p className="mt-1 text-xs font-black uppercase tracking-widest text-slate-500">{label}</p></div>
 }
 
 function TvCard({ title, subtitle, icon, children, strong = false }: { title: string; subtitle: string; icon: ReactNode; children: ReactNode; strong?: boolean }) {
-  return <section className={`h-full min-w-0 rounded-3xl border p-3 sm:p-4 xl:p-5 ${strong ? 'border-brand-gold/15 bg-brand-gold/[.035]' : 'border-white/10 bg-white/[.025]'}`}><div className="mb-4 flex items-start gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/5 text-slate-300">{icon}</div><div className="min-w-0"><h2 className="text-lg font-black xl:text-xl">{title}</h2><p className="mt-0.5 text-xs font-semibold text-slate-500">{subtitle}</p></div></div>{children}</section>
+  return <section className={`h-full min-w-0 rounded-3xl border p-3 sm:p-4 xl:p-5 ${strong ? 'border-white/15 bg-white/[.045]' : 'border-white/10 bg-white/[.025]'}`}><div className="mb-4 flex items-start gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/5 text-slate-300">{icon}</div><div className="min-w-0"><h2 className="text-lg font-black xl:text-xl">{title}</h2><p className="mt-0.5 text-xs font-semibold text-slate-500">{subtitle}</p></div></div>{children}</section>
 }
 
 function Empty({ text }: { text: string }) {
