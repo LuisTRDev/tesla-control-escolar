@@ -4,7 +4,7 @@ import {
   Activity, CheckCircle2, Expand,
   GripVertical, LayoutDashboard, Maximize2, Minimize,
   RotateCcw, Save, SlidersHorizontal,
-  Wifi, WifiOff, X, EyeOff, Plus, ChevronDown, ChevronUp, ArrowUp, ArrowDown, MoreHorizontal, RefreshCw, Sun, Type, Vibrate,
+  Wifi, WifiOff, X, EyeOff, Plus, ChevronDown, ChevronUp, ArrowUp, ArrowDown, MoreHorizontal, RefreshCw, Share2, Sun, Type, Vibrate,
 } from 'lucide-react'
 import type { AttendanceRecord, Classroom, PresentationRecord, Student } from '@/types'
 import { useWakeLock } from '@/lib/nativeFeatures'
@@ -15,6 +15,8 @@ import { buildPanelData } from '@/components/livetv/panelData'
 import { renderCard } from '@/components/livetv/cards/renderCard'
 import { Empty } from '@/components/livetv/cards/shared'
 import { StudentSheetBody } from '@/components/livetv/StudentSheetBody'
+import { ShareSheet } from '@/components/livetv/ShareSheet'
+import { buildSummary } from '@/components/livetv/shareSummary'
 import { useMobileLayout } from '@/hooks/useMobileLayout'
 
 type Props = {
@@ -82,6 +84,7 @@ export default function LiveTvPanel({
   const [catalogOpen, setCatalogOpen] = useState(false)
   const [savedNotice, setSavedNotice] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   // 'open' se separa del id para que el contenido siga visible mientras la hoja baja al cerrarse.
   const [lastUpdate, setLastUpdate] = useState(() => Date.now())
   const [refreshing, setRefreshing] = useState(false)
@@ -281,7 +284,7 @@ export default function LiveTvPanel({
           transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
         >
           <MotionConfig reducedMotion="user">
-          <div style={mobile && largeText ? { zoom: 1.15 } : undefined} className={mobile ? 'min-h-full px-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))]' : 'min-h-screen p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(.75rem+env(safe-area-inset-top))] sm:p-6 xl:p-8'}>
+          <div style={largeText ? { zoom: 1.15 } : undefined} className={mobile ? 'min-h-full px-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))]' : 'min-h-screen p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(.75rem+env(safe-area-inset-top))] sm:p-6 xl:p-8'}>
             {mobile ? (
               <header className="sticky top-0 z-40 -mx-3 border-b border-white/10 bg-[#050b16]/95 px-3 pb-2.5 pt-[calc(.5rem+env(safe-area-inset-top))] backdrop-blur-xl">
                 <div className="flex items-center gap-2">
@@ -300,6 +303,7 @@ export default function LiveTvPanel({
                 </div>
                 <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
                   <UpdatedAgo since={lastUpdate} active={open} />
+                  <button type="button" onClick={() => setShareOpen(true)} className="ml-auto flex min-h-8 items-center gap-1.5 rounded-lg px-2 font-black text-slate-300 active:bg-white/10" aria-label="Compartir resumen"><Share2 size={14} />Compartir</button>
                   {onRefresh && <button type="button" onClick={() => void refresh()} disabled={refreshing} className="flex min-h-8 items-center gap-1.5 rounded-lg px-2 font-black text-slate-400 active:bg-white/10" aria-label="Actualizar datos"><RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />Actualizar</button>}
                 </div>
               </header>
@@ -322,6 +326,8 @@ export default function LiveTvPanel({
                   <motion.button whileTap={{ scale: 0.96 }} type="button" onClick={() => setEditMode((value) => !value)} className={`grid h-11 w-11 place-items-center rounded-xl border ${editMode ? 'border-sky-400/50 bg-sky-400/15 text-sky-400' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'}`} aria-label="Personalizar panel">
                     <SlidersHorizontal size={19} />
                   </motion.button>
+                  <motion.button whileTap={{ scale: 0.96 }} type="button" onClick={() => setShareOpen(true)} className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10" aria-label="Compartir resumen"><Share2 size={19} /></motion.button>
+                  <motion.button whileTap={{ scale: 0.96 }} type="button" onClick={() => setMenuOpen(true)} className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10" aria-label="Más opciones"><MoreHorizontal size={20} /></motion.button>
                   <motion.button whileTap={{ scale: 0.96 }} type="button" onClick={() => void toggleFullscreen()} className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10" aria-label="Pantalla completa">
                     {fullscreen ? <Minimize size={20} /> : <Expand size={20} />}
                   </motion.button>
@@ -475,12 +481,15 @@ export default function LiveTvPanel({
               )
             })()}
 
+            <ShareSheet open={shareOpen} onClose={() => setShareOpen(false)} getSummary={() => buildSummary(data, students.length)} />
+
             <LiveSheet open={menuOpen} onClose={() => setMenuOpen(false)} title="Panel en vivo" subtitle="Opciones">
               <LiveDate active={menuOpen} className="px-1 pb-3 text-sm font-semibold capitalize text-slate-400" />
               <div className="space-y-1">
+                <MenuAction icon={<Share2 size={19} />} label="Compartir resumen" description="Imagen o texto de las tardanzas" onClick={() => { setMenuOpen(false); setShareOpen(true) }} />
                 <MenuAction icon={<SlidersHorizontal size={19} />} label="Personalizar panel" description="Añadir, quitar y ordenar tarjetas" onClick={() => { setMenuOpen(false); setEditMode(true) }} />
                 <MenuToggle icon={<Sun size={19} />} label="Mantener pantalla encendida" description={keepAwake ? 'Activado: gasta más batería' : 'Desactivado: la pantalla se apaga sola'} checked={keepAwake} onChange={(value) => updatePrefs({ keepAwake: value })} />
-                <MenuToggle icon={<Vibrate size={19} />} label="Vibrar con tardanza nueva" checked={vibrateOnLate} onChange={(value) => updatePrefs({ vibrate: value })} />
+                {mobile && <MenuToggle icon={<Vibrate size={19} />} label="Vibrar con tardanza nueva" checked={vibrateOnLate} onChange={(value) => updatePrefs({ vibrate: value })} />}
                 <MenuToggle icon={<Type size={19} />} label="Texto grande" checked={largeText} onChange={(value) => updatePrefs({ largeText: value })} />
                 {canFullscreen && <MenuAction icon={fullscreen ? <Minimize size={19} /> : <Expand size={19} />} label={fullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'} onClick={() => { setMenuOpen(false); void toggleFullscreen() }} />}
               </div>
