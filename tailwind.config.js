@@ -22,6 +22,7 @@ export default {
         pulseRing: { '0%': { boxShadow: '0 0 0 0 rgba(240,180,41,.55)' }, '100%': { boxShadow: '0 0 0 10px rgba(240,180,41,0)' } },
         // Alerta de datos incompletos: el borde late en rojo sin bajar la opacidad del contenido.
         // Fila de tardanza que acaba de entrar al panel: destello ámbar que se apaga solo.
+        liveProgress: { '0%': { transform: 'scaleX(0)' }, '100%': { transform: 'scaleX(1)' } },
         lateFlash: { '0%': { backgroundColor: 'rgba(251,191,36,.45)', boxShadow: '0 0 0 2px rgba(251,191,36,.75)' }, '100%': { backgroundColor: 'rgba(255,255,255,.035)', boxShadow: '0 0 0 0 rgba(251,191,36,0)' } },
         blinkRed: { '0%, 100%': { borderColor: 'rgba(239,68,68,1)', boxShadow: '0 0 0 3px rgba(239,68,68,.35)' }, '50%': { borderColor: 'rgba(239,68,68,.25)', boxShadow: '0 0 0 0 rgba(239,68,68,0)' } },
       },
@@ -34,6 +35,7 @@ export default {
         pulseRing: 'pulseRing 1.4s ease-out infinite',
         blinkRed: 'blinkRed 1.1s ease-in-out infinite',
         lateFlash: 'lateFlash 5s ease-out 1',
+        liveProgress: 'liveProgress 20s linear forwards',
       },
     }
   },

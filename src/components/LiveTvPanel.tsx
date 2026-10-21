@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode, type TouchEvent } from 'react'
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
 import {
-  Activity, CheckCircle2, Expand,
+  Activity, CheckCircle2, Clock3, Expand,
   GripVertical, LayoutDashboard, Maximize2, Minimize,
   RotateCcw, Save, SlidersHorizontal,
-  Wifi, WifiOff, X, EyeOff, Plus, ChevronDown, ChevronUp, ArrowUp, ArrowDown, MoreHorizontal, RefreshCw, Share2, Sun, Type, Vibrate, Volume2,
+  Wifi, WifiOff, X, EyeOff, Plus, ChevronDown, ChevronUp, ArrowUp, ArrowDown, MoreHorizontal, Pause, Play, RefreshCw, Share2, Sun, Type, Vibrate, Volume2,
 } from 'lucide-react'
 import type { AttendanceRecord, Classroom, PresentationRecord, Student } from '@/types'
 import { useWakeLock } from '@/lib/nativeFeatures'
@@ -38,7 +38,7 @@ type Props = {
 }
 
 const PREFS_KEY = 'tesla-live-tv-prefs-v1'
-type PanelPrefs = { keepAwake?: boolean; largeText?: boolean; vibrate?: boolean; sound?: boolean }
+type PanelPrefs = { keepAwake?: boolean; largeText?: boolean; vibrate?: boolean; sound?: boolean; rotateSeconds?: number }
 function loadPrefs(): PanelPrefs {
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(PREFS_KEY) ?? 'null')
@@ -49,6 +49,7 @@ function loadPrefs(): PanelPrefs {
 }
 
 const PULL_TRIGGER = 60
+const ROTATE_CHOICES = [10, 20, 30, 60]
 const SWIPE_MIN_PX = 70
 const TAB_KEY = 'tesla-live-tv-tab-v1'
 function loadTab(): TabId {
@@ -79,7 +80,12 @@ export default function LiveTvPanel({
   const vibrateOnLate = prefs.vibrate ?? true
   const largeText = prefs.largeText ?? false
   const soundOnLate = prefs.sound ?? false
-  useWakeLock(open && keepAwake)
+  const rotateSeconds = prefs.rotateSeconds ?? 20
+  // Modo rotación: cambia de sección solo, con letra grande (pantalla del patio). Siempre con la pantalla encendida.
+  const [rotating, setRotating] = useState(false)
+  const [rotationPaused, setRotationPaused] = useState(false)
+  const [rotationRun, setRotationRun] = useState(0)
+  useWakeLock(open && (keepAwake || rotating))
   const sectionRef = useRef<HTMLElement | null>(null)
   const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement))
   const [editMode, setEditMode] = useState(false)
@@ -238,6 +244,10 @@ export default function LiveTvPanel({
   const shownTabs = editMode ? TABS : TABS.filter((item) => layout.some((card) => tabOfKind(card.kind) === item.id))
   const activeTab = shownTabs.some((item) => item.id === tab) ? tab : (shownTabs[0]?.id ?? 'tardanzas')
   const mobileCards = layout.filter((item) => tabOfKind(item.kind) === activeTab)
+  const tabbed = mobile || rotating
+  const ActiveIcon = TABS.find((item) => item.id === activeTab)?.icon ?? Clock3
+  const tabIds = shownTabs.map((item) => item.id).join(',')
+  const zoomValue = rotating ? (mobile ? 1.15 : 1.35) : largeText ? 1.15 : 1
   const canFullscreen = Boolean(document.fullscreenEnabled)
   const newLates = seenLate === null ? 0 : Math.max(0, data.late - seenLate)
 
@@ -264,6 +274,49 @@ export default function LiveTvPanel({
     if (activeTab === 'tardanzas') setSeenLate(data.late)
     else setSeenLate((current) => (current !== null && data.late < current ? data.late : current))
   }, [activeTab, data.late])
+
+  useEffect(() => { if (!open) setRotating(false) }, [open])
+
+  // Rotación: avanza a la siguiente sección cada N segundos (sin tocar la pestaña recordada del celular).
+  useEffect(() => {
+    if (!rotating || rotationPaused || !open) return
+    const ids = tabIds.split(',')
+    const timer = window.setInterval(() => {
+      setTab((current) => (ids[(ids.indexOf(current) + 1) % ids.length] ?? ids[0]) as TabId)
+    }, rotateSeconds * 1000)
+    return () => window.clearInterval(timer)
+  }, [rotating, rotationPaused, open, rotateSeconds, tabIds, rotationRun])
+
+  useEffect(() => {
+    if (rotating) sectionRef.current?.scrollTo({ top: 0 })
+  }, [activeTab, rotating])
+
+  useEffect(() => {
+    if (!rotating) return
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') setRotating(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [rotating])
+
+  function startRotation() {
+    setMenuOpen(false)
+    setEditMode(false)
+    setCatalogOpen(false)
+    setRotationPaused(false)
+    setRotationRun((value) => value + 1)
+    setRotating(true)
+  }
+
+  function toggleRotationPause() {
+    // Al reanudar, la barra de progreso y el temporizador vuelven a empezar juntos.
+    if (rotationPaused) setRotationRun((value) => value + 1)
+    setRotationPaused((value) => !value)
+  }
+
+  function goToRotationTab(next: TabId) {
+    setTab(next)
+    setRotationRun((value) => value + 1)
+  }
 
   function updatePrefs(patch: PanelPrefs) {
     const next = { ...prefs, ...patch }
@@ -337,8 +390,34 @@ export default function LiveTvPanel({
           <MotionConfig reducedMotion="user">
           <FlashContext.Provider value={flashing}>
           <p className="sr-only" role="status" aria-live="polite">{announcement}</p>
-          <div style={largeText ? { zoom: 1.15 } : undefined} className={mobile ? 'min-h-full px-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))]' : 'min-h-screen p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(.75rem+env(safe-area-inset-top))] sm:p-6 xl:p-8'}>
-            {mobile ? (
+          <div style={zoomValue !== 1 ? { zoom: zoomValue } : undefined} className={mobile ? 'min-h-full px-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))]' : 'min-h-screen p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(.75rem+env(safe-area-inset-top))] sm:p-6 xl:p-8'}>
+            {rotating ? (
+              <header className="sticky top-0 z-40 -mx-3 border-b border-white/10 bg-[#050b16]/95 px-3 pb-3 pt-[calc(.75rem+env(safe-area-inset-top))] backdrop-blur-xl sm:-mx-6 sm:px-6 xl:-mx-8 xl:px-8">
+                <div className="absolute inset-x-0 top-0 h-1 overflow-hidden bg-white/5" aria-hidden="true">
+                  <div key={`${activeTab}-${rotationRun}`} className="h-full origin-left animate-liveProgress bg-sky-400 motion-reduce:animate-none" style={{ animationDuration: `${rotateSeconds}s`, animationPlayState: rotationPaused ? 'paused' : 'running' }} />
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/10 text-sky-300"><ActiveIcon size={26} /></div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-black uppercase tracking-[.24em] text-sky-300">Panel en vivo</p>
+                    <h1 className="truncate text-2xl font-black tracking-tight sm:text-3xl">{TABS.find((item) => item.id === activeTab)?.label}</h1>
+                  </div>
+                  {!mobile && connectionChip(false)}
+                  <LiveClock active={open} className="font-mono text-xl font-black tabular-nums text-slate-100 sm:text-3xl" />
+                  <button type="button" onClick={toggleRotationPause} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-200 active:bg-white/10" aria-label={rotationPaused ? 'Reanudar rotación' : 'Pausar rotación'}>{rotationPaused ? <Play size={20} /> : <Pause size={20} />}</button>
+                  <button type="button" onClick={() => setRotating(false)} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-200 active:bg-white/10" aria-label="Salir del modo rotación"><X size={21} /></button>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2" aria-live="polite">
+                  <HeaderStat label="Tardanzas" value={data.late} tone="amber" onClick={() => goToRotationTab('tardanzas')} />
+                  <HeaderStat label="Ingresaron" value={data.entered} tone="emerald" onClick={() => goToRotationTab('resumen')} />
+                  <HeaderStat label="Sin marcar" value={data.pending} tone="slate" onClick={() => goToRotationTab('pendientes')} />
+                </div>
+                <div className="mt-2 flex gap-1.5 overflow-x-auto">
+                  {shownTabs.map((item) => <button key={item.id} type="button" onClick={() => goToRotationTab(item.id)} aria-current={item.id === activeTab ? 'page' : undefined} className={`min-h-9 shrink-0 rounded-full border px-3.5 text-xs font-black ${item.id === activeTab ? 'border-sky-400/50 bg-sky-400/15 text-sky-200' : 'border-white/10 bg-white/5 text-slate-400'}`}>{item.label}</button>)}
+                </div>
+                <StaleNotice since={lastUpdate} online={online} realtimeConnected={realtimeConnected} active={open} className="mt-2" />
+              </header>
+            ) : mobile ? (
               <header className="sticky top-0 z-40 -mx-3 border-b border-white/10 bg-[#050b16]/95 px-3 pb-2.5 pt-[calc(.5rem+env(safe-area-inset-top))] backdrop-blur-xl">
                 <div className="flex items-center gap-2">
                   {connectionChip(true)}
@@ -389,7 +468,7 @@ export default function LiveTvPanel({
                 </div>
               </header>
             )}
-            {!mobile && <StaleNotice since={lastUpdate} online={online} realtimeConnected={realtimeConnected} active={open} className="mt-3" />}
+            {!mobile && !rotating && <StaleNotice since={lastUpdate} online={online} realtimeConnected={realtimeConnected} active={open} className="mt-3" />}
 
             {mobile && (pull > 0 || refreshing) && (
               <div style={{ height: refreshing ? 36 : pull }} className="grid place-items-end justify-center overflow-hidden pt-2 text-sky-300" aria-hidden="true">
@@ -444,11 +523,11 @@ export default function LiveTvPanel({
               )}
             </AnimatePresence>
 
-            {mobile ? (
-              <motion.div key={activeTab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="mt-3 grid grid-cols-1 items-start gap-3 [@media(orientation:landscape)]:grid-cols-2">
-                {mobileCards.length === 0 && <div className="[@media(orientation:landscape)]:col-span-2"><Empty text="Esta pestaña no tiene tarjetas. Pulsa Personalizar para añadir." /></div>}
+            {tabbed ? (
+              <motion.div key={activeTab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className={mobile ? 'mt-3 grid grid-cols-1 items-start gap-3 [@media(orientation:landscape)]:grid-cols-2' : 'mt-4 grid grid-cols-12 items-start gap-4 xl:gap-5'}>
+                {mobileCards.length === 0 && <div className={mobile ? '[@media(orientation:landscape)]:col-span-2' : 'col-span-12'}><Empty text="Esta pestaña no tiene tarjetas. Pulsa Personalizar para añadir." /></div>}
                 {mobileCards.map((item, index) => (
-                  <div key={item.id} className="relative min-w-0">
+                  <div key={item.id} className={mobile ? 'relative min-w-0' : `${sizeClass(item.size)} relative min-w-0`}>
                     {editMode && (
                       <div className="mb-1.5 flex items-center gap-1 rounded-2xl border border-sky-400/20 bg-sky-400/[.06] p-1.5">
                         <span className="min-w-0 flex-1 truncate pl-2 text-xs font-black uppercase tracking-wider text-slate-300">{CATALOG.find((card) => card.kind === item.kind)?.title}</span>
@@ -457,7 +536,7 @@ export default function LiveTvPanel({
                         <button type="button" onClick={() => removeCard(item.id)} className="grid h-10 w-10 place-items-center rounded-xl text-red-300 active:bg-red-500/15" aria-label="Quitar tarjeta"><EyeOff size={18} /></button>
                       </div>
                     )}
-                    {renderCard(item.kind, data, students.length, true, (id) => setSheet({ id, open: true }))}
+                    {renderCard(item.kind, data, students.length, mobile, mobile ? (id) => setSheet({ id, open: true }) : undefined)}
                   </div>
                 ))}
               </motion.div>
@@ -502,7 +581,7 @@ export default function LiveTvPanel({
               </motion.div>
             )}
 
-            {mobile && (
+            {mobile && !rotating && (
               <nav aria-label="Secciones del panel" className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[#07101d]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
                 <div className="mx-auto flex max-w-3xl">
                   {shownTabs.map((item) => {
@@ -542,6 +621,11 @@ export default function LiveTvPanel({
               <LiveDate active={menuOpen} className="px-1 pb-3 text-sm font-semibold capitalize text-slate-400" />
               <div className="space-y-1">
                 <MenuAction icon={<Share2 size={19} />} label="Compartir resumen" description="Imagen o texto de las tardanzas" onClick={() => { setMenuOpen(false); setShareOpen(true) }} />
+                <MenuAction icon={<Play size={19} />} label="Modo rotación" description={`Cambia de sección solo cada ${rotateSeconds} s, con letra grande. Ideal para la pantalla del patio`} onClick={startRotation} />
+                <div className="flex flex-wrap items-center gap-2 px-2 pb-2 pl-[3.75rem]">
+                  <span className="text-xs font-bold text-slate-400">Cambiar cada</span>
+                  {ROTATE_CHOICES.map((seconds) => <button key={seconds} type="button" onClick={() => updatePrefs({ rotateSeconds: seconds })} aria-pressed={rotateSeconds === seconds} className={`min-h-9 rounded-full border px-3 text-xs font-black ${rotateSeconds === seconds ? 'border-sky-400/50 bg-sky-400/15 text-sky-200' : 'border-white/10 bg-white/5 text-slate-400'}`}>{seconds} s</button>)}
+                </div>
                 <MenuAction icon={<SlidersHorizontal size={19} />} label="Personalizar panel" description="Añadir, quitar y ordenar tarjetas" onClick={() => { setMenuOpen(false); setEditMode(true) }} />
                 <MenuToggle icon={<Sun size={19} />} label="Mantener pantalla encendida" description={keepAwake ? 'Activado: gasta más batería' : 'Desactivado: la pantalla se apaga sola'} checked={keepAwake} onChange={(value) => updatePrefs({ keepAwake: value })} />
                 <MenuToggle icon={<Volume2 size={19} />} label="Sonido con tardanza nueva" description="Un aviso corto cada vez que entra una tardanza" checked={soundOnLate} onChange={(value) => { updatePrefs({ sound: value }); if (value) playFeedback('late', { sound: true, vibration: false }) }} />
