@@ -35,6 +35,8 @@ type CardKind =
   | 'recentEntries'
   | 'lateStudents'
   | 'lateByGrade'
+  | 'lateByPrimaria'
+  | 'lateBySecundaria'
   | 'todayIncidents'
   | 'topIncidents'
   | 'topStudents'
@@ -66,6 +68,8 @@ const CATALOG: Array<{ kind: CardKind; title: string; description: string; defau
   { kind: 'recentEntries', title: 'Últimos ingresos', description: 'Últimos alumnos que registraron ingreso.', defaultSize: 'md' },
   { kind: 'lateStudents', title: 'Alumnos con tardanza', description: 'Lista completa del día, ordenada por hora.', defaultSize: 'md' },
   { kind: 'lateByGrade', title: 'Tardanzas por nivel y grado', description: 'Primaria y secundaria por separado, agrupadas por grado y año.', defaultSize: 'lg' },
+  { kind: 'lateByPrimaria', title: 'Tardanzas de primaria', description: 'Solo primaria, agrupada por grado.', defaultSize: 'md' },
+  { kind: 'lateBySecundaria', title: 'Tardanzas de secundaria', description: 'Solo secundaria, agrupada por año.', defaultSize: 'md' },
   { kind: 'todayIncidents', title: 'Incidencias del día', description: 'Detalle de incidencias y conductas registradas.', defaultSize: 'lg' },
   { kind: 'topIncidents', title: 'Top incidencias', description: 'Tipos de incidencias más repetidos.', defaultSize: 'sm' },
   { kind: 'topStudents', title: 'Alumnos con más incidencias', description: 'Ranking del día.', defaultSize: 'sm' },
@@ -506,6 +510,12 @@ function renderCard(kind: CardKind, data: PanelData, totalStudents: number) {
       return <TvCard title="Alumnos con tardanza" subtitle={`${data.lateStudents.length} registrados hoy`} icon={<Clock3 size={20} />} strong><div className="max-h-[30rem] space-y-2 overflow-auto pr-1">{data.lateStudents.length === 0 ? <Empty text="No hay tardanzas registradas hoy." /> : data.lateStudents.map(({ record, student }) => <StudentRow key={record.id ?? `${student.id}-${record.time}`} student={student} classroom={data.classroomById.get(student.classroomId)} time={record.time} status="LATE" icon={<AlertTriangle size={18} />} />)}</div></TvCard>
     case 'lateByGrade':
       return <TvCard title="Tardanzas por nivel y grado" subtitle={`${data.late} tardanzas hoy · actualización automática`} icon={<Clock3 size={20} />} strong><div className="grid gap-4 xl:grid-cols-2">{data.lateByLevel.map((group) => <LateLevelColumn key={group.level} group={group} />)}</div></TvCard>
+    case 'lateByPrimaria':  
+    case 'lateBySecundaria': {
+      const level: Classroom['level'] = kind === 'lateByPrimaria' ? 'Primaria' : 'Secundaria'
+      const group = data.lateByLevel.find((item) => item.level === level)
+      return <TvCard title={`Tardanzas de ${level.toLowerCase()}`} subtitle={`${group?.total ?? 0} tardanzas hoy · actualización automática`} icon={<Clock3 size={20} />} strong>{group && <LateLevelColumn group={group} />}</TvCard>
+    }
     case 'todayIncidents':
       return <TvCard title="Incidencias del día" subtitle={`${data.totalIncidents} incidencias registradas · actualización automática`} icon={<ShieldAlert size={20} />} strong><div className="max-h-[34rem] space-y-2 overflow-auto pr-1">{data.enrichedIncidents.length === 0 ? <Empty text="No hay incidencias registradas hoy." /> : data.enrichedIncidents.map((event) => <div key={event.key} className={`grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-2xl border p-3.5 ${event.severity === 'conduct' ? 'border-red-400/20 bg-red-500/[.07]' : event.severity === 'late' ? 'border-amber-400/20 bg-amber-500/[.07]' : 'border-orange-400/20 bg-orange-500/[.06]'}`}><div className={`grid h-11 w-11 place-items-center rounded-xl ${event.severity === 'conduct' ? 'bg-red-500/15 text-red-300' : event.severity === 'late' ? 'bg-amber-500/15 text-amber-300' : 'bg-orange-500/15 text-orange-300'}`}><AlertTriangle size={20}/></div><div className="min-w-0"><p className="truncate text-base font-black">{event.student.firstName} {event.student.lastName}</p><p className="mt-1 truncate text-sm font-bold text-slate-300">{event.labels.join(' · ')}</p><p className="mt-0.5 text-xs font-semibold text-slate-500">{event.classroom ? `${event.classroom.grade} ${event.classroom.section} · ${event.classroom.level}` : 'Aula no encontrada'}</p></div><div className="font-mono text-lg font-black tabular-nums text-slate-300">{event.time || '—'}</div></div>)}</div></TvCard>
     case 'topIncidents':
@@ -532,7 +542,7 @@ function MetricStrip({ data, totalStudents }: { data: PanelData; totalStudents: 
 }
 
 function StudentRow({ student, classroom, time, status, icon }: { student: Student; classroom?: Classroom; time: string; status: 'ON_TIME' | 'LATE'; icon: ReactNode }) {
-  return <div className="flex items-center gap-3 rounded-2xl border border-white/7 bg-white/[.035] p-3"><div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${status === 'LATE' ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300'}`}>{icon}</div><div className="min-w-0 flex-1"><p className="truncate font-black">{student.firstName} {student.lastName}</p><p className="mt-0.5 text-xs font-semibold text-slate-500">{classroom ? `${classroom.grade} ${classroom.section} · ${classroom.level}` : 'Aula'}</p></div><div className="text-right"><p className="font-mono text-lg font-black">{entryTimeLabel(time)}</p><p className={`text-[10px] font-black uppercase tracking-wider ${status === 'LATE' ? 'text-amber-300' : 'text-emerald-300'}`}>{status === 'LATE' ? 'Tardanza' : 'A tiempo'}</p></div></div>
+  return <div className="flex items-center gap-3 rounded-2xl border border-white/7 bg-white/[.035] p-3"><div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${status === 'LATE' ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300'}`}>{icon}</div><div className="min-w-0 flex-1"><p className="truncate font-black">{student.firstName} {student.lastName}</p><p className="mt-0.5 text-xs font-semibold text-slate-500">{classroom ? `${classroom.grade} ${classroom.section} · ${classroom.level}` : 'Aula'}</p></div><div className="shrink-0 text-right"><p className="font-mono text-sm font-black sm:text-lg">{entryTimeLabel(time)}</p><p className={`text-[10px] font-black uppercase tracking-wider ${status === 'LATE' ? 'text-amber-300' : 'text-emerald-300'}`}>{status === 'LATE' ? 'Tardanza' : 'A tiempo'}</p></div></div>
 }
 
 function LateLevelColumn({ group }: { group: LateLevelGroup }) {
