@@ -428,12 +428,12 @@ export default function LiveTvPanel({
                     <button type="button" onClick={onClose} className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-300" aria-label="Cerrar panel"><X size={20} /></button>
                   </div>
                 </div>
-                <div className="mt-2 grid grid-cols-3 gap-2">
+                <div className="mt-2 grid grid-cols-3 gap-2" role="group" aria-label="Cifras del día" aria-live="polite">
                   <HeaderStat label="Tardanzas" value={data.late} tone="amber" onClick={() => changeTab('tardanzas')} />
                   <HeaderStat label="Ingresaron" value={data.entered} tone="emerald" onClick={() => changeTab('resumen')} />
                   <HeaderStat label="Sin marcar" value={data.pending} tone="slate" onClick={() => changeTab('pendientes')} />
                 </div>
-                <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
+                <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-400">
                   <UpdatedAgo since={lastUpdate} active={open} />
                   <button type="button" onClick={() => setShareOpen(true)} className="ml-auto flex min-h-8 items-center gap-1.5 rounded-lg px-2 font-black text-slate-300 active:bg-white/10" aria-label="Compartir resumen"><Share2 size={14} />Compartir</button>
                   {onRefresh && <button type="button" onClick={() => void refresh()} disabled={refreshing} className="flex min-h-8 items-center gap-1.5 rounded-lg px-2 font-black text-slate-400 active:bg-white/10" aria-label="Actualizar datos"><RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />Actualizar</button>}
@@ -510,11 +510,11 @@ export default function LiveTvPanel({
                             <button key={card.kind} type="button" onClick={() => addCard(card.kind)} className="group rounded-2xl border border-white/8 bg-white/[.035] p-4 text-left transition hover:-translate-y-0.5 hover:border-sky-400/20 hover:bg-white/[.06]">
                               <div className="flex items-start gap-3">
                                 <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/5 text-sky-400"><LayoutDashboard size={18} /></div>
-                                <div className="min-w-0"><p className="font-black text-slate-100">{card.title}</p><p className="mt-1 text-xs leading-5 text-slate-500">{card.description}</p></div>
+                                <div className="min-w-0"><p className="font-black text-slate-100">{card.title}</p><p className="mt-1 text-xs leading-5 text-slate-400">{card.description}</p></div>
                               </div>
                             </button>
                           ))}
-                          {CATALOG.every((card) => activeKinds.has(card.kind)) && <div className="rounded-2xl border border-dashed border-white/10 px-4 py-6 text-center text-sm font-semibold text-slate-500 sm:col-span-2 xl:col-span-3">Todas las tarjetas disponibles ya están agregadas.</div>}
+                          {CATALOG.every((card) => activeKinds.has(card.kind)) && <div className="rounded-2xl border border-dashed border-white/10 px-4 py-6 text-center text-sm font-semibold text-slate-400 sm:col-span-2 xl:col-span-3">Todas las tarjetas disponibles ya están agregadas.</div>}
                         </div>
                       </motion.div>
                     )}
@@ -588,7 +588,7 @@ export default function LiveTvPanel({
                     const Icon = item.icon
                     const selected = item.id === activeTab
                     return (
-                      <button key={item.id} type="button" onClick={() => changeTab(item.id)} aria-current={selected ? 'page' : undefined} className={`relative flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-black ${selected ? 'text-white' : 'text-slate-500 active:text-slate-300'}`}>
+                      <button key={item.id} type="button" onClick={() => changeTab(item.id)} aria-current={selected ? 'page' : undefined} className={`relative flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-black ${selected ? 'text-white' : 'text-slate-400 active:text-slate-300'}`}>
                         {selected && <span className="absolute inset-x-4 top-0 h-0.5 rounded-full bg-sky-400" />}
                         <Icon size={21} />
                         {item.label}
@@ -652,12 +652,12 @@ function MenuToggle({ icon, label, description, checked, onChange }: { icon: Rea
   return (
     <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)} className="flex min-h-14 w-full items-center gap-3 rounded-2xl px-2 py-2 text-left active:bg-white/10">
       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/5 text-sky-300">{icon}</span>
-      <span className="min-w-0 flex-1"><span className="block text-[15px] font-bold">{label}</span>{description && <span className="mt-0.5 block text-xs font-medium text-slate-500">{description}</span>}</span>
+      <span className="min-w-0 flex-1"><span className="block text-[15px] font-bold">{label}</span>{description && <span className="mt-0.5 block text-xs font-medium text-slate-400">{description}</span>}</span>
       <span className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${checked ? 'bg-sky-500' : 'bg-white/15'}`}><span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${checked ? 'left-[1.4rem]' : 'left-0.5'}`} /></span>
     </button>
   )
 }
 
 function MenuAction({ icon, label, description, onClick }: { icon: ReactNode; label: string; description?: string; onClick: () => void }) {
-  return <button type="button" onClick={onClick} className="flex min-h-14 w-full items-center gap-3 rounded-2xl px-2 py-2 text-left active:bg-white/10"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/5 text-sky-300">{icon}</span><span className="min-w-0 flex-1"><span className="block text-[15px] font-bold">{label}</span>{description && <span className="mt-0.5 block text-xs font-medium text-slate-500">{description}</span>}</span></button>
+  return <button type="button" onClick={onClick} className="flex min-h-14 w-full items-center gap-3 rounded-2xl px-2 py-2 text-left active:bg-white/10"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/5 text-sky-300">{icon}</span><span className="min-w-0 flex-1"><span className="block text-[15px] font-bold">{label}</span>{description && <span className="mt-0.5 block text-xs font-medium text-slate-400">{description}</span>}</span></button>
 }

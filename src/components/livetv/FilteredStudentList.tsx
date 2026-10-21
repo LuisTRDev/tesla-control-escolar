@@ -43,7 +43,7 @@ export function FilteredStudentList<T extends Entry>({ items, mobile, scrollClas
         <div className="mb-3 space-y-2">
           <label className="relative block">
             <span className="sr-only">Buscar alumno</span>
-            <Search size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <Search size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="search"
               inputMode="search"
@@ -51,7 +51,7 @@ export function FilteredStudentList<T extends Entry>({ items, mobile, scrollClas
               value={query}
               onChange={(event) => { setQuery(event.target.value); setShown(PAGE_SIZE) }}
               placeholder="Buscar alumno…"
-              className="h-11 w-full rounded-xl border border-white/10 bg-white/5 pl-10 pr-10 text-base font-semibold text-white placeholder:text-slate-500 focus:border-sky-400/50 focus:outline-none [&::-webkit-search-cancel-button]:appearance-none"
+              className="h-11 w-full rounded-xl border border-white/10 bg-white/5 pl-10 pr-10 text-base font-semibold text-white placeholder:text-slate-400 focus:border-sky-400/50 focus:outline-none [&::-webkit-search-cancel-button]:appearance-none"
             />
             {query && <button type="button" onClick={() => { setQuery(''); setShown(PAGE_SIZE) }} className="absolute right-1 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-lg text-slate-400 active:bg-white/10" aria-label="Borrar búsqueda"><X size={17} /></button>}
           </label>
@@ -66,7 +66,7 @@ export function FilteredStudentList<T extends Entry>({ items, mobile, scrollClas
         {items.length === 0
           ? empty
           : filtered.length === 0
-            ? <div className="rounded-2xl border border-dashed border-white/10 px-4 py-8 text-center text-sm font-semibold text-slate-500">Nadie coincide con la búsqueda.</div>
+            ? <div className="rounded-2xl border border-dashed border-white/10 px-4 py-8 text-center text-sm font-semibold text-slate-400">Nadie coincide con la búsqueda.</div>
             : visible.map((entry) => <div key={keyOf(entry)}>{renderItem(entry)}</div>)}
       </div>
       {mobile && filtered.length > visible.length && (

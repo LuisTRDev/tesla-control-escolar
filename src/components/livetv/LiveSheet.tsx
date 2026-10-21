@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { AnimatePresence, motion, useDragControls } from 'framer-motion'
 import { X } from 'lucide-react'
 import { useBackClose } from '@/lib/backClose'
@@ -14,7 +14,18 @@ type Props = {
 /** Hoja inferior oscura del panel en vivo: se cierra tocando fuera, con la X, arrastrando hacia abajo o con "atrás". */
 export function LiveSheet({ open, onClose, title, subtitle, children }: Props) {
   const dragControls = useDragControls()
+  const dialogRef = useRef<HTMLDivElement>(null)
   useBackClose(open, onClose)
+  // Teclado y lectores de pantalla: el foco pasa a la hoja al abrirla y Escape la cierra.
+  const closeRef = useRef(onClose)
+  useEffect(() => { closeRef.current = onClose })
+  useEffect(() => {
+    if (!open) return
+    dialogRef.current?.focus()
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') closeRef.current() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
   return (
     <AnimatePresence>
       {open && (
@@ -27,10 +38,12 @@ export function LiveSheet({ open, onClose, title, subtitle, children }: Props) {
           transition={{ duration: 0.18 }}
         >
           <motion.div
+            ref={dialogRef}
+            tabIndex={-1}
             role="dialog"
             aria-modal="true"
             aria-label={title}
-            className="max-h-[85dvh] w-full overflow-y-auto rounded-t-3xl border border-b-0 border-white/10 bg-[#0b1626] pb-[calc(1rem+env(safe-area-inset-bottom))] text-white shadow-2xl sm:max-w-md"
+            className="max-h-[85dvh] w-full overflow-y-auto outline-none rounded-t-3xl border border-b-0 border-white/10 bg-[#0b1626] pb-[calc(1rem+env(safe-area-inset-bottom))] text-white shadow-2xl sm:max-w-md"
             onMouseDown={(event) => event.stopPropagation()}
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
