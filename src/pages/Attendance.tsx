@@ -1669,6 +1669,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
           presentationRecords={presentationRecords}
           today={today}
           realtimeConnected={realtimeState.connected}
+          online={syncState.online}
           onRefresh={() => reloadData(false)}
         />
       </Deferred>

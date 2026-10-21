@@ -16,6 +16,7 @@ import { renderCard } from '@/components/livetv/cards/renderCard'
 import { Empty } from '@/components/livetv/cards/shared'
 import { StudentSheetBody } from '@/components/livetv/StudentSheetBody'
 import { ShareSheet } from '@/components/livetv/ShareSheet'
+import { StaleNotice } from '@/components/livetv/StaleNotice'
 import { buildSummary } from '@/components/livetv/shareSummary'
 import { useMobileLayout } from '@/hooks/useMobileLayout'
 
@@ -28,6 +29,8 @@ type Props = {
   presentationRecords: PresentationRecord[]
   today: string
   realtimeConnected: boolean
+  /** Hay conexión a Internet; sin ella se avisa que los datos pueden estar viejos. */
+  online?: boolean
   /** Vuelve a pedir los datos al servidor (botón y gesto de jalar para refrescar). */
   onRefresh?: () => Promise<void>
 }
@@ -44,6 +47,16 @@ function loadPrefs(): PanelPrefs {
 }
 
 const PULL_TRIGGER = 60
+const SWIPE_MIN_PX = 70
+const TAB_KEY = 'tesla-live-tv-tab-v1'
+function loadTab(): TabId {
+  try {
+    const saved = localStorage.getItem(TAB_KEY)
+    return TABS.some((item) => item.id === saved) ? saved as TabId : 'tardanzas'
+  } catch {
+    return 'tardanzas'
+  }
+}
 
 export default function LiveTvPanel({
   open,
@@ -54,6 +67,7 @@ export default function LiveTvPanel({
   presentationRecords,
   today,
   realtimeConnected,
+  online = true,
   onRefresh,
 }: Props) {
   const mobile = useMobileLayout()
@@ -78,7 +92,7 @@ export default function LiveTvPanel({
   const setLayout = useCallback((update: (current: LayoutCard[]) => LayoutCard[]) => {
     setLayouts((current) => ({ ...current, [mode]: update(current[mode]) }))
   }, [mode])
-  const [tab, setTab] = useState<TabId>('tardanzas')
+  const [tab, setTab] = useState<TabId>(loadTab)
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
   const [catalogOpen, setCatalogOpen] = useState(false)
@@ -90,6 +104,7 @@ export default function LiveTvPanel({
   const [refreshing, setRefreshing] = useState(false)
   const [pull, setPull] = useState(0)
   const pullStart = useRef<number | null>(null)
+  const swipeStart = useRef<{ x: number; y: number } | null>(null)
   const [seenLate, setSeenLate] = useState<number | null>(null)
   const [sheet, setSheet] = useState<{ id: string; open: boolean } | null>(null)
 
@@ -130,6 +145,7 @@ export default function LiveTvPanel({
 
   function changeTab(next: TabId) {
     setTab(next)
+    try { localStorage.setItem(TAB_KEY, next) } catch { /* sin almacenamiento: no se recuerda la pestaña */ }
     sectionRef.current?.scrollTo({ top: 0 })
   }
 
@@ -248,6 +264,10 @@ export default function LiveTvPanel({
 
   // Jalar hacia abajo estando arriba del todo refresca (el navegador no lo hace dentro del panel).
   function onTouchStart(event: TouchEvent<HTMLElement>) {
+    // Lo que ocurre dentro de una hoja (ficha, menú, compartir) no es gesto del panel.
+    const inDialog = (event.target as HTMLElement).closest('[role="dialog"]')
+    swipeStart.current = mobile && !inDialog ? { x: event.touches[0].clientX, y: event.touches[0].clientY } : null
+    if (inDialog) { pullStart.current = null; return }
     pullStart.current = mobile && !editMode && onRefresh && sectionRef.current?.scrollTop === 0 ? event.touches[0].clientY : null
   }
   function onTouchMove(event: TouchEvent<HTMLElement>) {
@@ -255,8 +275,24 @@ export default function LiveTvPanel({
     const distance = event.touches[0].clientY - pullStart.current
     setPull(distance > 0 ? Math.min(distance * 0.5, 80) : 0)
   }
-  function onTouchEnd() {
+  function onTouchEnd(event: TouchEvent<HTMLElement>) {
+    const start = swipeStart.current
+    swipeStart.current = null
     if (pullStart.current !== null && pull >= PULL_TRIGGER) void refresh()
+    pullStart.current = null
+    setPull(0)
+    // Deslizar de lado cambia de pestaña (solo si el gesto es claramente horizontal).
+    const touch = event.changedTouches[0]
+    if (!start || !touch) return
+    const dx = touch.clientX - start.x
+    const dy = touch.clientY - start.y
+    if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) < Math.abs(dy) * 1.6) return
+    const index = shownTabs.findIndex((item) => item.id === activeTab)
+    const next = shownTabs[index + (dx < 0 ? 1 : -1)]
+    if (next) changeTab(next.id)
+  }
+  function onTouchCancel() {
+    swipeStart.current = null
     pullStart.current = null
     setPull(0)
   }
@@ -276,7 +312,7 @@ export default function LiveTvPanel({
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
-          onTouchCancel={onTouchEnd}
+          onTouchCancel={onTouchCancel}
           className="fixed inset-0 z-[100] overflow-y-auto overscroll-contain bg-[#050b16] text-white"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -306,6 +342,7 @@ export default function LiveTvPanel({
                   <button type="button" onClick={() => setShareOpen(true)} className="ml-auto flex min-h-8 items-center gap-1.5 rounded-lg px-2 font-black text-slate-300 active:bg-white/10" aria-label="Compartir resumen"><Share2 size={14} />Compartir</button>
                   {onRefresh && <button type="button" onClick={() => void refresh()} disabled={refreshing} className="flex min-h-8 items-center gap-1.5 rounded-lg px-2 font-black text-slate-400 active:bg-white/10" aria-label="Actualizar datos"><RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />Actualizar</button>}
                 </div>
+                <StaleNotice since={lastUpdate} online={online} realtimeConnected={realtimeConnected} active={open} className="mt-2" />
               </header>
             ) : (
               <header className="flex flex-col gap-3 border-b border-white/10 pb-4 sm:gap-5 sm:pb-5 xl:flex-row xl:items-center xl:justify-between">
@@ -335,6 +372,7 @@ export default function LiveTvPanel({
                 </div>
               </header>
             )}
+            {!mobile && <StaleNotice since={lastUpdate} online={online} realtimeConnected={realtimeConnected} active={open} className="mt-3" />}
 
             {mobile && (pull > 0 || refreshing) && (
               <div style={{ height: refreshing ? 36 : pull }} className="grid place-items-end justify-center overflow-hidden pt-2 text-sky-300" aria-hidden="true">

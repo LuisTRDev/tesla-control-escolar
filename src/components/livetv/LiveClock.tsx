@@ -5,7 +5,7 @@ const formatClock = (date: Date) => `${pad(date.getHours())}:${pad(date.getMinut
 const formatDate = (date: Date) => date.toLocaleDateString('es-PE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
 
 /** Reloj con su propio estado: solo él se repinta cada segundo, no todo el panel. Se detiene con la pantalla en segundo plano. */
-function useNow(intervalMs: number, active: boolean) {
+export function useNow(intervalMs: number, active: boolean) {
   const [now, setNow] = useState(() => new Date())
   useEffect(() => {
     if (!active) return
@@ -37,5 +37,5 @@ export const UpdatedAgo = memo(function UpdatedAgo({ since, active, className }:
   const now = useNow(5000, active)
   const seconds = Math.max(0, Math.round((now.getTime() - since) / 1000))
   const label = seconds < 10 ? 'ahora' : seconds < 60 ? `hace ${seconds} s` : `hace ${Math.floor(seconds / 60)} min`
-  return <span className={className}>Actualizado {label}</span>
+  return <span className={className}>Último cambio {label}</span>
 })
