@@ -4,6 +4,8 @@ export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
+      // Celular girado o ventana baja: el alto, no el ancho, es lo que falta.
+      screens: { short: { raw: '(max-height: 520px)' } },
       borderRadius: {
         xl: '1rem',
         '2xl': '1.25rem'
@@ -23,7 +25,11 @@ export default {
         // Alerta de datos incompletos: el borde late en rojo sin bajar la opacidad del contenido.
         // Fila de tardanza que acaba de entrar al panel: destello ámbar que se apaga solo.
         liveProgress: { '0%': { transform: 'scaleX(0)' }, '100%': { transform: 'scaleX(1)' } },
-        lateFlash: { '0%': { backgroundColor: 'rgba(251,191,36,.45)', boxShadow: '0 0 0 2px rgba(251,191,36,.75)' }, '100%': { backgroundColor: 'rgba(255,255,255,.035)', boxShadow: '0 0 0 0 rgba(251,191,36,0)' } },
+        lateFlash: {
+          '0%': { backgroundColor: 'rgba(251,191,36,.30)', backgroundImage: 'linear-gradient(105deg, transparent 35%, rgba(253,224,71,.55) 50%, transparent 65%)', backgroundSize: '250% 100%', backgroundPosition: '160% 0', boxShadow: '0 0 0 2px rgba(251,191,36,.7)' },
+          '35%': { backgroundPosition: '-60% 0', boxShadow: '0 0 0 2px rgba(251,191,36,.45)' },
+          '100%': { backgroundColor: 'rgba(255,255,255,.035)', backgroundImage: 'linear-gradient(105deg, transparent 35%, rgba(253,224,71,.55) 50%, transparent 65%)', backgroundSize: '250% 100%', backgroundPosition: '-60% 0', boxShadow: '0 0 0 0 rgba(251,191,36,0)' },
+        },
         blinkRed: { '0%, 100%': { borderColor: 'rgba(239,68,68,1)', boxShadow: '0 0 0 3px rgba(239,68,68,.35)' }, '50%': { borderColor: 'rgba(239,68,68,.25)', boxShadow: '0 0 0 0 rgba(239,68,68,0)' } },
       },
       animation: {

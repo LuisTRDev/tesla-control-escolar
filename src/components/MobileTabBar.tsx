@@ -18,10 +18,10 @@ function Tab({ icon, label, onClick, active = false, badge }: { icon: ReactNode;
     <button
       type="button"
       onClick={onClick}
-      className={`relative flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-[11px] font-bold transition-colors active:scale-95 active:bg-slate-100 dark:active:bg-slate-800 ${active ? 'text-slate-950 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}
+      className={`relative flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-[11px] font-bold short:flex-row short:gap-1.5 short:py-0 short:text-xs transition-colors active:scale-95 active:bg-slate-100 dark:active:bg-slate-800 ${active ? 'text-slate-950 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}
       aria-current={active ? 'page' : undefined}
     >
-      <span className={`grid h-8 w-12 place-items-center rounded-full transition-colors ${active ? 'bg-slate-200/80 dark:bg-slate-800' : ''}`}>{icon}</span>
+      <span className={`grid h-8 w-12 place-items-center rounded-full transition-colors short:h-7 short:w-8 ${active ? 'bg-slate-200/80 dark:bg-slate-800' : ''}`}>{icon}</span>
       <span className="truncate">{label}</span>
       {badge !== undefined && badge > 0 && (
         <span className="absolute left-1/2 top-0.5 ml-2 min-w-[18px] rounded-full bg-slate-950 px-1 text-center text-[10px] font-black leading-[18px] text-white dark:bg-white dark:text-slate-950">

@@ -81,8 +81,9 @@ html.scroll-locked, html.scroll-locked body { overflow: hidden; }
 
 /* Módulos (Dashboard, Reportes, Alumnos...) en celular: pantalla completa con la
    cabecera fija arriba, como una pantalla nativa. Overlay con data-screen-overlay,
-   panel con data-screen. */
-@media (max-width: 639px) {
+   panel con data-screen. También en pantallas bajas (celular girado): ahí el ancho
+   sobra pero el alto no, y un módulo con margen y bordes casi no deja ver contenido. */
+@media (max-width: 639px), (max-height: 520px) {
   [data-screen-overlay] {
     padding: 0 !important;
     background: #f8fafc !important;
@@ -108,6 +109,25 @@ html.scroll-locked, html.scroll-locked body { overflow: hidden; }
     top: 0;
     z-index: 20;
     border-radius: 0 !important;
+  }
+}
+
+/* Pantalla baja (celular girado): los diálogos dejan de ser una caja de alto limitado con
+   cabecera y botones fijos —que se comen todo el alto— y pasan a una sola hoja que se
+   desplaza completa dentro de la pantalla. */
+@media (max-height: 520px) {
+  :root { --tabbar-h: 2.75rem; }
+  [data-sheet-overlay] {
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: center !important;
+    overflow-y: auto !important;
+    padding: 0.5rem !important;
+  }
+  [data-sheet] {
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 auto;
   }
 }
 

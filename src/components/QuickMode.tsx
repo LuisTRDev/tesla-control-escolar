@@ -157,13 +157,13 @@ export default function QuickMode({ open, onClose, classrooms, students, records
 
   return (
     <AnimatePresence>{open && (
-    <motion.div className="fixed inset-0 z-[70] bg-slate-950/60 backdrop-blur-sm sm:p-5" onMouseDown={onClose} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
-      <motion.section className="relative mx-auto flex h-full w-full max-w-5xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-slate-950 sm:max-h-[94vh] sm:rounded-3xl sm:border sm:border-slate-200 sm:dark:border-slate-800" onMouseDown={(e) => e.stopPropagation()} initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
-        <div className="flex items-start justify-between gap-3 border-b border-slate-200 p-4 dark:border-slate-800 sm:p-5">
+    <motion.div className="fixed inset-0 z-[70] bg-slate-950/60 backdrop-blur-sm sm:p-5 short:p-0" onMouseDown={onClose} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
+      <motion.section className="relative mx-auto flex h-full w-full max-w-5xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-slate-950 sm:max-h-[94vh] sm:rounded-3xl sm:border sm:border-slate-200 sm:dark:border-slate-800 short:max-h-none short:overflow-y-auto short:rounded-none short:border-0" onMouseDown={(e) => e.stopPropagation()} initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 p-4 dark:border-slate-800 sm:p-5 short:p-2 short:px-4">
           <div className="min-w-0">
             <p className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-300"><Zap size={15}/> Modo auxiliar rápido</p>
-            <h2 className="mt-1 text-xl font-black sm:text-2xl">{classroomId === 'ALL' ? 'Todo el colegio' : (() => { const c = classroomMap.get(classroomId); return c ? `${c.grade} ${c.section} · ${c.level}` : 'Aula' })()}</h2>
-            <p className="mt-1 hidden text-sm text-slate-500 sm:block">Toca un alumno para marcar su entrada. {online ? 'Conectado a Supabase.' : 'Sin conexión: las entradas quedarán en cola.'}</p>
+            <h2 className="mt-1 text-xl font-black sm:text-2xl short:mt-0 short:text-lg">{classroomId === 'ALL' ? 'Todo el colegio' : (() => { const c = classroomMap.get(classroomId); return c ? `${c.grade} ${c.section} · ${c.level}` : 'Aula' })()}</h2>
+            <p className="mt-1 hidden text-sm text-slate-500 sm:block short:hidden">Toca un alumno para marcar su entrada. {online ? 'Conectado a Supabase.' : 'Sin conexión: las entradas quedarán en cola.'}</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button variant="outline" className="hidden sm:inline-flex" onClick={openBulk} disabled={unmarkedInView.length === 0}>
@@ -174,26 +174,26 @@ export default function QuickMode({ open, onClose, classrooms, students, records
         </div>
 
         {/* Contador en vivo del alcance actual (aula o colegio + búsqueda). */}
-        <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800 sm:px-5">
+        <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800 sm:px-5 short:py-1.5">
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
             <span className="text-lg font-black tabular-nums">{counts.marked}/{counts.total} <span className="text-sm font-bold text-slate-500 dark:text-slate-400">ingresaron</span></span>
             <span className="font-bold tabular-nums text-amber-700 dark:text-amber-400">{counts.late} tardanza{counts.late !== 1 ? 's' : ''}</span>
             <span className="font-bold tabular-nums text-slate-600 dark:text-slate-300">{counts.pending} faltan</span>
             {!online && <span className="ml-auto rounded-lg bg-amber-100 px-2 py-0.5 text-xs font-black text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">Sin conexión · en cola</span>}
           </div>
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800 short:mt-1">
             <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${progress}%` }} />
           </div>
         </div>
 
-        <div className="grid gap-2 border-b border-slate-200 p-3 dark:border-slate-800 sm:p-4 md:grid-cols-[1fr_230px]">
+        <div className="grid gap-2 border-b border-slate-200 p-3 dark:border-slate-800 sm:p-4 md:grid-cols-[1fr_230px] short:p-2">
           <div className="relative">
-            <Search className="absolute left-4 top-4 text-slate-500 dark:text-slate-400" size={20}/>
-            <Input ref={searchRef} autoFocus className="h-14 pl-12 text-base" placeholder="Apellido, nombre o DNI..." value={query} onChange={(e)=>{setQuery(e.target.value);setKeyHint('')}} onKeyDown={handleSearchKey} enterKeyHint="search" aria-describedby="quick-search-hint"/>
+            <Search className="absolute left-4 top-4 text-slate-500 dark:text-slate-400 short:top-3" size={20}/>
+            <Input ref={searchRef} autoFocus={!window.matchMedia('(max-height: 520px) and (pointer: coarse)').matches} className="h-14 pl-12 text-base short:h-11" placeholder="Apellido, nombre o DNI..." value={query} onChange={(e)=>{setQuery(e.target.value);setKeyHint('')}} onKeyDown={handleSearchKey} enterKeyHint="search" aria-describedby="quick-search-hint"/>
             {keyHint && <p id="quick-search-hint" role="status" className="mt-1 text-xs font-semibold text-amber-700 dark:text-amber-400">{keyHint}</p>}
             {query && <button type="button" onClick={() => setQuery('')} className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Limpiar búsqueda"><X size={18}/></button>}
           </div>
-          <select value={classroomId} onChange={(e) => setClassroomId(e.target.value)} className="h-14 rounded-xl border border-slate-300 bg-white px-3 text-base font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 md:h-14">
+          <select value={classroomId} onChange={(e) => setClassroomId(e.target.value)} className="h-14 rounded-xl border border-slate-300 bg-white px-3 text-base font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 short:h-11">
             <option value="ALL">Todos los salones</option>
             {classrooms.map((c) => <option key={c.id} value={c.id}>{c.grade} {c.section} · {c.level}</option>)}
           </select>
@@ -211,7 +211,7 @@ export default function QuickMode({ open, onClose, classrooms, students, records
           {lateNoTime && <div className="md:col-span-2"><LateNoTimeBanner active={lateNoTime} onChange={onLateNoTimeChange} /></div>}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:p-4">
+        <div className="flex-1 overflow-y-auto p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:p-4 short:flex-none short:overflow-visible">
           <div className="space-y-2">
             {filtered.map(({ student, record }, index) => {
               const classroom = classroomMap.get(student.classroomId)
