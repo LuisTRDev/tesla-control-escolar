@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode, type TouchEvent } from 'react'
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
 import {
   Activity, AlertTriangle, BarChart3, CheckCircle2, Clock3, Expand,
   GripVertical, LayoutDashboard, LogIn, LogOut, Maximize2, Minimize,
   RotateCcw, Save, ShieldAlert, SlidersHorizontal, Users,
-  Wifi, WifiOff, X, EyeOff, Plus, ChevronDown, ChevronUp, ArrowUp, ArrowDown, MoreHorizontal,
+  Wifi, WifiOff, X, EyeOff, Plus, ChevronDown, ChevronUp, ArrowUp, ArrowDown, MoreHorizontal, RefreshCw, Sun, Type, Vibrate,
 } from 'lucide-react'
 import type { AttendanceRecord, Classroom, PresentationRecord, Student } from '@/types'
 import { useWakeLock } from '@/lib/nativeFeatures'
 import { entryTimeLabel } from '@/lib/displayLabels'
-import { LiveClock, LiveDate } from '@/components/livetv/LiveClock'
+import { LiveClock, LiveDate, UpdatedAgo } from '@/components/livetv/LiveClock'
 import { LiveSheet } from '@/components/livetv/LiveSheet'
 import { FilteredStudentList } from '@/components/livetv/FilteredStudentList'
 import { StudentSheetBody } from '@/components/livetv/StudentSheetBody'
@@ -24,6 +24,8 @@ type Props = {
   presentationRecords: PresentationRecord[]
   today: string
   realtimeConnected: boolean
+  /** Vuelve a pedir los datos al servidor (botón y gesto de jalar para refrescar). */
+  onRefresh?: () => Promise<void>
 }
 
 type IncidentEvent = {
@@ -122,6 +124,19 @@ function tap(onSelect: SelectStudent | undefined, studentId: string) {
   }
 }
 
+const PREFS_KEY = 'tesla-live-tv-prefs-v1'
+type PanelPrefs = { keepAwake?: boolean; largeText?: boolean; vibrate?: boolean }
+function loadPrefs(): PanelPrefs {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(PREFS_KEY) ?? 'null')
+    return parsed && typeof parsed === 'object' ? parsed as PanelPrefs : {}
+  } catch {
+    return {}
+  }
+}
+
+const PULL_TRIGGER = 60
+
 const LEVELS: Classroom['level'][] = ['Primaria', 'Secundaria']
 
 /** En primaria se dice "grado" y en secundaria "año" (salvo que el aula ya lo diga). */
@@ -171,10 +186,15 @@ export default function LiveTvPanel({
   presentationRecords,
   today,
   realtimeConnected,
+  onRefresh,
 }: Props) {
   const mobile = useMobileLayout()
-  // Pantalla siempre encendida mientras se usa (hora de ingreso, pantalla del patio).
-  useWakeLock(open)
+  const [prefs, setPrefs] = useState<PanelPrefs>(loadPrefs)
+  // La TV del patio siempre encendida; en el celular es opcional para no gastar batería.
+  const keepAwake = prefs.keepAwake ?? !mobile
+  const vibrateOnLate = prefs.vibrate ?? true
+  const largeText = prefs.largeText ?? false
+  useWakeLock(open && keepAwake)
   const sectionRef = useRef<HTMLElement | null>(null)
   const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement))
   const [editMode, setEditMode] = useState(false)
@@ -197,6 +217,11 @@ export default function LiveTvPanel({
   const [savedNotice, setSavedNotice] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   // 'open' se separa del id para que el contenido siga visible mientras la hoja baja al cerrarse.
+  const [lastUpdate, setLastUpdate] = useState(() => Date.now())
+  const [refreshing, setRefreshing] = useState(false)
+  const [pull, setPull] = useState(0)
+  const pullStart = useRef<number | null>(null)
+  const [seenLate, setSeenLate] = useState<number | null>(null)
   const [sheet, setSheet] = useState<{ id: string; open: boolean } | null>(null)
 
   useEffect(() => {
@@ -428,6 +453,49 @@ export default function LiveTvPanel({
   const activeTab = shownTabs.some((item) => item.id === tab) ? tab : (shownTabs[0]?.id ?? 'tardanzas')
   const mobileCards = layout.filter((item) => tabOfKind(item.kind) === activeTab)
   const canFullscreen = Boolean(document.fullscreenEnabled)
+  const newLates = seenLate === null ? 0 : Math.max(0, data.late - seenLate)
+
+  // Cada carga de datos (realtime, sincronización o refresco manual) renueva "Actualizado hace…".
+  useEffect(() => { setLastUpdate(Date.now()) }, [attendanceRecords, presentationRecords, students])
+
+  // Tardanza nueva: vibración corta y marca "nuevas" en la pestaña si se está mirando otra.
+  const previousLate = useRef<number | null>(null)
+  useEffect(() => {
+    if (!open) { previousLate.current = null; return }
+    if (mobile && vibrateOnLate && previousLate.current !== null && data.late > previousLate.current) navigator.vibrate?.(150)
+    previousLate.current = data.late
+  }, [data.late, open, mobile, vibrateOnLate])
+  useEffect(() => {
+    if (activeTab === 'tardanzas') setSeenLate(data.late)
+    else setSeenLate((current) => (current !== null && data.late < current ? data.late : current))
+  }, [activeTab, data.late])
+
+  function updatePrefs(patch: PanelPrefs) {
+    const next = { ...prefs, ...patch }
+    setPrefs(next)
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(next)) } catch { /* sin almacenamiento: la preferencia dura la sesión */ }
+  }
+
+  async function refresh() {
+    if (!onRefresh || refreshing) return
+    setRefreshing(true)
+    try { await onRefresh() } finally { setRefreshing(false) }
+  }
+
+  // Jalar hacia abajo estando arriba del todo refresca (el navegador no lo hace dentro del panel).
+  function onTouchStart(event: TouchEvent<HTMLElement>) {
+    pullStart.current = mobile && !editMode && onRefresh && sectionRef.current?.scrollTop === 0 ? event.touches[0].clientY : null
+  }
+  function onTouchMove(event: TouchEvent<HTMLElement>) {
+    if (pullStart.current === null) return
+    const distance = event.touches[0].clientY - pullStart.current
+    setPull(distance > 0 ? Math.min(distance * 0.5, 80) : 0)
+  }
+  function onTouchEnd() {
+    if (pullStart.current !== null && pull >= PULL_TRIGGER) void refresh()
+    pullStart.current = null
+    setPull(0)
+  }
 
   const connectionChip = (compact: boolean) => (
     <div className={`flex items-center gap-2 rounded-xl border font-black ${compact ? 'h-10 px-2.5 text-xs' : 'h-11 px-3 text-sm sm:px-4'} ${realtimeConnected ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300' : 'border-amber-400/20 bg-amber-500/10 text-amber-300'}`}>
@@ -441,6 +509,10 @@ export default function LiveTvPanel({
       {open && (
         <motion.section
           ref={sectionRef}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+          onTouchCancel={onTouchEnd}
           className="fixed inset-0 z-[100] overflow-y-auto overscroll-contain bg-[#050b16] text-white"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -448,7 +520,7 @@ export default function LiveTvPanel({
           transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
         >
           <MotionConfig reducedMotion="user">
-          <div className={mobile ? 'min-h-full px-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))]' : 'min-h-screen p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(.75rem+env(safe-area-inset-top))] sm:p-6 xl:p-8'}>
+          <div style={mobile && largeText ? { zoom: 1.15 } : undefined} className={mobile ? 'min-h-full px-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))]' : 'min-h-screen p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(.75rem+env(safe-area-inset-top))] sm:p-6 xl:p-8'}>
             {mobile ? (
               <header className="sticky top-0 z-40 -mx-3 border-b border-white/10 bg-[#050b16]/95 px-3 pb-2.5 pt-[calc(.5rem+env(safe-area-inset-top))] backdrop-blur-xl">
                 <div className="flex items-center gap-2">
@@ -464,6 +536,10 @@ export default function LiveTvPanel({
                   <HeaderStat label="Tardanzas" value={data.late} tone="amber" onClick={() => changeTab('tardanzas')} />
                   <HeaderStat label="Ingresaron" value={data.entered} tone="emerald" onClick={() => changeTab('resumen')} />
                   <HeaderStat label="Sin marcar" value={data.pending} tone="slate" onClick={() => changeTab('pendientes')} />
+                </div>
+                <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
+                  <UpdatedAgo since={lastUpdate} active={open} />
+                  {onRefresh && <button type="button" onClick={() => void refresh()} disabled={refreshing} className="flex min-h-8 items-center gap-1.5 rounded-lg px-2 font-black text-slate-400 active:bg-white/10" aria-label="Actualizar datos"><RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />Actualizar</button>}
                 </div>
               </header>
             ) : (
@@ -491,6 +567,12 @@ export default function LiveTvPanel({
                   <motion.button whileTap={{ scale: 0.96 }} type="button" onClick={onClose} className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10" aria-label="Cerrar panel"><X size={21} /></motion.button>
                 </div>
               </header>
+            )}
+
+            {mobile && (pull > 0 || refreshing) && (
+              <div style={{ height: refreshing ? 36 : pull }} className="grid place-items-end justify-center overflow-hidden pt-2 text-sky-300" aria-hidden="true">
+                <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} style={refreshing ? undefined : { transform: `rotate(${pull * 4}deg)`, opacity: Math.min(1, pull / PULL_TRIGGER) }} />
+              </div>
             )}
 
             <AnimatePresence>
@@ -609,6 +691,7 @@ export default function LiveTvPanel({
                         {selected && <span className="absolute inset-x-4 top-0 h-0.5 rounded-full bg-sky-400" />}
                         <Icon size={21} />
                         {item.label}
+                        {item.id === 'tardanzas' && !selected && newLates > 0 && <span className="absolute right-[calc(50%-1.9rem)] top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-amber-400 px-1 text-[11px] font-black text-slate-950" aria-label={`${newLates} tardanzas nuevas`}>+{newLates}</span>}
                       </button>
                     )
                   })}
@@ -635,6 +718,9 @@ export default function LiveTvPanel({
               <LiveDate active={menuOpen} className="px-1 pb-3 text-sm font-semibold capitalize text-slate-400" />
               <div className="space-y-1">
                 <MenuAction icon={<SlidersHorizontal size={19} />} label="Personalizar panel" description="Añadir, quitar y ordenar tarjetas" onClick={() => { setMenuOpen(false); setEditMode(true) }} />
+                <MenuToggle icon={<Sun size={19} />} label="Mantener pantalla encendida" description={keepAwake ? 'Activado: gasta más batería' : 'Desactivado: la pantalla se apaga sola'} checked={keepAwake} onChange={(value) => updatePrefs({ keepAwake: value })} />
+                <MenuToggle icon={<Vibrate size={19} />} label="Vibrar con tardanza nueva" checked={vibrateOnLate} onChange={(value) => updatePrefs({ vibrate: value })} />
+                <MenuToggle icon={<Type size={19} />} label="Texto grande" checked={largeText} onChange={(value) => updatePrefs({ largeText: value })} />
                 {canFullscreen && <MenuAction icon={fullscreen ? <Minimize size={19} /> : <Expand size={19} />} label={fullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'} onClick={() => { setMenuOpen(false); void toggleFullscreen() }} />}
               </div>
             </LiveSheet>
@@ -649,6 +735,16 @@ export default function LiveTvPanel({
 function HeaderStat({ label, value, tone, onClick }: { label: string; value: number; tone: 'amber' | 'emerald' | 'slate'; onClick: () => void }) {
   const toneClass = tone === 'amber' ? 'border-amber-400/25 bg-amber-500/10 text-amber-300' : tone === 'emerald' ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300' : 'border-white/10 bg-white/5 text-slate-200'
   return <button type="button" onClick={onClick} className={`min-w-0 rounded-xl border px-3 py-1.5 text-left active:brightness-125 ${toneClass}`}><span className="block text-2xl font-black leading-none tabular-nums">{value}</span><span className="mt-1 block truncate text-[11px] font-black uppercase tracking-wider opacity-80">{label}</span></button>
+}
+
+function MenuToggle({ icon, label, description, checked, onChange }: { icon: ReactNode; label: string; description?: string; checked: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)} className="flex min-h-14 w-full items-center gap-3 rounded-2xl px-2 py-2 text-left active:bg-white/10">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/5 text-sky-300">{icon}</span>
+      <span className="min-w-0 flex-1"><span className="block text-[15px] font-bold">{label}</span>{description && <span className="mt-0.5 block text-xs font-medium text-slate-500">{description}</span>}</span>
+      <span className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${checked ? 'bg-sky-500' : 'bg-white/15'}`}><span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${checked ? 'left-[1.4rem]' : 'left-0.5'}`} /></span>
+    </button>
+  )
 }
 
 function MenuAction({ icon, label, description, onClick }: { icon: ReactNode; label: string; description?: string; onClick: () => void }) {

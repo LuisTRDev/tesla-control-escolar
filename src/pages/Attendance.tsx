@@ -1661,6 +1661,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
           presentationRecords={presentationRecords}
           today={today}
           realtimeConnected={realtimeState.connected}
+          onRefresh={() => reloadData(false)}
         />
       </Deferred>
 
