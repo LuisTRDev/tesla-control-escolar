@@ -47,6 +47,7 @@ import { matchesQuery, studentMatches } from '@/lib/search'
 import { hasOpenOverlay, isTypingTarget, pickEnterTarget } from '@/lib/shortcuts'
 import { useOverlayScrollLock } from '@/lib/scrollLock'
 import { useBackClose } from '@/lib/backClose'
+import { useTodayKey } from '@/hooks/useTodayKey'
 import { requestPersistentStorage, setAppBadge } from '@/lib/nativeFeatures'
 import { countAppErrorsSince } from '@/services/adminService'
 import type { StartModule } from '@/App'
@@ -194,7 +195,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [searchHint, setSearchHint] = useState('')
   const searchRef = useRef<HTMLInputElement | null>(null)
   const isAdmin = isAdminRole(userRole)
-  const today = getTodayKey()
+  const today = useTodayKey()
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
   const darkMode = preferences.theme === 'dark' || (preferences.theme === 'system' && systemDark)
   const sizeClass = preferences.interfaceSize === 'large' ? 'text-[17px]' : ''
@@ -225,6 +226,13 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
 
   // Las sincronizaciones de fondo actualizan los datos sin desmontar ni bloquear la pantalla.
   const pullInBackground = useCallback(async () => { await reloadData(false) }, [reloadData])
+  // Al cambiar el día con la app abierta se vuelven a pedir los datos (también cambia el rango del mes).
+  const lastLoadedDay = useRef(today)
+  useEffect(() => {
+    if (lastLoadedDay.current === today) return
+    lastLoadedDay.current = today
+    void reloadData(false)
+  }, [today, reloadData])
   const syncState = useNetworkSync(pullInBackground)
   const realtimeState = useSchoolRealtime(pullInBackground)
   const { installAvailable, install } = usePwaInstall()
