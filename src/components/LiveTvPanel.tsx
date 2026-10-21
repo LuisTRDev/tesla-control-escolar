@@ -1,15 +1,17 @@
-import { useEffect, useMemo, useState, type DragEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
 import {
   Activity, AlertTriangle, BarChart3, CheckCircle2, Clock3, Expand,
   GripVertical, LayoutDashboard, LogIn, LogOut, Maximize2, Minimize,
   RotateCcw, Save, ShieldAlert, SlidersHorizontal, Users,
-  Wifi, WifiOff, X, EyeOff, Plus, ChevronDown, ChevronUp,
+  Wifi, WifiOff, X, EyeOff, Plus, ChevronDown, ChevronUp, ArrowUp, ArrowDown, MoreHorizontal,
 } from 'lucide-react'
 import type { AttendanceRecord, Classroom, PresentationRecord, Student } from '@/types'
 import { useWakeLock } from '@/lib/nativeFeatures'
 import { entryTimeLabel } from '@/lib/displayLabels'
 import { LiveClock, LiveDate } from '@/components/livetv/LiveClock'
+import { LiveSheet } from '@/components/livetv/LiveSheet'
+import { useMobileLayout } from '@/hooks/useMobileLayout'
 
 type Props = {
   open: boolean
@@ -55,6 +57,7 @@ type CardKind =
 }
 
 const STORAGE_KEY = 'tesla-live-tv-layout-v2'
+const MOBILE_STORAGE_KEY = 'tesla-live-tv-layout-mobile-v1'
 const DEFAULT_LAYOUT: LayoutCard[] = [
   { id: 'metrics', kind: 'metrics', size: 'lg' },
   { id: 'recentEntries', kind: 'recentEntries', size: 'md' },
@@ -63,6 +66,25 @@ const DEFAULT_LAYOUT: LayoutCard[] = [
   { id: 'topIncidents', kind: 'topIncidents', size: 'sm' },
   { id: 'topStudents', kind: 'topStudents', size: 'sm' },
 ]
+// En celular lo primero son las tardanzas; las cifras generales ya van fijas arriba.
+const MOBILE_DEFAULT_LAYOUT: LayoutCard[] = [
+  { id: 'lateByGrade', kind: 'lateByGrade', size: 'lg' },
+  { id: 'attendanceSummary', kind: 'attendanceSummary', size: 'md' },
+  { id: 'recentEntries', kind: 'recentEntries', size: 'md' },
+  { id: 'todayIncidents', kind: 'todayIncidents', size: 'lg' },
+  { id: 'pendingStudents', kind: 'pendingStudents', size: 'md' },
+  { id: 'classroomSummary', kind: 'classroomSummary', size: 'lg' },
+]
+
+type TabId = 'tardanzas' | 'resumen' | 'incidencias' | 'pendientes' | 'aulas'
+const TABS: Array<{ id: TabId; label: string; icon: typeof Clock3; kinds: CardKind[] }> = [
+  { id: 'tardanzas', label: 'Tardanzas', icon: Clock3, kinds: ['lateByGrade', 'lateByPrimaria', 'lateBySecundaria', 'lateStudents'] },
+  { id: 'resumen', label: 'Resumen', icon: BarChart3, kinds: ['metrics', 'attendanceSummary', 'recentEntries', 'exitSummary', 'presentationCompliance'] },
+  { id: 'incidencias', label: 'Incidencias', icon: ShieldAlert, kinds: ['todayIncidents', 'topIncidents', 'topStudents', 'incidentsByClassroom'] },
+  { id: 'pendientes', label: 'Pendientes', icon: Users, kinds: ['pendingStudents'] },
+  { id: 'aulas', label: 'Aulas', icon: LayoutDashboard, kinds: ['classroomSummary'] },
+]
+const tabOfKind = (kind: CardKind): TabId => TABS.find((item) => item.kinds.includes(kind))?.id ?? 'resumen'
 
 const CATALOG: Array<{ kind: CardKind; title: string; description: string; defaultSize: CardSize }> = [
   { kind: 'metrics', title: 'Métricas generales', description: 'Resumen de alumnos, ingresos, tardanzas y pendientes.', defaultSize: 'lg' },
@@ -103,16 +125,16 @@ function presentationLabels(record: PresentationRecord, attendanceLate: boolean)
   return labels
 }
 
-function loadLayout(): LayoutCard[] {
+function loadLayout(key: string, fallback: LayoutCard[]): LayoutCard[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return DEFAULT_LAYOUT
+    const raw = localStorage.getItem(key)
+    if (!raw) return fallback
     const parsed = JSON.parse(raw) as LayoutCard[]
-    if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_LAYOUT
-    return parsed.filter((item) => CATALOG.some((card) => card.kind === item.kind && card.kind === item.kind))
+    if (!Array.isArray(parsed) || parsed.length === 0) return fallback
+    return parsed.filter((item) => CATALOG.some((card) => card.kind === item.kind))
       .map((item) => ({ id: String(item.id), kind: item.kind, size: item.size === 'sm' || item.size === 'lg' ? item.size : 'md' }))
   } catch {
-    return DEFAULT_LAYOUT
+    return fallback
   }
 }
 
@@ -132,23 +154,36 @@ export default function LiveTvPanel({
   today,
   realtimeConnected,
 }: Props) {
+  const mobile = useMobileLayout()
   // Pantalla siempre encendida mientras se usa (hora de ingreso, pantalla del patio).
   useWakeLock(open)
+  const sectionRef = useRef<HTMLElement | null>(null)
   const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement))
   const [editMode, setEditMode] = useState(false)
-  const [layout, setLayout] = useState<LayoutCard[]>(() => loadLayout())
+  // Celular y TV guardan su distribución por separado: cada dispositivo ve lo que armó para él.
+  const [layouts, setLayouts] = useState(() => ({
+    desktop: loadLayout(STORAGE_KEY, DEFAULT_LAYOUT),
+    mobile: loadLayout(MOBILE_STORAGE_KEY, MOBILE_DEFAULT_LAYOUT),
+  }))
+  const mode = mobile ? 'mobile' : 'desktop'
+  const layout = layouts[mode]
+  const storageKey = mobile ? MOBILE_STORAGE_KEY : STORAGE_KEY
+  const defaultLayout = mobile ? MOBILE_DEFAULT_LAYOUT : DEFAULT_LAYOUT
+  const setLayout = useCallback((update: (current: LayoutCard[]) => LayoutCard[]) => {
+    setLayouts((current) => ({ ...current, [mode]: update(current[mode]) }))
+  }, [mode])
+  const [tab, setTab] = useState<TabId>('tardanzas')
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
   const [catalogOpen, setCatalogOpen] = useState(false)
   const [savedNotice, setSavedNotice] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
     if (!open) return
     const handleFullscreen = () => setFullscreen(Boolean(document.fullscreenElement))
     document.addEventListener('fullscreenchange', handleFullscreen)
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreen)
-    }
+    return () => document.removeEventListener('fullscreenchange', handleFullscreen)
   }, [open])
 
   const data = useMemo(() => {
@@ -258,8 +293,8 @@ export default function LiveTvPanel({
   }, [attendanceRecords, classrooms, presentationRecords, students, today])
 
   useEffect(() => {
-    if (editMode) localStorage.setItem(STORAGE_KEY, JSON.stringify(layout))
-  }, [editMode, layout])
+    if (editMode) localStorage.setItem(storageKey, JSON.stringify(layout))
+  }, [editMode, layout, storageKey])
 
   async function toggleFullscreen() {
     try {
@@ -271,7 +306,7 @@ export default function LiveTvPanel({
   }
 
   function saveLayout() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(layout))
+    localStorage.setItem(storageKey, JSON.stringify(layout))
     setSavedNotice(true)
     window.setTimeout(() => setSavedNotice(false), 1800)
     setEditMode(false)
@@ -279,8 +314,13 @@ export default function LiveTvPanel({
   }
 
   function resetLayout() {
-    setLayout(DEFAULT_LAYOUT)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_LAYOUT))
+    setLayout(() => defaultLayout)
+    localStorage.setItem(storageKey, JSON.stringify(defaultLayout))
+  }
+
+  function changeTab(next: TabId) {
+    setTab(next)
+    sectionRef.current?.scrollTo({ top: 0 })
   }
 
   function addCard(kind: CardKind) {
@@ -288,6 +328,11 @@ export default function LiveTvPanel({
     const catalogCard = CATALOG.find((item) => item.kind === kind)
     if (!catalogCard) return
     setLayout((current) => [...current, { id: `${kind}-${Date.now()}`, kind, size: catalogCard.defaultSize }])
+    // En celular la tarjeta nueva vive en su pestaña: se va a ella para que se vea que se añadió.
+    if (mobile) {
+      setCatalogOpen(false)
+      changeTab(tabOfKind(kind))
+    }
   }
 
   function removeCard(id: string) {
@@ -300,6 +345,21 @@ export default function LiveTvPanel({
       const next: CardSize = item.size === 'sm' ? 'md' : item.size === 'md' ? 'lg' : 'sm'
       return { ...item, size: next }
     }))
+  }
+
+  /** Sube o baja una tarjeta dentro de su pestaña (en celular no se arrastra: el dedo hace scroll). */
+  function moveCard(id: string, direction: -1 | 1) {
+    setLayout((current) => {
+      const index = current.findIndex((item) => item.id === id)
+      if (index < 0) return current
+      const tabId = tabOfKind(current[index].kind)
+      let target = index + direction
+      while (target >= 0 && target < current.length && tabOfKind(current[target].kind) !== tabId) target += direction
+      if (target < 0 || target >= current.length) return current
+      const next = [...current]
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return next
+    })
   }
 
   function onDragStart(event: DragEvent<HTMLDivElement>, id: string) {
@@ -343,45 +403,74 @@ export default function LiveTvPanel({
   }
 
   const activeKinds = new Set(layout.map((item) => item.kind))
+  const shownTabs = editMode ? TABS : TABS.filter((item) => layout.some((card) => tabOfKind(card.kind) === item.id))
+  const activeTab = shownTabs.some((item) => item.id === tab) ? tab : (shownTabs[0]?.id ?? 'tardanzas')
+  const mobileCards = layout.filter((item) => tabOfKind(item.kind) === activeTab)
+  const canFullscreen = Boolean(document.fullscreenEnabled)
+
+  const connectionChip = (compact: boolean) => (
+    <div className={`flex items-center gap-2 rounded-xl border font-black ${compact ? 'h-10 px-2.5 text-xs' : 'h-11 px-3 text-sm sm:px-4'} ${realtimeConnected ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300' : 'border-amber-400/20 bg-amber-500/10 text-amber-300'}`}>
+      {realtimeConnected ? <Wifi size={compact ? 15 : 17} /> : <WifiOff size={compact ? 15 : 17} />}
+      <span className="sm:hidden">{realtimeConnected ? 'En vivo' : 'Reconectando…'}</span><span className="hidden sm:inline">{realtimeConnected ? 'Tiempo real conectado' : 'Reconectando…'}</span>
+    </div>
+  )
 
   return (
     <AnimatePresence>
       {open && (
         <motion.section
-          className="fixed inset-0 z-[100] overflow-y-auto bg-[#050b16] text-white"
+          ref={sectionRef}
+          className="fixed inset-0 z-[100] overflow-y-auto overscroll-contain bg-[#050b16] text-white"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
         >
-          <MotionConfig reducedMotion="user"><div className="min-h-screen p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(.75rem+env(safe-area-inset-top))] sm:p-6 xl:p-8">
-            <header className="flex flex-col gap-3 border-b border-white/10 pb-4 sm:gap-5 sm:pb-5 xl:flex-row xl:items-center xl:justify-between">
-              <div>
-                <div className="flex items-center gap-3">
-                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white/10 text-sky-300 sm:h-12 sm:w-12"><Activity size={23} /></div>
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-black uppercase tracking-[.24em] text-sky-300 sm:text-xs">Tesla Control Escolar</p>
-                    <h1 className="mt-0.5 text-xl font-black tracking-tight sm:mt-1 sm:text-3xl">Panel en vivo</h1>
+          <MotionConfig reducedMotion="user">
+          <div className={mobile ? 'min-h-full px-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))]' : 'min-h-screen p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(.75rem+env(safe-area-inset-top))] sm:p-6 xl:p-8'}>
+            {mobile ? (
+              <header className="sticky top-0 z-40 -mx-3 border-b border-white/10 bg-[#050b16]/95 px-3 pb-2.5 pt-[calc(.5rem+env(safe-area-inset-top))] backdrop-blur-xl">
+                <div className="flex items-center gap-2">
+                  {connectionChip(true)}
+                  <LiveClock active={open} className="font-mono text-base font-black tabular-nums text-slate-100" />
+                  <div className="ml-auto flex items-center gap-1.5">
+                    <button type="button" onClick={() => setEditMode((value) => !value)} className={`grid h-10 w-10 place-items-center rounded-xl border ${editMode ? 'border-sky-400/50 bg-sky-400/15 text-sky-300' : 'border-white/10 bg-white/5 text-slate-300'}`} aria-label="Personalizar panel" aria-pressed={editMode}><SlidersHorizontal size={18} /></button>
+                    <button type="button" onClick={() => setMenuOpen(true)} className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-300" aria-label="Más opciones"><MoreHorizontal size={19} /></button>
+                    <button type="button" onClick={onClose} className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-300" aria-label="Cerrar panel"><X size={20} /></button>
                   </div>
                 </div>
-                <LiveDate active={open} className="mt-2 text-xs font-semibold capitalize text-slate-400 sm:mt-3 sm:text-sm" />
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
-                <div className={`flex h-11 items-center gap-2 rounded-xl border px-3 text-sm font-black sm:px-4 ${realtimeConnected ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300' : 'border-amber-400/20 bg-amber-500/10 text-amber-300'}`}>
-                  {realtimeConnected ? <Wifi size={17} /> : <WifiOff size={17} />}
-                  <span className="sm:hidden">{realtimeConnected ? 'En vivo' : 'Reconectando…'}</span><span className="hidden sm:inline">{realtimeConnected ? 'Tiempo real conectado' : 'Reconectando…'}</span>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  <HeaderStat label="Tardanzas" value={data.late} tone="amber" onClick={() => changeTab('tardanzas')} />
+                  <HeaderStat label="Ingresaron" value={data.entered} tone="emerald" onClick={() => changeTab('resumen')} />
+                  <HeaderStat label="Sin marcar" value={data.pending} tone="slate" onClick={() => changeTab('pendientes')} />
                 </div>
-                <div className="flex h-11 items-center rounded-xl border border-white/10 bg-white/5 px-3 font-mono text-lg font-black tabular-nums text-slate-100 sm:px-4 sm:text-2xl"><LiveClock active={open} /></div>
-                <motion.button whileTap={{ scale: 0.96 }} type="button" onClick={() => setEditMode((value) => !value)} className={`grid h-11 w-11 place-items-center rounded-xl border ${editMode ? 'border-sky-400/50 bg-sky-400/15 text-sky-400' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'}`} aria-label="Personalizar panel">
-                  <SlidersHorizontal size={19} />
-                </motion.button>
-                <motion.button whileTap={{ scale: 0.96 }} type="button" onClick={() => void toggleFullscreen()} className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10" aria-label="Pantalla completa">
-                  {fullscreen ? <Minimize size={20} /> : <Expand size={20} />}
-                </motion.button>
-                <motion.button whileTap={{ scale: 0.96 }} type="button" onClick={onClose} className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10" aria-label="Cerrar panel"><X size={21} /></motion.button>
-              </div>
-            </header>
+              </header>
+            ) : (
+              <header className="flex flex-col gap-3 border-b border-white/10 pb-4 sm:gap-5 sm:pb-5 xl:flex-row xl:items-center xl:justify-between">
+                <div>
+                  <div className="flex items-center gap-3">
+                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white/10 text-sky-300 sm:h-12 sm:w-12"><Activity size={23} /></div>
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-black uppercase tracking-[.24em] text-sky-300 sm:text-xs">Tesla Control Escolar</p>
+                      <h1 className="mt-0.5 text-xl font-black tracking-tight sm:mt-1 sm:text-3xl">Panel en vivo</h1>
+                    </div>
+                  </div>
+                  <LiveDate active={open} className="mt-2 text-xs font-semibold capitalize text-slate-400 sm:mt-3 sm:text-sm" />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+                  {connectionChip(false)}
+                  <div className="flex h-11 items-center rounded-xl border border-white/10 bg-white/5 px-3 font-mono text-lg font-black tabular-nums text-slate-100 sm:px-4 sm:text-2xl"><LiveClock active={open} /></div>
+                  <motion.button whileTap={{ scale: 0.96 }} type="button" onClick={() => setEditMode((value) => !value)} className={`grid h-11 w-11 place-items-center rounded-xl border ${editMode ? 'border-sky-400/50 bg-sky-400/15 text-sky-400' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'}`} aria-label="Personalizar panel">
+                    <SlidersHorizontal size={19} />
+                  </motion.button>
+                  <motion.button whileTap={{ scale: 0.96 }} type="button" onClick={() => void toggleFullscreen()} className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10" aria-label="Pantalla completa">
+                    {fullscreen ? <Minimize size={20} /> : <Expand size={20} />}
+                  </motion.button>
+                  <motion.button whileTap={{ scale: 0.96 }} type="button" onClick={onClose} className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10" aria-label="Cerrar panel"><X size={21} /></motion.button>
+                </div>
+              </header>
+            )}
 
             <AnimatePresence>
               {editMode && (
@@ -390,20 +479,22 @@ export default function LiveTvPanel({
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                  className="mt-5 overflow-hidden rounded-3xl border border-sky-400/20 bg-gradient-to-r from-sky-400/[.10] via-white/[.04] to-transparent"
+                  className="mt-3 overflow-hidden rounded-3xl border border-sky-400/20 bg-gradient-to-r from-sky-400/[.10] via-white/[.04] to-transparent sm:mt-5"
                 >
                   <div className="flex flex-col gap-4 p-4 sm:p-5 xl:flex-row xl:items-center xl:justify-between">
                     <div className="flex items-start gap-3">
                       <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-sky-400/15 text-sky-400"><GripVertical size={20} /></div>
                       <div>
                         <p className="font-black">Personaliza tu panel</p>
-                        <p className="mt-1 max-w-2xl text-sm font-medium text-slate-400">Arrastra cualquier tarjeta para cambiar su posición. Usa el tamaño para hacer una tarjeta de ancho completo y colocarla debajo o encima de otra.</p>
+                        <p className="mt-1 max-w-2xl text-sm font-medium text-slate-400">{mobile
+                          ? 'Mueve cada tarjeta con las flechas, quítala con el ojo o añade tarjetas nuevas. Cada una vive en su pestaña.'
+                          : 'Arrastra cualquier tarjeta para cambiar su posición. Usa el tamaño para hacer una tarjeta de ancho completo y colocarla debajo o encima de otra.'}</p>
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <button type="button" onClick={() => setCatalogOpen((value) => !value)} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-black text-slate-200 hover:bg-white/10"><Plus size={16} /> Añadir tarjeta {catalogOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>
-                      <button type="button" onClick={resetLayout} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-black text-slate-300 hover:bg-white/10"><RotateCcw size={16} /> Restablecer</button>
-                      <button type="button" onClick={saveLayout} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-black text-slate-950 shadow-lg hover:brightness-105"><Save size={16} /> Guardar</button>
+                      <button type="button" onClick={() => setCatalogOpen((value) => !value)} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-black text-slate-200 hover:bg-white/10"><Plus size={16} /> Añadir tarjeta {catalogOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>
+                      <button type="button" onClick={resetLayout} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-black text-slate-300 hover:bg-white/10"><RotateCcw size={16} /> Restablecer</button>
+                      <button type="button" onClick={saveLayout} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-black text-slate-950 shadow-lg hover:brightness-105"><Save size={16} /> Guardar</button>
                     </div>
                   </div>
 
@@ -428,56 +519,110 @@ export default function LiveTvPanel({
               )}
             </AnimatePresence>
 
-            <motion.div layout className="mt-4 grid grid-cols-12 gap-3 sm:mt-6 sm:gap-4 xl:gap-5">
-              <AnimatePresence initial={false} mode="popLayout">
-                {layout.map((item) => {
-                  const catalog = CATALOG.find((card) => card.kind === item.kind)
-                  return (
-                    <motion.div
-                      key={item.id}
-                      layout
-                      transition={{ layout: { duration: 0.34, ease: [0.22, 1, 0.36, 1] } }}
-                      className={`${sizeClass(item.size)} relative min-w-0`}
-                      draggable={editMode}
-                      onDragStart={(event) => onDragStart(event as unknown as DragEvent<HTMLDivElement>, item.id)}
-                      onDragEnter={(event) => onDragEnter(event as unknown as DragEvent<HTMLDivElement>, item.id)}
-                      onDragOver={(event) => onDragOver(event as unknown as DragEvent<HTMLDivElement>)}
-                      onDrop={(event) => onDrop(event as unknown as DragEvent<HTMLDivElement>, item.id)}
-                      onDragEnd={onDragEnd}
-                    >
-                      {editMode && (
-                        <motion.div
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          className={`pointer-events-none absolute inset-1 z-20 rounded-[28px] border-2 border-dashed ${dropTargetId === item.id ? 'border-sky-400/80 bg-sky-400/[.05]' : 'border-white/10'}`}
-                        />
-                      )}
-                      {editMode && (
-                        <div className="absolute right-3 top-3 z-30 flex items-center gap-1.5 rounded-xl border border-white/10 bg-[#081120]/95 p-1.5 shadow-2xl backdrop-blur-xl">
-                          <button type="button" title="Arrastrar" className="grid h-8 w-8 cursor-grab place-items-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white"><GripVertical size={16} /></button>
-                          <button type="button" title={`Cambiar tamaño: ${item.size.toUpperCase()}`} onClick={() => cycleSize(item.id)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white"><Maximize2 size={15} /></button>
-                          <button type="button" title="Quitar tarjeta" onClick={() => removeCard(item.id)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-red-500/15 hover:text-red-300"><EyeOff size={15} /></button>
-                        </div>
-                      )}
-                      {renderCard(item.kind, data, students.length)}
-                      {editMode && <span className="absolute bottom-3 left-3 z-30 rounded-lg bg-black/35 px-2 py-1 text-[11px] font-black uppercase tracking-wider text-slate-400 backdrop-blur">{catalog?.title}</span>}
-                    </motion.div>
-                  )
-                })}
-              </AnimatePresence>
-            </motion.div>
+            {mobile ? (
+              <motion.div key={activeTab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="mt-3 grid grid-cols-1 items-start gap-3 [@media(orientation:landscape)]:grid-cols-2">
+                {mobileCards.length === 0 && <div className="[@media(orientation:landscape)]:col-span-2"><Empty text="Esta pestaña no tiene tarjetas. Pulsa Personalizar para añadir." /></div>}
+                {mobileCards.map((item, index) => (
+                  <div key={item.id} className="relative min-w-0">
+                    {editMode && (
+                      <div className="mb-1.5 flex items-center gap-1 rounded-2xl border border-sky-400/20 bg-sky-400/[.06] p-1.5">
+                        <span className="min-w-0 flex-1 truncate pl-2 text-xs font-black uppercase tracking-wider text-slate-300">{CATALOG.find((card) => card.kind === item.kind)?.title}</span>
+                        <button type="button" onClick={() => moveCard(item.id, -1)} disabled={index === 0} className="grid h-10 w-10 place-items-center rounded-xl text-slate-300 active:bg-white/10 disabled:opacity-30" aria-label="Subir tarjeta"><ArrowUp size={18} /></button>
+                        <button type="button" onClick={() => moveCard(item.id, 1)} disabled={index === mobileCards.length - 1} className="grid h-10 w-10 place-items-center rounded-xl text-slate-300 active:bg-white/10 disabled:opacity-30" aria-label="Bajar tarjeta"><ArrowDown size={18} /></button>
+                        <button type="button" onClick={() => removeCard(item.id)} className="grid h-10 w-10 place-items-center rounded-xl text-red-300 active:bg-red-500/15" aria-label="Quitar tarjeta"><EyeOff size={18} /></button>
+                      </div>
+                    )}
+                    {renderCard(item.kind, data, students.length, true)}
+                  </div>
+                ))}
+              </motion.div>
+            ) : (
+              <motion.div layout className="mt-4 grid grid-cols-12 gap-3 sm:mt-6 sm:gap-4 xl:gap-5">
+                <AnimatePresence initial={false} mode="popLayout">
+                  {layout.map((item) => {
+                    const catalog = CATALOG.find((card) => card.kind === item.kind)
+                    return (
+                      <motion.div
+                        key={item.id}
+                        layout
+                        transition={{ layout: { duration: 0.34, ease: [0.22, 1, 0.36, 1] } }}
+                        className={`${sizeClass(item.size)} relative min-w-0`}
+                        draggable={editMode}
+                        onDragStart={(event) => onDragStart(event as unknown as DragEvent<HTMLDivElement>, item.id)}
+                        onDragEnter={(event) => onDragEnter(event as unknown as DragEvent<HTMLDivElement>, item.id)}
+                        onDragOver={(event) => onDragOver(event as unknown as DragEvent<HTMLDivElement>)}
+                        onDrop={(event) => onDrop(event as unknown as DragEvent<HTMLDivElement>, item.id)}
+                        onDragEnd={onDragEnd}
+                      >
+                        {editMode && (
+                          <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className={`pointer-events-none absolute inset-1 z-20 rounded-[28px] border-2 border-dashed ${dropTargetId === item.id ? 'border-sky-400/80 bg-sky-400/[.05]' : 'border-white/10'}`}
+                          />
+                        )}
+                        {editMode && (
+                          <div className="absolute right-3 top-3 z-30 flex items-center gap-1.5 rounded-xl border border-white/10 bg-[#081120]/95 p-1.5 shadow-2xl backdrop-blur-xl">
+                            <button type="button" title="Arrastrar" className="grid h-8 w-8 cursor-grab place-items-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white"><GripVertical size={16} /></button>
+                            <button type="button" title={`Cambiar tamaño: ${item.size.toUpperCase()}`} onClick={() => cycleSize(item.id)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white"><Maximize2 size={15} /></button>
+                            <button type="button" title="Quitar tarjeta" onClick={() => removeCard(item.id)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-red-500/15 hover:text-red-300"><EyeOff size={15} /></button>
+                          </div>
+                        )}
+                        {renderCard(item.kind, data, students.length, false)}
+                        {editMode && <span className="absolute bottom-3 left-3 z-30 rounded-lg bg-black/35 px-2 py-1 text-[11px] font-black uppercase tracking-wider text-slate-400 backdrop-blur">{catalog?.title}</span>}
+                      </motion.div>
+                    )
+                  })}
+                </AnimatePresence>
+              </motion.div>
+            )}
+
+            {mobile && (
+              <nav aria-label="Secciones del panel" className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[#07101d]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
+                <div className="mx-auto flex max-w-3xl">
+                  {shownTabs.map((item) => {
+                    const Icon = item.icon
+                    const selected = item.id === activeTab
+                    return (
+                      <button key={item.id} type="button" onClick={() => changeTab(item.id)} aria-current={selected ? 'page' : undefined} className={`relative flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-black ${selected ? 'text-white' : 'text-slate-500 active:text-slate-300'}`}>
+                        {selected && <span className="absolute inset-x-4 top-0 h-0.5 rounded-full bg-sky-400" />}
+                        <Icon size={21} />
+                        {item.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </nav>
+            )}
 
             <AnimatePresence>
               {savedNotice && (
-                <motion.div initial={{ opacity: 0, y: 12, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.98 }} transition={{ duration: 0.2 }} className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-4 z-[120] sm:right-6 flex items-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm font-black text-emerald-300 shadow-2xl backdrop-blur-xl"><CheckCircle2 size={17} /> Distribución guardada</motion.div>
+                <motion.div initial={{ opacity: 0, y: 12, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.98 }} transition={{ duration: 0.2 }} className={`fixed right-4 z-[120] flex items-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm font-black text-emerald-300 shadow-2xl backdrop-blur-xl sm:right-6 ${mobile ? 'bottom-[calc(4.5rem+env(safe-area-inset-bottom))]' : 'bottom-[calc(1.5rem+env(safe-area-inset-bottom))]'}`}><CheckCircle2 size={17} /> Distribución guardada</motion.div>
               )}
             </AnimatePresence>
+
+            <LiveSheet open={menuOpen} onClose={() => setMenuOpen(false)} title="Panel en vivo" subtitle="Opciones">
+              <LiveDate active={menuOpen} className="px-1 pb-3 text-sm font-semibold capitalize text-slate-400" />
+              <div className="space-y-1">
+                <MenuAction icon={<SlidersHorizontal size={19} />} label="Personalizar panel" description="Añadir, quitar y ordenar tarjetas" onClick={() => { setMenuOpen(false); setEditMode(true) }} />
+                {canFullscreen && <MenuAction icon={fullscreen ? <Minimize size={19} /> : <Expand size={19} />} label={fullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'} onClick={() => { setMenuOpen(false); void toggleFullscreen() }} />}
+              </div>
+            </LiveSheet>
           </div>
           </MotionConfig>
         </motion.section>
       )}
     </AnimatePresence>
   )
+}
+
+function HeaderStat({ label, value, tone, onClick }: { label: string; value: number; tone: 'amber' | 'emerald' | 'slate'; onClick: () => void }) {
+  const toneClass = tone === 'amber' ? 'border-amber-400/25 bg-amber-500/10 text-amber-300' : tone === 'emerald' ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300' : 'border-white/10 bg-white/5 text-slate-200'
+  return <button type="button" onClick={onClick} className={`min-w-0 rounded-xl border px-3 py-1.5 text-left active:brightness-125 ${toneClass}`}><span className="block text-2xl font-black leading-none tabular-nums">{value}</span><span className="mt-1 block truncate text-[11px] font-black uppercase tracking-wider opacity-80">{label}</span></button>
+}
+
+function MenuAction({ icon, label, description, onClick }: { icon: ReactNode; label: string; description?: string; onClick: () => void }) {
+  return <button type="button" onClick={onClick} className="flex min-h-14 w-full items-center gap-3 rounded-2xl px-2 py-2 text-left active:bg-white/10"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/5 text-sky-300">{icon}</span><span className="min-w-0 flex-1"><span className="block text-[15px] font-bold">{label}</span>{description && <span className="mt-0.5 block text-xs font-medium text-slate-500">{description}</span>}</span></button>
 }
 
 type PanelData = ReturnType<typeof buildPanelDataShape>
@@ -495,24 +640,27 @@ function buildPanelDataShape() {
   }
 }
 
-function renderCard(kind: CardKind, data: PanelData, totalStudents: number) {
+function renderCard(kind: CardKind, data: PanelData, totalStudents: number, mobile: boolean) {
+  // En celular la página hace todo el scroll: una lista con scroll propio atrapa el dedo.
+  const scroll30 = mobile ? '' : 'max-h-[30rem] overflow-auto pr-1'
+  const scroll34 = mobile ? '' : 'max-h-[34rem] overflow-auto pr-1'
   switch (kind) {
     case 'metrics':
       return <MetricStrip data={data} totalStudents={totalStudents} />
     case 'recentEntries':
       return <TvCard title="Últimos ingresos" subtitle="Movimientos registrados hoy" icon={<LogIn size={20} />}><div className="space-y-2">{data.recentEntries.length === 0 ? <Empty text="Aún no hay ingresos registrados." /> : data.recentEntries.map(({ record, student }) => <StudentRow key={record.id ?? `${student.id}-${record.time}`} student={student} classroom={data.classroomById.get(student.classroomId)} time={record.time} status={record.status} icon={record.status === 'LATE' ? <AlertTriangle size={18} /> : <LogIn size={18} />} />)}</div></TvCard>
     case 'lateStudents':
-      return <TvCard title="Alumnos con tardanza" subtitle={`${data.lateStudents.length} registrados hoy`} icon={<Clock3 size={20} />} strong><div className="max-h-[30rem] space-y-2 overflow-auto pr-1">{data.lateStudents.length === 0 ? <Empty text="No hay tardanzas registradas hoy." /> : data.lateStudents.map(({ record, student }) => <StudentRow key={record.id ?? `${student.id}-${record.time}`} student={student} classroom={data.classroomById.get(student.classroomId)} time={record.time} status="LATE" icon={<AlertTriangle size={18} />} showStatus={false}/>)}</div></TvCard>
+      return <TvCard title="Alumnos con tardanza" subtitle={`${data.lateStudents.length} registrados hoy`} icon={<Clock3 size={20} />} strong><div className={`space-y-2 ${scroll30}`}>{data.lateStudents.length === 0 ? <Empty text="No hay tardanzas registradas hoy." /> : data.lateStudents.map(({ record, student }) => <StudentRow key={record.id ?? `${student.id}-${record.time}`} student={student} classroom={data.classroomById.get(student.classroomId)} time={record.time} status="LATE" icon={<AlertTriangle size={18} />} showStatus={false}/>)}</div></TvCard>
     case 'lateByGrade':
-      return <TvCard title="Tardanzas por nivel y grado" subtitle={`${data.late} tardanzas hoy · actualización automática`} icon={<Clock3 size={20} />} strong><div className="grid gap-4 xl:grid-cols-2">{data.lateByLevel.map((group) => <LateLevelColumn key={group.level} group={group} />)}</div></TvCard>
+      return <TvCard title="Tardanzas por nivel y grado" subtitle={`${data.late} tardanzas hoy · actualización automática`} icon={<Clock3 size={20} />} strong><div className="grid gap-4 xl:grid-cols-2">{data.lateByLevel.map((group) => <LateLevelColumn key={group.level} group={group} mobile={mobile} />)}</div></TvCard>
     case 'lateByPrimaria':  
     case 'lateBySecundaria': {
       const level: Classroom['level'] = kind === 'lateByPrimaria' ? 'Primaria' : 'Secundaria'
       const group = data.lateByLevel.find((item) => item.level === level)
-      return <TvCard title={`Tardanzas de ${level.toLowerCase()}`} subtitle={`${group?.total ?? 0} tardanzas hoy · actualización automática`} icon={<Clock3 size={20} />} strong>{group && <LateLevelColumn group={group} />}</TvCard>
+      return <TvCard title={`Tardanzas de ${level.toLowerCase()}`} subtitle={`${group?.total ?? 0} tardanzas hoy · actualización automática`} icon={<Clock3 size={20} />} strong>{group && <LateLevelColumn group={group} mobile={mobile} />}</TvCard>
     }
     case 'todayIncidents':
-      return <TvCard title="Incidencias del día" subtitle={`${data.totalIncidents} incidencias registradas · actualización automática`} icon={<ShieldAlert size={20} />} strong><div className="max-h-[34rem] space-y-2 overflow-auto pr-1">{data.enrichedIncidents.length === 0 ? <Empty text="No hay incidencias registradas hoy." /> : data.enrichedIncidents.map((event) => <div key={event.key} className={`grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-2xl border p-3.5 ${event.severity === 'conduct' ? 'border-red-400/20 bg-red-500/[.07]' : event.severity === 'late' ? 'border-amber-400/20 bg-amber-500/[.07]' : 'border-orange-400/20 bg-orange-500/[.06]'}`}><div className={`grid h-11 w-11 place-items-center rounded-xl ${event.severity === 'conduct' ? 'bg-red-500/15 text-red-300' : event.severity === 'late' ? 'bg-amber-500/15 text-amber-300' : 'bg-orange-500/15 text-orange-300'}`}><AlertTriangle size={20}/></div><div className="min-w-0"><p className="truncate text-base font-black">{event.student.firstName} {event.student.lastName}</p><p className="mt-1 truncate text-sm font-bold text-slate-300">{event.labels.join(' · ')}</p><p className="mt-0.5 text-xs font-semibold text-slate-500">{event.classroom ? `${event.classroom.grade} ${event.classroom.section} · ${event.classroom.level}` : 'Aula no encontrada'}</p></div><div className="font-mono text-lg font-black tabular-nums text-slate-300">{event.time || '—'}</div></div>)}</div></TvCard>
+      return <TvCard title="Incidencias del día" subtitle={`${data.totalIncidents} incidencias registradas · actualización automática`} icon={<ShieldAlert size={20} />} strong><div className={`space-y-2 ${scroll34}`}>{data.enrichedIncidents.length === 0 ? <Empty text="No hay incidencias registradas hoy." /> : data.enrichedIncidents.map((event) => <div key={event.key} className={`grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-2xl border p-3.5 ${event.severity === 'conduct' ? 'border-red-400/20 bg-red-500/[.07]' : event.severity === 'late' ? 'border-amber-400/20 bg-amber-500/[.07]' : 'border-orange-400/20 bg-orange-500/[.06]'}`}><div className={`grid h-11 w-11 place-items-center rounded-xl ${event.severity === 'conduct' ? 'bg-red-500/15 text-red-300' : event.severity === 'late' ? 'bg-amber-500/15 text-amber-300' : 'bg-orange-500/15 text-orange-300'}`}><AlertTriangle size={20}/></div><div className="min-w-0"><p className="truncate text-base font-black">{event.student.firstName} {event.student.lastName}</p><p className="mt-1 truncate text-sm font-bold text-slate-300">{event.labels.join(' · ')}</p><p className="mt-0.5 text-xs font-semibold text-slate-500">{event.classroom ? `${event.classroom.grade} ${event.classroom.section} · ${event.classroom.level}` : 'Aula no encontrada'}</p></div><div className="font-mono text-lg font-black tabular-nums text-slate-300">{event.time || '—'}</div></div>)}</div></TvCard>
     case 'topIncidents':
       return <TvCard title="Top incidencias" subtitle="Tipos más repetidos hoy" icon={<BarChart3 size={20} />}><div className="space-y-4">{data.topTypes.length === 0 ? <Empty text="Sin datos todavía." /> : data.topTypes.map((item) => <div key={item.label}><div className="mb-1.5 flex items-center justify-between gap-3 text-sm"><span className="font-bold text-slate-300">{item.label}</span><b className="text-lg">{item.count}</b></div><div className="h-2.5 overflow-hidden rounded-full bg-white/5"><motion.div initial={{ width: 0 }} animate={{ width: `${Math.max(8, (item.count / Math.max(1, ...data.topTypes.map((entry) => entry.count))) * 100)}%` }} transition={{ duration: .45, ease: [0.22, 1, 0.36, 1] }} className="h-full rounded-full bg-amber-400" /></div></div>)}</div></TvCard>
     case 'topStudents':
@@ -524,9 +672,9 @@ function renderCard(kind: CardKind, data: PanelData, totalStudents: number) {
     case 'presentationCompliance':
       return <TvCard title="Cumplimiento de presentación" subtitle="Control del reglamento" icon={<CheckCircle2 size={20} />}><div className="flex items-center gap-5"><div className="relative grid h-24 w-24 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(#d4a94f ${data.presentationPercentage * 3.6}deg, rgba(255,255,255,.07) 0deg)` }}><div className="grid h-16 w-16 place-items-center rounded-full bg-[#09111e] text-lg font-black">{data.presentationPercentage}%</div></div><div><p className="text-2xl font-black">{data.complianceOk}</p><p className="text-sm font-semibold text-slate-500">sin incidencias de presentación</p><p className="mt-2 text-xs font-bold text-slate-500">{data.complianceChecked} registros con incumplimiento</p></div></div></TvCard>
     case 'pendingStudents':
-      return <TvCard title="Alumnos sin ingreso" subtitle={`${data.pendingStudents.length} pendientes de marcar`} icon={<Users size={20} />}><div className="max-h-[30rem] space-y-2 overflow-auto pr-1">{data.pendingStudents.length === 0 ? <Empty text="Todos los alumnos tienen registro de ingreso." /> : data.pendingStudents.map(({ student, classroom }) => <div key={student.id} className="flex items-center gap-3 rounded-2xl border border-white/7 bg-white/[.035] p-3"><div className="grid h-9 w-9 place-items-center rounded-xl bg-white/5 text-slate-400"><Clock3 size={17}/></div><div className="min-w-0 flex-1"><p className="truncate font-black">{student.firstName} {student.lastName}</p><p className="text-xs font-semibold text-slate-500">{classroom ? `${classroom.grade} ${classroom.section}` : 'Aula'}</p></div><span className="rounded-full bg-white/5 px-2 py-1 text-[11px] font-black uppercase tracking-wider text-slate-400">Pendiente</span></div>)}</div></TvCard>
+      return <TvCard title="Alumnos sin ingreso" subtitle={`${data.pendingStudents.length} pendientes de marcar`} icon={<Users size={20} />}><div className={`space-y-2 ${scroll30}`}>{data.pendingStudents.length === 0 ? <Empty text="Todos los alumnos tienen registro de ingreso." /> : data.pendingStudents.map(({ student, classroom }) => <div key={student.id} className="flex items-center gap-3 rounded-2xl border border-white/7 bg-white/[.035] p-3"><div className="grid h-9 w-9 place-items-center rounded-xl bg-white/5 text-slate-400"><Clock3 size={17}/></div><div className="min-w-0 flex-1"><p className="truncate font-black">{student.firstName} {student.lastName}</p><p className="text-xs font-semibold text-slate-500">{classroom ? `${classroom.grade} ${classroom.section}` : 'Aula'}</p></div><span className="rounded-full bg-white/5 px-2 py-1 text-[11px] font-black uppercase tracking-wider text-slate-400">Pendiente</span></div>)}</div></TvCard>
     case 'classroomSummary':
-      return <TvCard title="Resumen por aula" subtitle="Visión completa del colegio" icon={<LayoutDashboard size={20} />}><div className="grid max-h-[34rem] gap-2 overflow-auto pr-1 sm:grid-cols-2">{data.classroomSummary.map(({ classroom, total, entered, late, pending }) => <div key={classroom.id} className="rounded-2xl border border-white/7 bg-white/[.035] p-3.5"><div className="flex items-center justify-between gap-3"><div><p className="font-black">{classroom.grade} {classroom.section}</p><p className="text-xs font-semibold text-slate-500">{classroom.level}</p></div><span className="rounded-lg bg-white/5 px-2 py-1 text-xs font-black">{entered}/{total}</span></div><div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs"><div className="rounded-xl bg-emerald-500/8 px-2 py-2"><b className="block text-emerald-300">{Math.max(0, entered - late)}</b><span className="text-slate-500">a tiempo</span></div><div className="rounded-xl bg-amber-500/8 px-2 py-2"><b className="block text-amber-300">{late}</b><span className="text-slate-500">tarde</span></div><div className="rounded-xl bg-white/5 px-2 py-2"><b className="block text-slate-300">{pending}</b><span className="text-slate-500">pend.</span></div></div></div>)}</div></TvCard>
+      return <TvCard title="Resumen por aula" subtitle="Visión completa del colegio" icon={<LayoutDashboard size={20} />}><div className={`grid gap-2 sm:grid-cols-2 ${scroll34}`}>{data.classroomSummary.map(({ classroom, total, entered, late, pending }) => <div key={classroom.id} className="rounded-2xl border border-white/7 bg-white/[.035] p-3.5"><div className="flex items-center justify-between gap-3"><div><p className="font-black">{classroom.grade} {classroom.section}</p><p className="text-xs font-semibold text-slate-500">{classroom.level}</p></div><span className="rounded-lg bg-white/5 px-2 py-1 text-xs font-black">{entered}/{total}</span></div><div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs"><div className="rounded-xl bg-emerald-500/8 px-2 py-2"><b className="block text-emerald-300">{Math.max(0, entered - late)}</b><span className="text-slate-500">a tiempo</span></div><div className="rounded-xl bg-amber-500/8 px-2 py-2"><b className="block text-amber-300">{late}</b><span className="text-slate-500">tarde</span></div><div className="rounded-xl bg-white/5 px-2 py-2"><b className="block text-slate-300">{pending}</b><span className="text-slate-500">pend.</span></div></div></div>)}</div></TvCard>
     case 'incidentsByClassroom':
       return <TvCard title="Incidencias por aula" subtitle="Dónde se concentran hoy" icon={<ShieldAlert size={20} />}><div className="space-y-2">{data.incidentsByClassroom.length === 0 ? <Empty text="Sin incidencias por aula." /> : data.incidentsByClassroom.map(({ classroom, count }) => <div key={classroom.id} className="flex items-center gap-3 rounded-xl bg-white/[.035] px-3 py-3"><div className="min-w-0 flex-1"><p className="truncate font-black">{classroom.grade} {classroom.section}</p><p className="text-xs font-semibold text-slate-500">{classroom.level}</p></div><span className={`rounded-lg px-2.5 py-1 text-sm font-black ${count ? 'bg-amber-500/10 text-amber-300' : 'bg-white/5 text-slate-500'}`}>{count}</span></div>)}</div></TvCard>
   }
@@ -540,7 +688,9 @@ function StudentRow({ student, classroom, time, status, icon, showStatus = true 
   return <div className="flex items-center gap-2.5 rounded-2xl border border-white/7 bg-white/[.035] p-2.5 sm:gap-3 sm:p-3"><div className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl sm:h-10 sm:w-10 ${status === 'LATE' ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300'}`}>{icon}</div><div className="min-w-0 flex-1"><p className="break-words font-black leading-tight sm:truncate">{student.firstName} {student.lastName}</p><p className="mt-0.5 text-xs font-semibold text-slate-500">{classroom ? `${classroom.grade} ${classroom.section} · ${classroom.level}` : 'Aula'}</p></div><div className="shrink-0 text-right"><p className="font-mono text-sm font-black sm:text-lg">{entryTimeLabel(time)}</p>{showStatus && <p className={`text-[11px] font-black uppercase tracking-wider ${status === 'LATE' ? 'text-amber-300' : 'text-emerald-300'}`}>{status === 'LATE' ? 'Tardanza' : 'A tiempo'}</p>}</div></div>
 }
 
-function LateLevelColumn({ group }: { group: LateLevelGroup }) {
+function LateLevelColumn({ group, mobile }: { group: LateLevelGroup; mobile: boolean }) {
+  // En celular los grados se pliegan; si hay pocas tardanzas arrancan abiertos.
+  const startOpen = !mobile || group.total <= 8
   return (
     <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[.02] p-3">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -548,22 +698,31 @@ function LateLevelColumn({ group }: { group: LateLevelGroup }) {
         <span className="rounded-lg bg-amber-500/10 px-2.5 py-1 text-sm font-black text-amber-300">{group.total}</span>
       </div>
       {group.grades.length === 0 ? <Empty text={`Sin tardanzas en ${group.level.toLowerCase()} hoy.`} /> : (
-        <div className="max-h-[34rem] space-y-3 overflow-auto pr-1">
-          {group.grades.map(({ grade, rows }) => (
-            <div key={grade}>
-              <p className="mb-1.5 flex items-center justify-between text-xs font-black uppercase tracking-widest text-slate-400">
-                <span>{gradeLabel(group.level, grade)}</span><span>{rows.length}</span>
-              </p>
-              <div className="space-y-1.5">
-                {rows.map(({ record, student, classroom }) => (
-                  <div key={record.id ?? student.id} className="flex items-center gap-3 rounded-xl border border-white/7 bg-white/[.035] px-3 py-2">
-                    <span className="grid h-8 min-w-8 shrink-0 place-items-center rounded-lg bg-white/5 px-1.5 text-xs font-black text-slate-300" title="Sección">{classroom.section}</span>
-                    <p className="min-w-0 flex-1 truncate font-black">{student.lastName}, {student.firstName}</p>
-                    {record.justified && <span className="rounded-md bg-sky-500/15 px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wider text-sky-300">Justificada</span>}
-                    <span className="font-mono text-base font-black tabular-nums text-amber-300">{entryTimeLabel(record.time)}</span>
-                  </div>
-                ))}
-              </div>
+        <div className={`space-y-3 ${mobile ? '' : 'max-h-[34rem] overflow-auto pr-1'}`}>
+          {group.grades.map(({ grade, rows }) => <LateGradeGroup key={grade} level={group.level} grade={grade} rows={rows} collapsible={mobile} startOpen={startOpen} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function LateGradeGroup({ level, grade, rows, collapsible, startOpen }: { level: Classroom['level']; grade: string; rows: LateRow[]; collapsible: boolean; startOpen: boolean }) {
+  const [open, setOpen] = useState(startOpen)
+  const expanded = !collapsible || open
+  const title = <><span>{gradeLabel(level, grade)}</span><span className="flex items-center gap-1.5">{rows.length}{collapsible && (expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}</span></>
+  return (
+    <div>
+      {collapsible
+        ? <button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={expanded} className="mb-1.5 flex min-h-11 w-full items-center justify-between rounded-xl bg-white/[.04] px-3 text-xs font-black uppercase tracking-widest text-slate-300 active:bg-white/10">{title}</button>
+        : <p className="mb-1.5 flex items-center justify-between text-xs font-black uppercase tracking-widest text-slate-400">{title}</p>}
+      {expanded && (
+        <div className="space-y-1.5">
+          {rows.map(({ record, student, classroom }) => (
+            <div key={record.id ?? student.id} className="flex items-center gap-3 rounded-xl border border-white/7 bg-white/[.035] px-3 py-2">
+              <span className="grid h-8 min-w-8 shrink-0 place-items-center rounded-lg bg-white/5 px-1.5 text-xs font-black text-slate-300" title="Sección">{classroom.section}</span>
+              <p className={`min-w-0 flex-1 font-black ${collapsible ? 'break-words leading-tight' : 'truncate'}`}>{student.lastName}, {student.firstName}</p>
+              {record.justified && <span className="rounded-md bg-sky-500/15 px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wider text-sky-300">Justificada</span>}
+              <span className="font-mono text-base font-black tabular-nums text-amber-300">{entryTimeLabel(record.time)}</span>
             </div>
           ))}
         </div>
