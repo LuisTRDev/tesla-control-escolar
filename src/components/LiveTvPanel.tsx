@@ -4,7 +4,7 @@ import {
   Activity, CheckCircle2, Expand,
   GripVertical, LayoutDashboard, Maximize2, Minimize,
   RotateCcw, Save, SlidersHorizontal,
-  Wifi, WifiOff, X, EyeOff, Plus, ChevronDown, ChevronUp, ArrowUp, ArrowDown, MoreHorizontal, RefreshCw, Share2, Sun, Type, Vibrate,
+  Wifi, WifiOff, X, EyeOff, Plus, ChevronDown, ChevronUp, ArrowUp, ArrowDown, MoreHorizontal, RefreshCw, Share2, Sun, Type, Vibrate, Volume2,
 } from 'lucide-react'
 import type { AttendanceRecord, Classroom, PresentationRecord, Student } from '@/types'
 import { useWakeLock } from '@/lib/nativeFeatures'
@@ -13,6 +13,8 @@ import { LiveSheet } from '@/components/livetv/LiveSheet'
 import { CATALOG, DEFAULT_LAYOUT, MOBILE_DEFAULT_LAYOUT, MOBILE_STORAGE_KEY, STORAGE_KEY, TABS, loadLayout, sizeClass, tabOfKind, type CardKind, type CardSize, type LayoutCard, type TabId } from '@/components/livetv/catalog'
 import { buildPanelData } from '@/components/livetv/panelData'
 import { renderCard } from '@/components/livetv/cards/renderCard'
+import { FlashContext } from '@/components/livetv/cards/shared'
+import { playFeedback } from '@/lib/feedback'
 import { Empty } from '@/components/livetv/cards/shared'
 import { StudentSheetBody } from '@/components/livetv/StudentSheetBody'
 import { ShareSheet } from '@/components/livetv/ShareSheet'
@@ -36,7 +38,7 @@ type Props = {
 }
 
 const PREFS_KEY = 'tesla-live-tv-prefs-v1'
-type PanelPrefs = { keepAwake?: boolean; largeText?: boolean; vibrate?: boolean }
+type PanelPrefs = { keepAwake?: boolean; largeText?: boolean; vibrate?: boolean; sound?: boolean }
 function loadPrefs(): PanelPrefs {
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(PREFS_KEY) ?? 'null')
@@ -76,6 +78,7 @@ export default function LiveTvPanel({
   const keepAwake = prefs.keepAwake ?? !mobile
   const vibrateOnLate = prefs.vibrate ?? true
   const largeText = prefs.largeText ?? false
+  const soundOnLate = prefs.sound ?? false
   useWakeLock(open && keepAwake)
   const sectionRef = useRef<HTMLElement | null>(null)
   const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement))
@@ -106,6 +109,9 @@ export default function LiveTvPanel({
   const pullStart = useRef<number | null>(null)
   const swipeStart = useRef<{ x: number; y: number } | null>(null)
   const [seenLate, setSeenLate] = useState<number | null>(null)
+  const [flashing, setFlashing] = useState<ReadonlySet<string>>(() => new Set())
+  const [announcement, setAnnouncement] = useState('')
+  const knownLates = useRef<Set<string> | null>(null)
   const [sheet, setSheet] = useState<{ id: string; open: boolean } | null>(null)
 
   useEffect(() => {
@@ -238,13 +244,22 @@ export default function LiveTvPanel({
   // Cada carga de datos (realtime, sincronización o refresco manual) renueva "Actualizado hace…".
   useEffect(() => { setLastUpdate(Date.now()) }, [attendanceRecords, presentationRecords, students])
 
-  // Tardanza nueva: vibración corta y marca "nuevas" en la pestaña si se está mirando otra.
-  const previousLate = useRef<number | null>(null)
+  // Tardanza nueva (una que no estaba cuando se abrió el panel): su fila destella, y según las preferencias vibra o suena.
   useEffect(() => {
-    if (!open) { previousLate.current = null; return }
-    if (mobile && vibrateOnLate && previousLate.current !== null && data.late > previousLate.current) navigator.vibrate?.(150)
-    previousLate.current = data.late
-  }, [data.late, open, mobile, vibrateOnLate])
+    if (!open) { knownLates.current = null; return }
+    const current = data.lateStudents.map(({ student }) => student)
+    const known = knownLates.current
+    knownLates.current = new Set(current.map((student) => student.id))
+    if (!known) return
+    const fresh = current.filter((student) => !known.has(student.id))
+    if (fresh.length === 0) return
+    const ids = fresh.map((student) => student.id)
+    setFlashing((existing) => new Set([...existing, ...ids]))
+    window.setTimeout(() => setFlashing((existing) => new Set([...existing].filter((id) => !ids.includes(id)))), 6000)
+    setAnnouncement(fresh.length === 1 ? `Nueva tardanza: ${fresh[0].firstName} ${fresh[0].lastName}.` : `${fresh.length} tardanzas nuevas.`)
+    if (mobile && vibrateOnLate) navigator.vibrate?.(150)
+    if (soundOnLate) playFeedback('late', { sound: true, vibration: false })
+  }, [data.lateStudents, open, mobile, vibrateOnLate, soundOnLate])
   useEffect(() => {
     if (activeTab === 'tardanzas') setSeenLate(data.late)
     else setSeenLate((current) => (current !== null && data.late < current ? data.late : current))
@@ -320,6 +335,8 @@ export default function LiveTvPanel({
           transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
         >
           <MotionConfig reducedMotion="user">
+          <FlashContext.Provider value={flashing}>
+          <p className="sr-only" role="status" aria-live="polite">{announcement}</p>
           <div style={largeText ? { zoom: 1.15 } : undefined} className={mobile ? 'min-h-full px-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))]' : 'min-h-screen p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(.75rem+env(safe-area-inset-top))] sm:p-6 xl:p-8'}>
             {mobile ? (
               <header className="sticky top-0 z-40 -mx-3 border-b border-white/10 bg-[#050b16]/95 px-3 pb-2.5 pt-[calc(.5rem+env(safe-area-inset-top))] backdrop-blur-xl">
@@ -527,12 +544,14 @@ export default function LiveTvPanel({
                 <MenuAction icon={<Share2 size={19} />} label="Compartir resumen" description="Imagen o texto de las tardanzas" onClick={() => { setMenuOpen(false); setShareOpen(true) }} />
                 <MenuAction icon={<SlidersHorizontal size={19} />} label="Personalizar panel" description="Añadir, quitar y ordenar tarjetas" onClick={() => { setMenuOpen(false); setEditMode(true) }} />
                 <MenuToggle icon={<Sun size={19} />} label="Mantener pantalla encendida" description={keepAwake ? 'Activado: gasta más batería' : 'Desactivado: la pantalla se apaga sola'} checked={keepAwake} onChange={(value) => updatePrefs({ keepAwake: value })} />
+                <MenuToggle icon={<Volume2 size={19} />} label="Sonido con tardanza nueva" description="Un aviso corto cada vez que entra una tardanza" checked={soundOnLate} onChange={(value) => { updatePrefs({ sound: value }); if (value) playFeedback('late', { sound: true, vibration: false }) }} />
                 {mobile && <MenuToggle icon={<Vibrate size={19} />} label="Vibrar con tardanza nueva" checked={vibrateOnLate} onChange={(value) => updatePrefs({ vibrate: value })} />}
                 <MenuToggle icon={<Type size={19} />} label="Texto grande" checked={largeText} onChange={(value) => updatePrefs({ largeText: value })} />
                 {canFullscreen && <MenuAction icon={fullscreen ? <Minimize size={19} /> : <Expand size={19} />} label={fullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'} onClick={() => { setMenuOpen(false); void toggleFullscreen() }} />}
               </div>
             </LiveSheet>
           </div>
+          </FlashContext.Provider>
           </MotionConfig>
         </motion.section>
       )}

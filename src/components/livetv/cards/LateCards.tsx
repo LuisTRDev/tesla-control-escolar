@@ -3,7 +3,7 @@ import { AlertTriangle, ChevronDown, ChevronUp, Clock3 } from 'lucide-react'
 import type { Classroom } from '@/types'
 import { FilteredStudentList } from '@/components/livetv/FilteredStudentList'
 import { gradeLabel, lateCountLabel, type LateLevelGroup, type LateRow } from '../panelData'
-import { Empty, StudentRow, TAP_CLASS, TvCard, scrollClass, tap, type CardProps, type SelectStudent } from './shared'
+import { Empty, StudentRow, TAP_CLASS, TvCard, scrollClass, tap, useFlashClass, type CardProps, type SelectStudent } from './shared'
 
 export function LateStudentsCard({ data, mobile, onSelect }: CardProps) {
   return <TvCard title="Alumnos con tardanza" subtitle={`${lateCountLabel(data.late, data.lateJustified)} hoy`} icon={<Clock3 size={20} />} strong><FilteredStudentList items={data.lateStudents.map(({ record, student }) => ({ record, student, classroom: data.classroomById.get(student.classroomId) }))} mobile={mobile} scrollClass={scrollClass(mobile, 30)} empty={<Empty text="No hay tardanzas registradas hoy." />} keyOf={({ record, student }) => record.id ?? `${student.id}-${record.time}`} renderItem={({ record, student, classroom }) => <StudentRow student={student} classroom={classroom} time={record.time} status="LATE" icon={<AlertTriangle size={18} />} showStatus={false} hideTime onSelect={onSelect} />} /></TvCard>
@@ -48,15 +48,22 @@ function LateGradeGroup({ level, grade, rows, collapsible, startOpen, onSelect }
       {expanded && (
         <div className="space-y-1.5">
           {rows.map(({ record, student, classroom }) => (
-            <div key={record.id ?? student.id} {...tap(onSelect, student.id)} className={`flex items-center gap-3 rounded-xl border border-white/7 bg-white/[.035] px-3 py-2 ${onSelect ? TAP_CLASS : ''}`}>
-              <span className="grid h-8 min-w-8 shrink-0 place-items-center rounded-lg bg-white/5 px-1.5 text-xs font-black text-slate-300" title="Sección">{classroom.section}</span>
-              <p className={`min-w-0 flex-1 font-black ${collapsible ? 'break-words leading-tight' : 'truncate'}`}>{student.lastName}, {student.firstName}</p>
-              {record.justified && <span className="rounded-md bg-sky-500/15 px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wider text-sky-300">Justificada</span>}
-              <span className="shrink-0 text-[9px] font-black uppercase tracking-wider text-amber-300 sm:text-xs">Tardanza</span>
-            </div>
+            <LateRowItem key={record.id ?? student.id} record={record} student={student} classroom={classroom} collapsible={collapsible} onSelect={onSelect} />
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+function LateRowItem({ record, student, classroom, collapsible, onSelect }: LateRow & { collapsible: boolean; onSelect?: SelectStudent }) {
+  const flash = useFlashClass(student.id)
+  return (
+    <div {...tap(onSelect, student.id)} className={`${flash} flex items-center gap-3 rounded-xl border border-white/7 bg-white/[.035] px-3 py-2 ${onSelect ? TAP_CLASS : ''}`}>
+      <span className="grid h-8 min-w-8 shrink-0 place-items-center rounded-lg bg-white/5 px-1.5 text-xs font-black text-slate-300" title="Sección">{classroom.section}</span>
+      <p className={`min-w-0 flex-1 font-black ${collapsible ? 'break-words leading-tight' : 'truncate'}`}>{student.lastName}, {student.firstName}</p>
+      {record.justified && <span className="rounded-md bg-sky-500/15 px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wider text-sky-300">Justificada</span>}
+      <span className="shrink-0 text-[9px] font-black uppercase tracking-wider text-amber-300 sm:text-xs">Tardanza</span>
     </div>
   )
 }
