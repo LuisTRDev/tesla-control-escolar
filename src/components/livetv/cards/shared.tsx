@@ -1,6 +1,7 @@
 import { createContext, useContext, type KeyboardEvent, type ReactNode } from 'react'
 import type { Classroom, Student } from '@/types'
 import { entryTimeLabel } from '@/lib/displayLabels'
+import { Odometer } from '../motion'
 
 export type SelectStudent = (studentId: string) => void
 
@@ -42,11 +43,11 @@ export function StudentRow({ student, classroom, time, status, icon, showStatus 
 
 export function Metric({ icon, label, value, accent = 'slate' }: { icon: ReactNode; label: string; value: number; accent?: 'slate' | 'emerald' | 'blue' | 'amber' }) {
   const accentClass = accent === 'emerald' ? 'text-emerald-300 bg-emerald-500/10' : accent === 'blue' ? 'text-sky-300 bg-sky-500/10' : accent === 'amber' ? 'text-amber-300 bg-amber-500/10' : 'text-slate-300 bg-white/5'
-  return <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[.035] p-3 sm:p-4 xl:p-5"><div className={`inline-flex max-w-full items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-black uppercase tracking-wider sm:gap-2 sm:px-3 sm:py-2 sm:text-xs ${accentClass}`}><span className="shrink-0 [&>svg]:h-4 [&>svg]:w-4 sm:[&>svg]:h-5 sm:[&>svg]:w-5">{icon}</span><span className="truncate">{label}</span></div><p className="mt-3 text-3xl font-black tabular-nums sm:mt-4 sm:text-4xl xl:text-5xl">{value}</p></div>
+  return <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[.035] p-3 sm:p-4 xl:p-5"><div className={`inline-flex max-w-full items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-black uppercase tracking-wider sm:gap-2 sm:px-3 sm:py-2 sm:text-xs ${accentClass}`}><span className="shrink-0 [&>svg]:h-4 [&>svg]:w-4 sm:[&>svg]:h-5 sm:[&>svg]:w-5">{icon}</span><span className="truncate">{label}</span></div><p className="mt-3 text-3xl font-black sm:mt-4 sm:text-4xl xl:text-5xl"><Odometer value={value} /></p></div>
 }
 
-export function MiniStat({ label, value }: { label: string; value: number | string }) {
-  return <div className="rounded-2xl bg-white/[.035] p-3"><p className="text-xl font-black tabular-nums">{value}</p><p className="mt-1 text-xs font-black uppercase tracking-widest text-slate-400">{label}</p></div>
+export function MiniStat({ label, value, suffix }: { label: string; value: number; suffix?: string }) {
+  return <div className="rounded-2xl bg-white/[.035] p-3"><p className="text-xl font-black"><Odometer value={value} suffix={suffix} /></p><p className="mt-1 text-xs font-black uppercase tracking-widest text-slate-400">{label}</p></div>
 }
 
 export function TvCard({ title, subtitle, icon, children, strong = false }: { title: string; subtitle: string; icon: ReactNode; children: ReactNode; strong?: boolean }) {

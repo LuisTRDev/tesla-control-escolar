@@ -1,5 +1,6 @@
 import { AlertTriangle, BarChart3, CheckCircle2, ShieldAlert, Users } from 'lucide-react'
 import { motion } from 'framer-motion'
+import { ProgressRing } from '../motion'
 import { Empty, TAP_CLASS, TvCard, scrollClass, tap, type CardProps } from './shared'
 
 export function TodayIncidentsCard({ data, mobile, onSelect }: CardProps) {
@@ -15,7 +16,7 @@ export function TopStudentsCard({ data, onSelect }: CardProps) {
 }
 
 export function PresentationComplianceCard({ data }: CardProps) {
-  return <TvCard title="Cumplimiento de presentación" subtitle="Control del reglamento" icon={<CheckCircle2 size={20} />}><div className="flex items-center gap-5"><div className="relative grid h-24 w-24 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(#d4a94f ${data.presentationPercentage * 3.6}deg, rgba(255,255,255,.07) 0deg)` }}><div className="grid h-16 w-16 place-items-center rounded-full bg-[#09111e] text-lg font-black">{data.presentationReviewed ? `${data.presentationPercentage}%` : '—'}</div></div><div><p className="text-2xl font-black">{data.presentationCompliant}<span className="text-base font-bold text-slate-400"> de {data.presentationReviewed}</span></p><p className="text-sm font-semibold text-slate-400">{data.presentationReviewed ? 'alumnos revisados cumplen' : 'Aún no se revisó a ningún alumno'}</p><p className="mt-2 text-xs font-bold text-slate-400">{data.presentationNonCompliant} con incumplimiento · {data.presentationUnreviewed} sin revisar</p></div></div></TvCard>
+  return <TvCard title="Cumplimiento de presentación" subtitle="Control del reglamento" icon={<CheckCircle2 size={20} />}><div className="flex items-center gap-5"><ProgressRing percent={data.presentationReviewed ? data.presentationPercentage : 0} label={data.presentationReviewed ? `${data.presentationPercentage}%` : '—'} /><div><p className="text-2xl font-black">{data.presentationCompliant}<span className="text-base font-bold text-slate-400"> de {data.presentationReviewed}</span></p><p className="text-sm font-semibold text-slate-400">{data.presentationReviewed ? 'alumnos revisados cumplen' : 'Aún no se revisó a ningún alumno'}</p><p className="mt-2 text-xs font-bold text-slate-400">{data.presentationNonCompliant} con incumplimiento · {data.presentationUnreviewed} sin revisar</p></div></div></TvCard>
 }
 
 export function IncidentsByClassroomCard({ data }: CardProps) {

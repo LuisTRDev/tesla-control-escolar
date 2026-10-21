@@ -1,5 +1,6 @@
 import { AlertTriangle, BarChart3, Clock3, LayoutDashboard, LogIn, LogOut, Users } from 'lucide-react'
 import { FilteredStudentList } from '@/components/livetv/FilteredStudentList'
+import { Odometer } from '../motion'
 import { Empty, Metric, MiniStat, StudentRow, TAP_CLASS, TvCard, scrollClass, tap, type CardProps } from './shared'
 
 export function MetricsCard({ data, totalStudents }: CardProps & { totalStudents: number }) {
@@ -11,11 +12,11 @@ export function RecentEntriesCard({ data, onSelect }: CardProps) {
 }
 
 export function AttendanceSummaryCard({ data }: CardProps) {
-  return <TvCard title="Resumen de asistencia" subtitle="Estado del día" icon={<BarChart3 size={20} />}><div className="grid grid-cols-2 gap-3"><MiniStat label="Ingresaron" value={data.entered} /> <MiniStat label="A tiempo" value={data.onTime} /> <MiniStat label="Tardanzas" value={data.late} /> <MiniStat label="Cobertura" value={`${data.attendancePercentage}%`} /></div>{data.lateJustified > 0 && <p className="mt-3 text-xs font-bold text-sky-300">{data.lateJustified} de las tardanzas {data.lateJustified === 1 ? 'está justificada' : 'están justificadas'}</p>}</TvCard>
+  return <TvCard title="Resumen de asistencia" subtitle="Estado del día" icon={<BarChart3 size={20} />}><div className="grid grid-cols-2 gap-3"><MiniStat label="Ingresaron" value={data.entered} /> <MiniStat label="A tiempo" value={data.onTime} /> <MiniStat label="Tardanzas" value={data.late} /> <MiniStat label="Cobertura" value={data.attendancePercentage} suffix="%" /></div>{data.lateJustified > 0 && <p className="mt-3 text-xs font-bold text-sky-300">{data.lateJustified} de las tardanzas {data.lateJustified === 1 ? 'está justificada' : 'están justificadas'}</p>}</TvCard>
 }
 
 export function ExitSummaryCard({ data }: CardProps) {
-  return <TvCard title="Salidas registradas" subtitle="Control de salida" icon={<LogOut size={20} />}><div className="flex items-end justify-between gap-4"><div><p className="text-4xl font-black tabular-nums">{data.exited}</p><p className="mt-1 text-xs font-bold uppercase tracking-widest text-slate-400">de {data.entered} ingresados</p></div><div className="rounded-2xl bg-white/5 p-4 text-emerald-300"><LogOut size={30} /></div></div></TvCard>
+  return <TvCard title="Salidas registradas" subtitle="Control de salida" icon={<LogOut size={20} />}><div className="flex items-end justify-between gap-4"><div><p className="text-4xl font-black"><Odometer value={data.exited} /></p><p className="mt-1 text-xs font-bold uppercase tracking-widest text-slate-400">de {data.entered} ingresados</p></div><div className="rounded-2xl bg-white/5 p-4 text-emerald-300"><LogOut size={30} /></div></div></TvCard>
 }
 
 export function PendingStudentsCard({ data, mobile, onSelect }: CardProps) {

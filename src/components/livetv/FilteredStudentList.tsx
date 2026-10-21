@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
+import { motion } from 'framer-motion'
 import { Search, X } from 'lucide-react'
 import type { Classroom, Student } from '@/types'
 import { studentMatches } from '@/lib/search'
@@ -67,7 +68,7 @@ export function FilteredStudentList<T extends Entry>({ items, mobile, scrollClas
           ? empty
           : filtered.length === 0
             ? <div className="rounded-2xl border border-dashed border-white/10 px-4 py-8 text-center text-sm font-semibold text-slate-400">Nadie coincide con la búsqueda.</div>
-            : visible.map((entry) => <div key={keyOf(entry)}>{renderItem(entry)}</div>)}
+            : visible.map((entry, index) => <motion.div key={keyOf(entry)} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1], delay: Math.min(index % PAGE_SIZE, 8) * 0.03 }}>{renderItem(entry)}</motion.div>)}
       </div>
       {mobile && filtered.length > visible.length && (
         <button type="button" onClick={() => setShown((value) => value + PAGE_SIZE)} className="mt-3 min-h-11 w-full rounded-xl border border-white/10 bg-white/5 text-sm font-black text-slate-200 active:bg-white/10">

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode, type TouchEvent } from 'react'
-import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
+import { AnimatePresence, MotionConfig, motion, useAnimationControls, type Variants } from 'framer-motion'
 import {
   Activity, CheckCircle2, Clock3, Expand,
   GripVertical, LayoutDashboard, Maximize2, Minimize,
@@ -19,6 +19,7 @@ import { Empty } from '@/components/livetv/cards/shared'
 import { StudentSheetBody } from '@/components/livetv/StudentSheetBody'
 import { ShareSheet } from '@/components/livetv/ShareSheet'
 import { StaleNotice } from '@/components/livetv/StaleNotice'
+import { LivePulse, MinuteSweep, Odometer } from '@/components/livetv/motion'
 import { buildSummary } from '@/components/livetv/shareSummary'
 import { useMobileLayout } from '@/hooks/useMobileLayout'
 
@@ -46,6 +47,14 @@ function loadPrefs(): PanelPrefs {
   } catch {
     return {}
   }
+}
+
+// Cambio de sección: las tarjetas entran en cascada desde el lado hacia el que se avanza.
+type CascadeCustom = { direction: number; blur: boolean }
+const CASCADE: Variants = { hidden: {}, show: { transition: { staggerChildren: 0.07, delayChildren: 0.02 } } }
+const CASCADE_ITEM: Variants = {
+  hidden: ({ direction, blur }: CascadeCustom) => ({ opacity: 0, x: direction * 22, y: 10, ...(blur ? { filter: 'blur(6px)' } : {}) }),
+  show: ({ blur }: CascadeCustom) => ({ opacity: 1, x: 0, y: 0, ...(blur ? { filter: 'blur(0px)' } : {}), transition: { type: 'spring', stiffness: 240, damping: 26 } }),
 }
 
 const PULL_TRIGGER = 60
@@ -102,6 +111,7 @@ export default function LiveTvPanel({
     setLayouts((current) => ({ ...current, [mode]: update(current[mode]) }))
   }, [mode])
   const [tab, setTab] = useState<TabId>(loadTab)
+  const lastTab = useRef<TabId>(tab)
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
   const [catalogOpen, setCatalogOpen] = useState(false)
@@ -248,11 +258,15 @@ export default function LiveTvPanel({
   const ActiveIcon = TABS.find((item) => item.id === activeTab)?.icon ?? Clock3
   const tabIds = shownTabs.map((item) => item.id).join(',')
   const zoomValue = rotating ? (mobile ? 1.15 : 1.35) : largeText ? 1.15 : 1
+  // Hacia dónde se mueve el cambio de pestaña: lo nuevo entra desde el lado al que se va.
+  const tabOrder = TABS.map((item) => item.id)
+  const direction = tabOrder.indexOf(activeTab) >= tabOrder.indexOf(lastTab.current) ? 1 : -1
   const canFullscreen = Boolean(document.fullscreenEnabled)
   const newLates = seenLate === null ? 0 : Math.max(0, data.late - seenLate)
 
   // Cada carga de datos (realtime, sincronización o refresco manual) renueva "Actualizado hace…".
   useEffect(() => { setLastUpdate(Date.now()) }, [attendanceRecords, presentationRecords, students])
+  useEffect(() => { lastTab.current = activeTab }, [activeTab])
 
   // Tardanza nueva (una que no estaba cuando se abrió el panel): su fila destella, y según las preferencias vibra o suena.
   useEffect(() => {
@@ -367,7 +381,7 @@ export default function LiveTvPanel({
 
   const connectionChip = (compact: boolean) => (
     <div className={`flex items-center gap-2 rounded-xl border font-black ${compact ? 'h-10 px-2.5 text-xs' : 'h-11 px-3 text-sm sm:px-4'} ${realtimeConnected ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300' : 'border-amber-400/20 bg-amber-500/10 text-amber-300'}`}>
-      {realtimeConnected ? <Wifi size={compact ? 15 : 17} /> : <WifiOff size={compact ? 15 : 17} />}
+      <LivePulse pulseKey={lastUpdate} active={realtimeConnected}>{realtimeConnected ? <Wifi size={compact ? 15 : 17} /> : <WifiOff size={compact ? 15 : 17} />}</LivePulse>
       <span className="sm:hidden">{realtimeConnected ? 'En vivo' : 'Reconectando…'}</span><span className="hidden sm:inline">{realtimeConnected ? 'Tiempo real conectado' : 'Reconectando…'}</span>
     </div>
   )
@@ -390,7 +404,7 @@ export default function LiveTvPanel({
           <MotionConfig reducedMotion="user">
           <FlashContext.Provider value={flashing}>
           <p className="sr-only" role="status" aria-live="polite">{announcement}</p>
-          <div style={zoomValue !== 1 ? { zoom: zoomValue } : undefined} className={mobile ? 'min-h-full px-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))]' : 'min-h-screen p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(.75rem+env(safe-area-inset-top))] sm:p-6 xl:p-8'}>
+          <div style={zoomValue !== 1 ? { zoom: zoomValue } : undefined} className={mobile ? 'min-h-full px-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))] short:pb-[calc(3.5rem+env(safe-area-inset-bottom))]' : 'min-h-screen p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(.75rem+env(safe-area-inset-top))] sm:p-6 xl:p-8'}>
             {rotating ? (
               <header className="sticky top-0 z-40 -mx-3 border-b border-white/10 bg-[#050b16]/95 px-3 pb-3 pt-[calc(.75rem+env(safe-area-inset-top))] backdrop-blur-xl sm:-mx-6 sm:px-6 xl:-mx-8 xl:px-8">
                 <div className="absolute inset-x-0 top-0 h-1 overflow-hidden bg-white/5" aria-hidden="true">
@@ -418,7 +432,8 @@ export default function LiveTvPanel({
                 <StaleNotice since={lastUpdate} online={online} realtimeConnected={realtimeConnected} active={open} className="mt-2" />
               </header>
             ) : mobile ? (
-              <header className="sticky top-0 z-40 -mx-3 border-b border-white/10 bg-[#050b16]/95 px-3 pb-2.5 pt-[calc(.5rem+env(safe-area-inset-top))] backdrop-blur-xl">
+              <header className="sticky top-0 z-40 -mx-3 border-b border-white/10 bg-[#050b16]/95 px-3 pb-2.5 pt-[calc(.5rem+env(safe-area-inset-top))] backdrop-blur-xl short:static">
+                <MinuteSweep />
                 <div className="flex items-center gap-2">
                   {connectionChip(true)}
                   <LiveClock active={open} className="font-mono text-base font-black tabular-nums text-slate-100" />
@@ -441,7 +456,8 @@ export default function LiveTvPanel({
                 <StaleNotice since={lastUpdate} online={online} realtimeConnected={realtimeConnected} active={open} className="mt-2" />
               </header>
             ) : (
-              <header className="flex flex-col gap-3 border-b border-white/10 pb-4 sm:gap-5 sm:pb-5 xl:flex-row xl:items-center xl:justify-between">
+              <header className="relative flex flex-col gap-3 border-b border-white/10 pb-4 sm:gap-5 sm:pb-5 xl:flex-row xl:items-center xl:justify-between">
+                <MinuteSweep />
                 <div>
                   <div className="flex items-center gap-3">
                     <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white/10 text-sky-300 sm:h-12 sm:w-12"><Activity size={23} /></div>
@@ -524,10 +540,10 @@ export default function LiveTvPanel({
             </AnimatePresence>
 
             {tabbed ? (
-              <motion.div key={activeTab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className={mobile ? 'mt-3 grid grid-cols-1 items-start gap-3 [@media(orientation:landscape)]:grid-cols-2' : 'mt-4 grid grid-cols-12 items-start gap-4 xl:gap-5'}>
+              <motion.div key={activeTab} variants={CASCADE} initial="hidden" animate="show" className={mobile ? 'mt-3 grid grid-cols-1 items-start gap-3 [@media(orientation:landscape)]:grid-cols-2' : 'mt-4 grid grid-cols-12 items-start gap-4 xl:gap-5'}>
                 {mobileCards.length === 0 && <div className={mobile ? '[@media(orientation:landscape)]:col-span-2' : 'col-span-12'}><Empty text="Esta pestaña no tiene tarjetas. Pulsa Personalizar para añadir." /></div>}
                 {mobileCards.map((item, index) => (
-                  <div key={item.id} className={mobile ? 'relative min-w-0' : `${sizeClass(item.size)} relative min-w-0`}>
+                  <motion.div key={item.id} variants={CASCADE_ITEM} custom={{ direction, blur: !mobile }} className={mobile ? 'relative min-w-0' : `${sizeClass(item.size)} relative min-w-0`}>
                     {editMode && (
                       <div className="mb-1.5 flex items-center gap-1 rounded-2xl border border-sky-400/20 bg-sky-400/[.06] p-1.5">
                         <span className="min-w-0 flex-1 truncate pl-2 text-xs font-black uppercase tracking-wider text-slate-300">{CATALOG.find((card) => card.kind === item.kind)?.title}</span>
@@ -537,19 +553,21 @@ export default function LiveTvPanel({
                       </div>
                     )}
                     {renderCard(item.kind, data, students.length, mobile, mobile ? (id) => setSheet({ id, open: true }) : undefined)}
-                  </div>
+                  </motion.div>
                 ))}
               </motion.div>
             ) : (
               <motion.div layout className="mt-4 grid grid-cols-12 gap-3 sm:mt-6 sm:gap-4 xl:gap-5">
-                <AnimatePresence initial={false} mode="popLayout">
-                  {layout.map((item) => {
+                <AnimatePresence mode="popLayout">
+                  {layout.map((item, index) => {
                     const catalog = CATALOG.find((card) => card.kind === item.kind)
                     return (
                       <motion.div
                         key={item.id}
                         layout
-                        transition={{ layout: { duration: 0.34, ease: [0.22, 1, 0.36, 1] } }}
+                        initial={{ opacity: 0, y: 18 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ layout: { duration: 0.34, ease: [0.22, 1, 0.36, 1] }, opacity: { duration: 0.5, delay: index * 0.06 }, y: { type: 'spring', stiffness: 200, damping: 24, delay: index * 0.06 } }}
                         className={`${sizeClass(item.size)} relative min-w-0`}
                         draggable={editMode}
                         onDragStart={(event) => onDragStart(event as unknown as DragEvent<HTMLDivElement>, item.id)}
@@ -588,10 +606,10 @@ export default function LiveTvPanel({
                     const Icon = item.icon
                     const selected = item.id === activeTab
                     return (
-                      <button key={item.id} type="button" onClick={() => changeTab(item.id)} aria-current={selected ? 'page' : undefined} className={`relative flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-black ${selected ? 'text-white' : 'text-slate-400 active:text-slate-300'}`}>
-                        {selected && <span className="absolute inset-x-4 top-0 h-0.5 rounded-full bg-sky-400" />}
-                        <Icon size={21} />
-                        {item.label}
+                      <button key={item.id} type="button" onClick={() => changeTab(item.id)} aria-current={selected ? 'page' : undefined} className={`relative flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-black short:min-h-11 short:flex-row short:gap-1.5 short:text-xs ${selected ? 'text-white' : 'text-slate-400 active:text-slate-300'}`}>
+                        {selected && <motion.span layoutId="live-tab-active" className="absolute inset-x-2 inset-y-1 rounded-xl bg-sky-400/10 ring-1 ring-sky-400/25" transition={{ type: 'spring', stiffness: 420, damping: 34 }} />}
+                        <Icon size={21} className="relative" />
+                        <span className="relative">{item.label}</span>
                         {item.id === 'tardanzas' && !selected && newLates > 0 && <span className="absolute right-[calc(50%-1.9rem)] top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-amber-400 px-1 text-[11px] font-black text-slate-950" aria-label={`${newLates} tardanzas nuevas`}>+{newLates}</span>}
                       </button>
                     )
@@ -645,7 +663,14 @@ export default function LiveTvPanel({
 
 function HeaderStat({ label, value, tone, onClick }: { label: string; value: number; tone: 'amber' | 'emerald' | 'slate'; onClick: () => void }) {
   const toneClass = tone === 'amber' ? 'border-amber-400/25 bg-amber-500/10 text-amber-300' : tone === 'emerald' ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300' : 'border-white/10 bg-white/5 text-slate-200'
-  return <button type="button" onClick={onClick} className={`min-w-0 rounded-xl border px-3 py-1.5 text-left active:brightness-125 ${toneClass}`}><span className="block text-2xl font-black leading-none tabular-nums">{value}</span><span className="mt-1 block truncate text-[11px] font-black uppercase tracking-wider opacity-80">{label}</span></button>
+  // Cuando la cifra sube, la tarjeta da un latido con un halo del color de la cifra.
+  const controls = useAnimationControls()
+  const previous = useRef(value)
+  useEffect(() => {
+    if (value > previous.current) void controls.start({ scale: [1, 1.07, 1], transition: { duration: 0.6, ease: 'easeOut' } })
+    previous.current = value
+  }, [value, controls])
+  return <motion.button animate={controls} type="button" onClick={onClick} className={`min-w-0 rounded-xl border px-3 py-1.5 text-left active:brightness-125 ${toneClass}`}><span className="block text-2xl leading-none"><Odometer value={value} className="font-black" /></span><span className="mt-1 block truncate text-xs font-black uppercase tracking-wider opacity-80">{label}</span></motion.button>
 }
 
 function MenuToggle({ icon, label, description, checked, onChange }: { icon: ReactNode; label: string; description?: string; checked: boolean; onChange: (value: boolean) => void }) {

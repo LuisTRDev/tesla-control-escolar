@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { AlertTriangle, ChevronDown, ChevronUp, Clock3 } from 'lucide-react'
+import { AnimatePresence, motion, type Variants } from 'framer-motion'
+import { AlertTriangle, ChevronDown, Clock3 } from 'lucide-react'
 import type { Classroom } from '@/types'
 import { FilteredStudentList } from '@/components/livetv/FilteredStudentList'
 import { gradeLabel, lateCountLabel, type LateLevelGroup, type LateRow } from '../panelData'
@@ -36,22 +37,30 @@ function LateLevelColumn({ group, mobile, onSelect }: { group: LateLevelGroup; m
   )
 }
 
+// Al abrir un grado los nombres entran uno tras otro; al cerrar el bloque se pliega suave.
+const ROWS: Variants = { hidden: {}, show: { transition: { staggerChildren: 0.045, delayChildren: 0.06 } } }
+const ROW: Variants = { hidden: { opacity: 0, x: -14 }, show: { opacity: 1, x: 0, transition: { type: 'spring', stiffness: 320, damping: 28 } } }
+
 function LateGradeGroup({ level, grade, rows, collapsible, startOpen, onSelect }: { level: Classroom['level']; grade: string; rows: LateRow[]; collapsible: boolean; startOpen: boolean; onSelect?: SelectStudent }) {
   const [open, setOpen] = useState(startOpen)
   const expanded = !collapsible || open
-  const title = <><span>{gradeLabel(level, grade)}</span><span className="flex items-center gap-1.5">{rows.length}{collapsible && (expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}</span></>
+  const title = <><span>{gradeLabel(level, grade)}</span><span className="flex items-center gap-1.5">{rows.length}{collapsible && <motion.span animate={{ rotate: expanded ? 180 : 0 }} transition={{ type: 'spring', stiffness: 300, damping: 24 }} className="grid place-items-center"><ChevronDown size={16} /></motion.span>}</span></>
   return (
     <div>
       {collapsible
         ? <button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={expanded} className="mb-1.5 flex min-h-11 w-full items-center justify-between rounded-xl bg-white/[.04] px-3 text-xs font-black uppercase tracking-widest text-slate-300 active:bg-white/10">{title}</button>
         : <p className="mb-1.5 flex items-center justify-between text-xs font-black uppercase tracking-widest text-slate-400">{title}</p>}
-      {expanded && (
-        <div className="space-y-1.5">
-          {rows.map(({ record, student, classroom }) => (
-            <LateRowItem key={record.id ?? student.id} record={record} student={student} classroom={classroom} collapsible={collapsible} onSelect={onSelect} />
-          ))}
-        </div>
-      )}
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div key="rows" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }} className="overflow-hidden">
+            <motion.div variants={ROWS} initial={collapsible ? 'hidden' : false} animate="show" className="space-y-1.5 pb-0.5">
+              {rows.map(({ record, student, classroom }) => (
+                <LateRowItem key={record.id ?? student.id} record={record} student={student} classroom={classroom} collapsible={collapsible} onSelect={onSelect} />
+              ))}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -59,11 +68,11 @@ function LateGradeGroup({ level, grade, rows, collapsible, startOpen, onSelect }
 function LateRowItem({ record, student, classroom, collapsible, onSelect }: LateRow & { collapsible: boolean; onSelect?: SelectStudent }) {
   const flash = useFlashClass(student.id)
   return (
-    <div {...tap(onSelect, student.id)} className={`${flash} flex items-center gap-3 rounded-xl border border-white/7 bg-white/[.035] px-3 py-2 ${onSelect ? TAP_CLASS : ''}`}>
+    <motion.div variants={ROW} {...tap(onSelect, student.id)} className={`${flash} flex items-center gap-3 rounded-xl border border-white/7 bg-white/[.035] px-3 py-2 ${onSelect ? TAP_CLASS : ''}`}>
       <span className="grid h-8 min-w-8 shrink-0 place-items-center rounded-lg bg-white/5 px-1.5 text-xs font-black text-slate-300" title="Sección">{classroom.section}</span>
       <p className={`min-w-0 flex-1 font-black ${collapsible ? 'break-words leading-tight' : 'truncate'}`}>{student.lastName}, {student.firstName}</p>
       {record.justified && <span className="rounded-md bg-sky-500/15 px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wider text-sky-300">Justificada</span>}
       <span className="shrink-0 text-[9px] font-black uppercase tracking-wider text-amber-300 sm:text-xs">Tardanza</span>
-    </div>
+    </motion.div>
   )
 }
