@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { BadgeCheck, Clock3, DoorOpen, IdCard, Search, ShieldAlert, Smartphone, X } from 'lucide-react'
+import { BadgeCheck, Camera, CameraOff, Clock3, DoorOpen, IdCard, Search, ShieldAlert, Smartphone, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { inactiveLabel, isInactive } from '@/lib/studentStatus'
 import type { AttendanceRecord, Classroom, Student } from '@/types'
 import { friendlyError } from '@/lib/errorMessages'
 import { useWakeLock } from '@/lib/nativeFeatures'
+import { pickDni, useKeyboardScanner } from '@/lib/dniScan'
+
+const DniCameraScanner = lazy(() => import('@/components/DniCameraScanner'))
 
 type Props = {
   open: boolean
@@ -30,6 +33,7 @@ export default function PdaMode({ open, onClose, students, classrooms, records, 
   useWakeLock(open)
   const [selected, setSelected] = useState<Student | null>(null)
   const [message, setMessage] = useState('')
+  const [cameraOn, setCameraOn] = useState(false)
   const [busy, setBusy] = useState<'ENTRY' | 'EXIT' | null>(null)
   const classroomMap = useMemo(() => new Map(classrooms.map((room) => [room.id, room])), [classrooms])
   const record = selected ? records.find((item) => item.studentId === selected.id) : undefined
@@ -42,16 +46,31 @@ export default function PdaMode({ open, onClose, students, classrooms, records, 
     setDni('')
     setSelected(null)
     setMessage('')
+    setCameraOn(false)
   }, [open])
 
-  function lookup() {
-    const clean = dni.replace(/\D/g, '').slice(0, 8)
+  const findByDni = useCallback((clean: string) => students.find((student) => (student.dni ?? '').replace(/D/g, '') === clean), [students])
+
+  function showDni(clean: string) {
     if (clean.length !== 8) { setSelected(null); setMessage('Ingresa o escanea un DNI de 8 dígitos.'); return }
-    const found = students.find((student) => (student.dni ?? '').replace(/\D/g, '') === clean)
+    const found = findByDni(clean)
     if (!found) { setSelected(null); setMessage('DNI no encontrado en la base de alumnos.'); return }
     setSelected(found)
     setMessage('')
   }
+
+  function lookup() { showDni(dni.replace(/D/g, '').slice(0, 8)) }
+
+  // Lector de barras 2D (USB/Bluetooth tipo teclado) o cámara: el contenido se valida igual que el ingreso manual.
+  const handleScan = useCallback((raw: string) => {
+    const clean = pickDni(raw, (value) => Boolean(findByDni(value)))
+    if (!clean) { setSelected(null); setMessage('El código leído no contiene un DNI de 8 dígitos.'); return }
+    setDni(clean)
+    showDni(clean)
+    if (navigator.vibrate) navigator.vibrate(60)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findByDni])
+  useKeyboardScanner(open, handleScan)
 
   async function run(type: 'ENTRY' | 'EXIT') {
     if (!selected || !online || !authorized) return
@@ -73,7 +92,7 @@ export default function PdaMode({ open, onClose, students, classrooms, records, 
     <motion.div data-screen-overlay className="fixed inset-0 z-[85] bg-slate-950 p-3 text-white sm:p-5" onMouseDown={onClose} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.18}}>
       <motion.section data-screen className="mx-auto flex h-full max-h-[95vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-900 shadow-2xl" onMouseDown={(event) => event.stopPropagation()} initial={{scale:0.96,opacity:0,y:12}} animate={{scale:1,opacity:1,y:0}} exit={{scale:0.97,opacity:0,y:8}} transition={{type:'spring',stiffness:380,damping:32}}>
         <header className="flex items-start justify-between border-b border-white/10 p-5">
-          <div><p className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-brand-gold"><Smartphone size={16}/> Modo PDA</p><h2 className="mt-1 text-2xl font-black">Control por DNI</h2><p className="mt-1 text-sm text-slate-400">Compatible con ingreso manual y lectores que escriben el DNI como teclado.</p></div>
+          <div><p className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-brand-gold"><Smartphone size={16}/> Modo PDA</p><h2 className="mt-1 text-2xl font-black">Control por DNI</h2><p className="mt-1 text-sm text-slate-400">Escanea con la cámara, usa un lector de barras 2D o escribe el DNI.</p></div>
           <Button variant="ghost" className="text-white" onClick={onClose}><X size={20}/></Button>
         </header>
 
@@ -87,6 +106,8 @@ export default function PdaMode({ open, onClose, students, classrooms, records, 
             <div className="relative flex-1"><IdCard className="absolute left-4 top-3.5 text-slate-500" size={19}/><Input autoFocus inputMode="numeric" autoComplete="off" className="border-slate-700 bg-slate-950 pl-11 text-lg font-black tracking-widest text-white" placeholder="DNI 8 dígitos" value={dni} onChange={(e)=>{setDni(e.target.value.replace(/\D/g,'').slice(0,8));setMessage('')}} onKeyDown={(e)=>{if(e.key==='Enter')lookup()}}/></div>
             <Button onClick={lookup}><Search className="mr-2" size={18}/>Buscar</Button>
           </div>
+          <Button variant="outline" className="mt-3 w-full" onClick={()=>setCameraOn((value)=>!value)}>{cameraOn ? <CameraOff className="mr-2" size={18}/> : <Camera className="mr-2" size={18}/>}{cameraOn ? 'Cerrar cámara' : 'Escanear con cámara'}</Button>
+          {cameraOn && <div className="mt-3"><Suspense fallback={<p className="text-sm text-slate-400">Cargando lector…</p>}><DniCameraScanner onScan={(raw)=>{handleScan(raw)}} onError={(text)=>{setCameraOn(false);setMessage(text)}}/></Suspense></div>}
 
           {selected && (() => {
             const room = classroomMap.get(selected.classroomId)
