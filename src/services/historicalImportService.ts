@@ -39,9 +39,12 @@ export type HistoricalImportRecord = {
   reviewStatus: HistoricalReviewStatus
   errorMessage: string
   createdAt: string
+  appliedAt: string | null
+  appliedTo: 'attendance' | 'absence' | 'presentation' | null
+  applyNote: string
 }
 
-export type HistoricalRecordInput = Omit<HistoricalImportRecord, 'id' | 'createdAt'>
+export type HistoricalRecordInput = Omit<HistoricalImportRecord, 'id' | 'createdAt' | 'appliedAt' | 'appliedTo' | 'applyNote'>
 
 type DbBatchRow = {
   id: number | string
@@ -75,6 +78,9 @@ type DbRecordRow = {
   review_status: HistoricalReviewStatus
   error_message: string | null
   created_at: string
+  applied_at?: string | null
+  applied_to?: 'attendance' | 'absence' | 'presentation' | null
+  apply_note?: string | null
 }
 
 function mapBatch(row: DbBatchRow): HistoricalImportBatch {
@@ -112,6 +118,9 @@ function mapRecord(row: DbRecordRow): HistoricalImportRecord {
     reviewStatus: row.review_status,
     errorMessage: row.error_message ?? '',
     createdAt: row.created_at,
+    appliedAt: row.applied_at ?? null,
+    appliedTo: row.applied_to ?? null,
+    applyNote: row.apply_note ?? '',
   }
 }
 
@@ -293,4 +302,21 @@ export async function listConfirmedHistoricalRecordsByStudent(studentId: string)
     .order('created_at', { ascending: false })
   if (error) throw new Error(safeUserMessage(error))
   return (data ?? []).map(mapRecord)
+}
+
+export type HistoricalApplyResult = { applied: number; conflicts: number; historyOnly: number }
+
+/** Pasa los registros confirmados del lote a asistencia, faltas y presentación reales (phase19). */
+export async function applyHistoricalBatch(batchId: string): Promise<HistoricalApplyResult> {
+  const { data, error } = await supabase.rpc('apply_historical_batch', { p_batch_id: positiveInteger(batchId, 'Lote') })
+  if (error) throw new Error(safeUserMessage(error, 'No se pudo aplicar la carga histórica.'))
+  const result = (data ?? {}) as { applied?: number; conflicts?: number; history_only?: number }
+  return { applied: result.applied ?? 0, conflicts: result.conflicts ?? 0, historyOnly: result.history_only ?? 0 }
+}
+
+/** Deshace lo que se aplicó de ese lote a los datos reales. */
+export async function revertHistoricalBatch(batchId: string): Promise<number> {
+  const { data, error } = await supabase.rpc('revert_historical_batch', { p_batch_id: positiveInteger(batchId, 'Lote') })
+  if (error) throw new Error(safeUserMessage(error, 'No se pudo revertir la carga histórica.'))
+  return Number(data ?? 0)
 }
