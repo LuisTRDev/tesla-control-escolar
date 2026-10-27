@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useHideOnScroll } from '@/hooks/useHideOnScroll'
 import { CalendarCheck2, ListChecks, Menu, MessageCircle, Users, Zap } from 'lucide-react'
 
 type Props = {
@@ -34,10 +35,12 @@ function Tab({ icon, label, onClick, active = false, badge }: { icon: ReactNode;
 
 /** Barra de pestañas inferior (solo celular y tablet): las acciones de todos los días a un toque del pulgar. */
 export default function MobileTabBar({ onList, onQuick, onSummary, onWhatsApp, onRoster, onMenu, pendingCount }: Props) {
+  // Al bajar por la lista la barra se esconde; al subir un poco vuelve.
+  const hidden = useHideOnScroll()
   return (
     <nav
       aria-label="Navegación principal"
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 pb-safe backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/95 lg:hidden"
+      className={`fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 pb-safe backdrop-blur-md transition-transform duration-200 dark:border-slate-800 dark:bg-slate-950/95 lg:hidden ${hidden ? 'pointer-events-none translate-y-full' : ''}`}
     >
       <div className="mx-auto flex h-[var(--tabbar-h)] max-w-xl items-stretch gap-1 px-2 py-1">
         <Tab icon={<ListChecks size={21} />} label="Lista" active onClick={onList} badge={pendingCount} />
