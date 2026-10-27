@@ -7,6 +7,7 @@ import { inactiveLabel, isInactive } from '@/lib/studentStatus'
 import type { AttendanceRecord, Classroom, Student } from '@/types'
 import { friendlyError } from '@/lib/errorMessages'
 import { useWakeLock } from '@/lib/nativeFeatures'
+import { haptic } from '@/lib/haptics'
 import { pickDni, useKeyboardScanner } from '@/lib/dniScan'
 
 const DniCameraScanner = lazy(() => import('@/components/DniCameraScanner'))
@@ -67,7 +68,7 @@ export default function PdaMode({ open, onClose, students, classrooms, records, 
     if (!clean) { setSelected(null); setMessage('El código leído no contiene un DNI de 8 dígitos.'); return }
     setDni(clean)
     showDni(clean)
-    if (navigator.vibrate) navigator.vibrate(60)
+    haptic('success')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [findByDni])
   useKeyboardScanner(open, handleScan)

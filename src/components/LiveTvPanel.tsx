@@ -22,6 +22,7 @@ import { StaleNotice } from '@/components/livetv/StaleNotice'
 import { LivePulse, MinuteSweep, Odometer } from '@/components/livetv/motion'
 import { buildSummary } from '@/components/livetv/shareSummary'
 import { useMobileLayout } from '@/hooks/useMobileLayout'
+import { haptic } from '@/lib/haptics'
 
 type Props = {
   open: boolean
@@ -281,7 +282,7 @@ export default function LiveTvPanel({
     setFlashing((existing) => new Set([...existing, ...ids]))
     window.setTimeout(() => setFlashing((existing) => new Set([...existing].filter((id) => !ids.includes(id)))), 6000)
     setAnnouncement(fresh.length === 1 ? `Nueva tardanza: ${fresh[0].firstName} ${fresh[0].lastName}.` : `${fresh.length} tardanzas nuevas.`)
-    if (mobile && vibrateOnLate) navigator.vibrate?.(150)
+    if (mobile && vibrateOnLate) haptic('alert', { force: true })
     if (soundOnLate) playFeedback('late', { sound: true, vibration: false })
   }, [data.lateStudents, open, mobile, vibrateOnLate, soundOnLate])
   useEffect(() => {

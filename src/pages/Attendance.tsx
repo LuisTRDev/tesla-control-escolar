@@ -49,6 +49,7 @@ import { useOverlayScrollLock } from '@/lib/scrollLock'
 import { useBackClose } from '@/lib/backClose'
 import { useTodayKey } from '@/hooks/useTodayKey'
 import { requestPersistentStorage, setAppBadge } from '@/lib/nativeFeatures'
+import { setHapticsEnabled, useGlobalTapHaptics } from '@/lib/haptics'
 import { countAppErrorsSince } from '@/services/adminService'
 import type { StartModule } from '@/App'
 import { getCurrentTime, getPreferences, getTodayKey, savePreferences, type UserPreferences } from '@/lib/storage'
@@ -359,6 +360,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   // Hay una etiqueta por esquema del sistema (index.html): se actualizan todas para respetar el tema elegido en la app.
   useEffect(() => { document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => meta.setAttribute('content', darkMode ? '#020617' : '#ffffff')) }, [darkMode])
   useOverlayScrollLock()
+  // Vibración suave al tocar botones, según la opción de Configuración.
+  useEffect(() => { setHapticsEnabled(preferences.vibrationEnabled) }, [preferences.vibrationEnabled])
+  useGlobalTapHaptics(true)
   // Botón "atrás" de Android: cierra lo último que se abrió en vez de salir de la app.
   useBackClose(sidebarOpen, () => setSidebarOpen(false))
   useBackClose(settingsOpen, () => setSettingsOpen(false))

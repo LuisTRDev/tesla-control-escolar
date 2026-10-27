@@ -6,6 +6,8 @@
  *  - error: tono grave largo (inhabilitado, no autorizado o fallo)
  *  - undo: tono breve descendente (marca deshecha)
  */
+import { haptic, type HapticKind } from '@/lib/haptics'
+
 export type FeedbackKind = 'ok' | 'late' | 'error' | 'undo'
 
 type Tone = { freq: number; start: number; duration: number; type?: OscillatorType }
@@ -17,11 +19,11 @@ const TONES: Record<FeedbackKind, Tone[]> = {
   undo: [{ freq: 600, start: 0, duration: 0.08 }, { freq: 420, start: 0.09, duration: 0.1 }],
 }
 
-const VIBRATION: Record<FeedbackKind, number[]> = {
-  ok: [40],
-  late: [60, 80, 60],
-  error: [200, 100, 200],
-  undo: [30],
+const HAPTIC: Record<FeedbackKind, HapticKind> = {
+  ok: 'success',
+  late: 'warning',
+  error: 'error',
+  undo: 'select',
 }
 
 // Un solo AudioContext reutilizado: los navegadores limitan cuántos se pueden crear.
@@ -59,7 +61,5 @@ export function playFeedback(kind: FeedbackKind, options: { sound: boolean; vibr
   if (options.sound) {
     try { playTones(kind) } catch { /* sin audio */ }
   }
-  if (options.vibration && typeof navigator.vibrate === 'function') {
-    try { navigator.vibrate(VIBRATION[kind]) } catch { /* sin vibración */ }
-  }
+  if (options.vibration) haptic(HAPTIC[kind], { force: true })
 }
