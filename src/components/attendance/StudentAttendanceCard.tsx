@@ -36,6 +36,8 @@ type Props = {
   onEarlyExit: (student: Student) => void
   onMarkAbsence: (student: Student) => void
   onRemoveAbsence: (student: Student, absence: AbsenceRecord) => void
+  /** Opción de Configuración "Deslizar tarjetas". */
+  swipeEnabled?: boolean
 }
 
 const pillBase = 'flex min-h-12 min-w-0 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold'
@@ -76,7 +78,7 @@ const tones = {
  * tres botones (normas, WhatsApp, "Más"); el resto de acciones vive en la hoja "Más".
  * En pantallas anchas (lg) las acciones secundarias se ven en línea.
  */
-export default function StudentAttendanceCard({ student, classroom, record, presentation, violations, recurrence, whatsAppOptions, canOpenWhatsApp, mark, markExit, openAttendanceEdit, openPresentation, openNotification, openWhatsAppModal, setCaseFileStudent, setHistoryStudent, dayStatusEnabled, absence, permission, earlyExit, onJustifyLate, onJustifyAbsence, onPermission, onEarlyExit, onMarkAbsence, onRemoveAbsence }: Props) {
+export default function StudentAttendanceCard({ student, classroom, record, presentation, violations, recurrence, whatsAppOptions, canOpenWhatsApp, mark, markExit, openAttendanceEdit, openPresentation, openNotification, openWhatsAppModal, setCaseFileStudent, setHistoryStudent, dayStatusEnabled, absence, permission, earlyExit, onJustifyLate, onJustifyAbsence, onPermission, onEarlyExit, onMarkAbsence, onRemoveAbsence, swipeEnabled = true }: Props) {
   const [moreOpen, setMoreOpen] = useState(false)
   const lateUnjustified = record?.status === 'LATE' && !record.justified
   const fullName = `${student.firstName} ${student.lastName}`
@@ -152,7 +154,7 @@ export default function StudentAttendanceCard({ student, classroom, record, pres
     : { label: 'Más', icon: <MoreHorizontal size={20} />, tone: 'sky', onTrigger: () => setMoreOpen(true) }
 
   return (
-    <SwipeActions right={swipeRight} left={swipeLeft}>
+    <SwipeActions right={swipeEnabled ? swipeRight : undefined} left={swipeEnabled ? swipeLeft : undefined}>
     <Card className="p-4 sm:p-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
         <div className="min-w-0 flex-1">

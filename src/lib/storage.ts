@@ -20,6 +20,8 @@ export type UserPreferences = {
   interfaceSize: InterfaceSize
   soundEnabled: boolean
   vibrationEnabled: boolean
+  /** Deslizar la tarjeta de un alumno (celular): derecha marca entrada/salida, izquierda falta o "Más". */
+  swipeActionsEnabled: boolean
   /** Sin animaciones ni desenfoques: para celulares de gama baja. */
   lowPowerMode: boolean
   rememberClassroom: boolean
@@ -33,6 +35,7 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   interfaceSize: 'normal',
   soundEnabled: true,
   vibrationEnabled: true,
+  swipeActionsEnabled: true,
   lowPowerMode: false,
   rememberClassroom: true,
   lastClassroomId: null,

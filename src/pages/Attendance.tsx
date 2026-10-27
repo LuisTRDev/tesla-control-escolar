@@ -1443,6 +1443,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
                 openWhatsAppModal={openWhatsAppModal}
                 setCaseFileStudent={setCaseFileStudent}
                 dayStatusEnabled={dayStatus.available}
+                swipeEnabled={preferences.swipeActionsEnabled}
                 absence={record ? undefined : absenceByStudent.get(student.id)}
                 permission={findPermission(todayPermissions, student.id, today)}
                 earlyExit={earlyExitByStudent.get(student.id)}

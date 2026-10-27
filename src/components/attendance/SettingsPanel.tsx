@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { BatteryLow, Monitor, Moon, RotateCcw, Sun, Vibrate, Volume2, X } from 'lucide-react'
+import { BatteryLow, Monitor, Moon, MoveHorizontal, RotateCcw, Sun, Vibrate, Volume2, X } from 'lucide-react'
 import { resetTour } from '@/components/OnboardingTour'
 import { Button } from '@/components/ui/Button'
 import { resetPreferences, type UserPreferences } from '@/lib/storage'
@@ -154,6 +154,16 @@ export default function SettingsPanel({ settingsOpen, setSettingsOpen, entryLimi
                   </span>
                 </span>
                 <input type="checkbox" checked={preferences.vibrationEnabled} onChange={(e) => updatePreferences({ ...preferences, vibrationEnabled: e.target.checked })} className="h-5 w-5" />
+              </label>
+              <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-4 transition-colors dark:border-slate-700 dark:bg-slate-950/60">
+                <span className="flex items-center gap-3">
+                  <MoveHorizontal size={19} />
+                  <span>
+                    <b className="block">Deslizar tarjetas</b>
+                    <small className="text-slate-500 dark:text-slate-400">En celular: deslizar un alumno a la derecha marca entrada o salida; a la izquierda, falta o más opciones. Apágalo si se activa sin querer</small>
+                  </span>
+                </span>
+                <input type="checkbox" checked={preferences.swipeActionsEnabled} onChange={(e) => updatePreferences({ ...preferences, swipeActionsEnabled: e.target.checked })} className="h-5 w-5" />
               </label>
               <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-4 transition-colors dark:border-slate-700 dark:bg-slate-950/60">
                 <span className="flex items-center gap-3">
