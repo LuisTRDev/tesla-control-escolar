@@ -151,7 +151,7 @@ function GuardianRow({ guardian, year, month, onSaved, onViewHistory, whatsApp, 
             disabled={saving}
             role="checkbox"
             aria-checked={guardian.paid}
-            className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md border-2 transition-colors ${guardian.paid ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300 dark:border-slate-600'}`}
+            className={`relative mt-0.5 grid h-6 w-6 shrink-0 place-items-center before:absolute before:-inset-2.5 before:content-[''] rounded-md border-2 transition-colors ${guardian.paid ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300 dark:border-slate-600'}`}
           >
             {guardian.paid && <CheckCircle2 size={16} className="text-white" />}
           </button>
@@ -169,11 +169,11 @@ function GuardianRow({ guardian, year, month, onSaved, onViewHistory, whatsApp, 
         </div>
         <div className="flex shrink-0 items-center gap-2 self-start">
           {whatsApp && (
-            <button type="button" onClick={() => onWhatsApp(whatsApp)} className="rounded-full p-1.5 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40" title={whatsApp.type === 'PENSION_OVERDUE' ? 'Enviar aviso de mora por WhatsApp' : 'Enviar recordatorio por WhatsApp'} aria-label="WhatsApp">
+            <button type="button" onClick={() => onWhatsApp(whatsApp)} className="rounded-full p-2.5 sm:p-1.5 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40" title={whatsApp.type === 'PENSION_OVERDUE' ? 'Enviar aviso de mora por WhatsApp' : 'Enviar recordatorio por WhatsApp'} aria-label="WhatsApp">
               <MessageCircle size={16} />
             </button>
           )}
-          <button type="button" onClick={() => onViewHistory(guardian.guardianId)} className="rounded-full p-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800" title="Ver historial">
+          <button type="button" onClick={() => onViewHistory(guardian.guardianId)} className="rounded-full p-2.5 sm:p-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800" title="Ver historial">
             <Clock3 size={16} />
           </button>
           <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black ${meta.badge}`}>
@@ -329,9 +329,9 @@ export default function Cobranza({ open, onClose, isAdmin, templates, templatesS
                   <MessageCircle className="mr-2" size={16} /> Avisos WhatsApp{queueItems.length ? ` (${queueItems.length})` : ''}
                 </Button>
                 <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-950">
-                  <button type="button" onClick={() => changeMonth(-1)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><ChevronLeft size={18} /></button>
+                  <button type="button" onClick={() => changeMonth(-1)} className="rounded-lg p-2.5 sm:p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><ChevronLeft size={18} /></button>
                   <span className="min-w-[130px] text-center text-sm font-black">{MONTH_NAMES[month - 1]} {year}</span>
-                  <button type="button" onClick={() => changeMonth(1)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><ChevronRight size={18} /></button>
+                  <button type="button" onClick={() => changeMonth(1)} className="rounded-lg p-2.5 sm:p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><ChevronRight size={18} /></button>
                 </div>
                 <Button variant="ghost" onClick={onClose} aria-label="Cerrar"><X size={20} /></Button>
               </div>
