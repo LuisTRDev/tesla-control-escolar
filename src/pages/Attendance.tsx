@@ -1,4 +1,5 @@
 import { lazy, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { SkeletonStudentCards } from '@/components/ui/Skeleton'
 import PullToRefresh from '@/components/ui/PullToRefresh'
 import { supabase } from '@/lib/supabase'
 import { reportError } from '@/lib/security'
@@ -1191,7 +1192,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
             Hoy es día sin clases ({CALENDAR_KIND_LABELS[calendarToday.kind]}{calendarToday.description ? `: ${calendarToday.description}` : ''}). No se generarán faltas.
           </div>
         )}
-        {loadingData && <div className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">Sincronizando datos con Supabase...</div>}
+        {loadingData && students.length > 0 && <div className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">Sincronizando datos con Supabase...</div>}
         {!syncState.online && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">Modo offline activo. Puedes seguir marcando entradas y controles; {syncState.pending} cambio{syncState.pending===1?'':'s'} pendiente{syncState.pending===1?'':'s'} se enviarán al recuperar Internet.</div>}
         <div className="rounded-2xl border border-slate-200 bg-white p-3 text-slate-950 shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 sm:p-5">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
@@ -1377,6 +1378,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         {lateNoTime && <div className="mt-3"><LateNoTimeBanner active={lateNoTime} onChange={setLateNoTime} /></div>}
 
         <div className="mt-3 space-y-3 sm:mt-5">
+          {loadingData && filtered.length === 0 && <SkeletonStudentCards />}
           {filtered.map((student, index) => {
             const record = recordByStudent.get(student.id)
             const presentation = presentationByStudent.get(student.id)

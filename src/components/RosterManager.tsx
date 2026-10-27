@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { SkeletonList } from '@/components/ui/Skeleton'
 import PullToRefresh from '@/components/ui/PullToRefresh'
 import AuthorizedPickupsSection from '@/components/AuthorizedPickupsSection'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -615,7 +616,7 @@ export default function RosterManager({ open, onClose, classrooms, students, def
             </div>
 
             {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">{error}</div>}
-            {loading && <p className="mt-4 text-sm text-slate-500">Cargando...</p>}
+            {loading && <SkeletonList className="mt-4" rows={6} />}
 
             {tab === 'students' && selecting && (
               <div className="mt-4 rounded-2xl border border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">

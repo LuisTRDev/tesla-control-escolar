@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { SkeletonList } from '@/components/ui/Skeleton'
 import PullToRefresh from '@/components/ui/PullToRefresh'
 import { AnimatePresence, motion } from 'framer-motion'
 import { AlertTriangle, Banknote, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, Clock3, MessageCircle, Search, TriangleAlert, X } from 'lucide-react'
@@ -76,7 +77,7 @@ function HistoryPanel({ guardianId, onClose }: { guardianId: string; onClose: ()
           </div>
           <div className="mt-4 space-y-2">
             {loading ? (
-              <p className="text-sm text-slate-500">Cargando...</p>
+              <SkeletonList rows={3} />
             ) : entries.length === 0 ? (
               <p className="text-sm text-slate-500">Sin registros previos.</p>
             ) : entries.map((entry) => (
@@ -398,7 +399,7 @@ export default function Cobranza({ open, onClose, isAdmin, templates, templatesS
             </div>
 
             {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">{error}</div>}
-            {loading && <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">Cargando apoderados...</p>}
+            {loading && <SkeletonList className="mt-4" rows={6} />}
 
             <div className="mt-4 max-h-[52vh] space-y-3 overflow-y-auto pr-1">
               {!loading && filtered.length === 0 ? (

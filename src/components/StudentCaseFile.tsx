@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { SkeletonCard } from '@/components/ui/Skeleton'
 import { reportError } from '@/lib/security'
 import { Bell, BookOpen, CheckCircle2, Clock3, Download, FileText, MessageCircle, ShieldAlert, TriangleAlert, X } from 'lucide-react'
 import { jsPDF } from 'jspdf'
@@ -188,7 +189,7 @@ export default function StudentCaseFile({ student, classroom, onClose, onOpenWha
         </header>
         <div className="p-5 sm:p-7">
           {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">{error}</div>}
-          {loading && <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Cargando expediente completo...</div>}
+          {loading && <div className="space-y-3" role="status" aria-label="Cargando expediente"><SkeletonCard /><SkeletonCard /><SkeletonCard /></div>}
           {data && <>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
               <Card className="p-4"><p className="text-xs text-slate-500">Estado</p><p className={`mt-1 text-lg font-black ${status==='Seguimiento'?'text-amber-700 dark:text-amber-400':'text-emerald-700 dark:text-emerald-400'}`}>{status}</p></Card>

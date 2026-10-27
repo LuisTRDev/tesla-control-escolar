@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { SkeletonList } from '@/components/ui/Skeleton'
 import PullToRefresh from '@/components/ui/PullToRefresh'
 import { reportError } from '@/lib/security'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -116,7 +117,7 @@ export default function AlertCenter({ open, onClose, classrooms, currentClassroo
           </div>
 
           {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">{error}</div>}
-          {loading && <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Cargando alertas...</div>}
+          {loading && <SkeletonList className="mt-4" rows={4} />}
 
           <div className="mt-5 space-y-3">
             {!loading && alerts.length === 0 ? (

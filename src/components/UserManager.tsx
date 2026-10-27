@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { SkeletonList } from '@/components/ui/Skeleton'
 import PullToRefresh from '@/components/ui/PullToRefresh'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Copy, KeyRound, Plus, RefreshCw, Search, ShieldCheck, UserCheck, UserCog, UserX, Users, X } from 'lucide-react'
@@ -235,7 +236,7 @@ export default function UserManager({ open, onClose }: Props) {
               </div>
 
               {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">{error}</div>}
-              {loading && <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">Cargando usuarios...</p>}
+              {loading && <SkeletonList className="mt-4" rows={4} />}
 
               <div className="mt-5 space-y-2">
                 {!loading && !error && visible.length === 0 && (
