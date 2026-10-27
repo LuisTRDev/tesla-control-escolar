@@ -3,6 +3,7 @@ import { BookOpen, CalendarClock, Check, ClipboardCheck, Clock3, DoorOpen, Edit3
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { ActionSheet, type SheetAction } from '@/components/ui/ActionSheet'
+import { SwipeActions, type SwipeAction } from '@/components/ui/SwipeActions'
 import { getNotificationLabel } from '@/services/notificationService'
 import type { WhatsAppMessageType } from '@/services/communicationService'
 import type { AbsenceRecord, AttendanceRecord, Classroom, EarlyExit, NotificationRecord, PresentationRecord, Student, StudentPermission } from '@/types'
@@ -141,7 +142,17 @@ export default function StudentAttendanceCard({ student, classroom, record, pres
   const whatsAppTitle = canOpenWhatsApp ? 'Preparar mensaje para el apoderado' : 'El alumno no tiene un celular peruano válido registrado'
   const urgentInMore = (dayStatusEnabled && lateUnjustified) || absence?.status === 'UNJUSTIFIED'
 
+  // Gestos en celular: derecha = acción principal; izquierda = falta (si aplica) o la hoja "Más".
+  const canMarkAbsence = Boolean(dayStatusEnabled && !record && !absence && permission?.kind !== 'ABSENCE')
+  let swipeRight: SwipeAction | undefined
+  if (!record) swipeRight = { label: absence || permission?.kind === 'ABSENCE' ? 'Llegó' : 'Entrada', icon: <Clock3 size={20} />, tone: 'emerald', onTrigger: () => void mark(student.id) }
+  else if (!earlyExit && !record.exitTime) swipeRight = { label: 'Salida', icon: <LogOut size={20} />, tone: 'slate', onTrigger: () => void markExit(student.id) }
+  const swipeLeft: SwipeAction = canMarkAbsence
+    ? { label: 'Falta', icon: <UserX size={20} />, tone: 'red', onTrigger: () => onMarkAbsence(student) }
+    : { label: 'Más', icon: <MoreHorizontal size={20} />, tone: 'sky', onTrigger: () => setMoreOpen(true) }
+
   return (
+    <SwipeActions right={swipeRight} left={swipeLeft}>
     <Card className="p-4 sm:p-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
         <div className="min-w-0 flex-1">
@@ -220,5 +231,6 @@ export default function StudentAttendanceCard({ student, classroom, record, pres
 
       <ActionSheet open={moreOpen} onClose={() => setMoreOpen(false)} title={fullName} subtitle={`${classroom.grade} ${classroom.section} · ${classroom.level}`} actions={actions} />
     </Card>
+    </SwipeActions>
   )
 }
