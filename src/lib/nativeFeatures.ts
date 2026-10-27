@@ -74,3 +74,37 @@ export function canShareFiles(): boolean {
     return false
   }
 }
+
+type SyncRegistration = ServiceWorkerRegistration & {
+  sync?: { register: (tag: string) => Promise<void> }
+  periodicSync?: { register: (tag: string, options: { minInterval: number }) => Promise<void> }
+}
+
+/**
+ * Pide al navegador que despierte la app cuando vuelva la conexión para vaciar la cola
+ * offline (Background Sync). Sin soporte (iOS, Firefox) no hace nada: la cola se vacía
+ * igual al abrir la app o al volver a primer plano.
+ */
+export async function requestBackgroundSync() {
+  try {
+    if (!('serviceWorker' in navigator)) return
+    const registration = (await navigator.serviceWorker.ready) as SyncRegistration
+    await registration.sync?.register('tesla-sync-queue')
+  } catch (error) {
+    reportError('background-sync', error)
+  }
+}
+
+/** Sincronización periódica (cada ~3 h si Chrome la concede a la app instalada). */
+export async function registerPeriodicRefresh() {
+  try {
+    if (!('serviceWorker' in navigator)) return
+    const registration = (await navigator.serviceWorker.ready) as SyncRegistration
+    if (!registration.periodicSync) return
+    const status = await navigator.permissions.query({ name: 'periodic-background-sync' as PermissionName })
+    if (status.state !== 'granted') return
+    await registration.periodicSync.register('tesla-refresh', { minInterval: 3 * 60 * 60 * 1000 })
+  } catch (error) {
+    reportError('periodic-sync', error)
+  }
+}

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tesla-control-v0.7.10'
+const CACHE_NAME = 'tesla-control-v0.7.11'
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -22,6 +22,46 @@ self.addEventListener('message', (event) => {
   if (event.data?.type === 'SKIP_WAITING') {
     self.skipWaiting()
   }
+})
+
+// ---- Sincronización en segundo plano ----------------------------------------
+// El service worker no puede leer la sesión de Supabase (vive en localStorage), así que no
+// envía los datos él mismo: despierta a la app abierta (aunque esté en segundo plano) para que
+// vacíe su cola. Si no hay ninguna ventana, falla a propósito y el navegador reintenta luego.
+const SYNC_TAG = 'tesla-sync-queue'
+const REFRESH_TAG = 'tesla-refresh'
+const FLUSH_TIMEOUT_MS = 25000
+
+async function askClientsToFlush() {
+  const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+  if (windows.length === 0) throw new Error('No hay ventana abierta para sincronizar')
+  const results = await Promise.all(windows.map((client) => new Promise((resolve) => {
+    const channel = new MessageChannel()
+    const timer = setTimeout(() => resolve({ ok: false }), FLUSH_TIMEOUT_MS)
+    channel.port1.onmessage = (message) => { clearTimeout(timer); resolve(message.data) }
+    client.postMessage({ type: 'FLUSH_QUEUE' }, [channel.port2])
+  })))
+  // Si ninguna ventana terminó con la cola vacía, se rechaza para que el navegador reintente.
+  if (!results.some((result) => result && result.ok && result.remaining === 0)) throw new Error('La cola sigue con pendientes')
+}
+
+self.addEventListener('sync', (event) => {
+  if (event.tag === SYNC_TAG) event.waitUntil(askClientsToFlush())
+})
+
+// Sincronización periódica (solo app instalada y con uso frecuente): mantiene al día la pantalla de inicio.
+self.addEventListener('periodicsync', (event) => {
+  if (event.tag !== REFRESH_TAG) return
+  event.waitUntil((async () => {
+    try {
+      const response = await fetch('/index.html', { cache: 'no-store' })
+      if (response.ok) await (await caches.open(CACHE_NAME)).put('/index.html', response)
+    } catch {
+      // Sin conexión: se intentará en el próximo ciclo.
+    }
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    windows.forEach((client) => client.postMessage({ type: 'REFRESH_DATA' }))
+  })())
 })
 
 self.addEventListener('activate', (event) => {

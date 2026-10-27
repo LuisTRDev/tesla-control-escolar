@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { getMeta, getSyncConflicts, listPendingOperations } from '@/lib/offlineDb'
 import { flushSyncQueue, type SyncResult } from '@/services/syncService'
+import { registerPeriodicRefresh, requestBackgroundSync } from '@/lib/nativeFeatures'
 
 export type NetworkSyncState = {
   online: boolean
@@ -31,6 +32,8 @@ export function useNetworkSync(onPull?: () => Promise<void>, intervalMs = 15_000
   const refreshState = useCallback(async () => {
     const [items, last, conflictList] = await Promise.all([listPendingOperations(), getMeta<string>('last_sync'), getSyncConflicts()])
     setPending(items.length)
+    // Con cambios sin enviar se pide a Android que despierte la app al volver la conexión.
+    if (items.some((item) => !item.blocked)) void requestBackgroundSync()
     setFailing(items.filter((item) => item.lastError).length)
     setBlocked(items.filter((item) => item.blocked).length)
     setConflicts(conflictList.length)
@@ -64,6 +67,33 @@ export function useNetworkSync(onPull?: () => Promise<void>, intervalMs = 15_000
   }, [onPull, refreshState])
 
   useEffect(() => { void refreshState() }, [refreshState])
+  useEffect(() => { void registerPeriodicRefresh() }, [])
+
+  // El service worker despierta la app (sincronización en segundo plano / periódica).
+  const syncNowRef = useRef(syncNow)
+  useEffect(() => { syncNowRef.current = syncNow }, [syncNow])
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    const onMessage = (event: MessageEvent) => {
+      const type = (event.data as { type?: string } | null)?.type
+      if (type === 'FLUSH_QUEUE') {
+        const reply = event.ports[0]
+        void (async () => {
+          try {
+            await syncNowRef.current()
+            const left = (await listPendingOperations()).filter((item) => !item.blocked).length
+            reply?.postMessage({ ok: true, remaining: left })
+          } catch {
+            reply?.postMessage({ ok: false })
+          }
+        })()
+      } else if (type === 'REFRESH_DATA') {
+        void syncNowRef.current()
+      }
+    }
+    navigator.serviceWorker.addEventListener('message', onMessage)
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage)
+  }, [])
   useEffect(() => {
     const updateQueue = () => { void refreshState() }
     window.addEventListener('tesla-sync-queue-changed', updateQueue)
