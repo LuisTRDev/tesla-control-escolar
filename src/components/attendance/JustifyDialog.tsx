@@ -21,10 +21,12 @@ type Props = {
   onClose: () => void
   onLateSaved: (record: AttendanceRecord) => void
   onAbsenceSaved: (absence: AbsenceRecord) => void
+  /** Documento ya elegido (p. ej. recibido desde el menú Compartir del teléfono). */
+  initialFile?: File | null
 }
 
 /** Justifica una tardanza o una falta, con motivo y documento opcional. */
-export default function JustifyDialog({ target, userName, onClose, onLateSaved, onAbsenceSaved }: Props) {
+export default function JustifyDialog({ target, userName, onClose, onLateSaved, onAbsenceSaved, initialFile = null }: Props) {
   const [reason, setReason] = useState<string>(JUSTIFICATION_REASONS[0])
   const [detail, setDetail] = useState('')
   const [file, setFile] = useState<File | null>(null)
@@ -32,7 +34,7 @@ export default function JustifyDialog({ target, userName, onClose, onLateSaved, 
   const [error, setError] = useState('')
   const toast = useToast()
 
-  useEffect(() => { setReason(JUSTIFICATION_REASONS[0]); setDetail(''); setFile(null); setError('') }, [target])
+  useEffect(() => { setReason(JUSTIFICATION_REASONS[0]); setDetail(''); setFile(initialFile); setError('') }, [target, initialFile])
 
   const current = target ? (target.kind === 'LATE'
     ? (target.record.justified ? { reason: target.record.justificationReason, document: target.record.justificationDocument, by: target.record.justifiedByName } : null)

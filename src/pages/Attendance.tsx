@@ -31,6 +31,8 @@ import StudentHistoryModal from '@/components/attendance/StudentHistoryModal'
 import WhatsAppDialog from '@/components/attendance/WhatsAppDialog'
 import { LateNoTimeBanner, LateNoTimeSwitch, useLateNoTimeMode } from '@/components/attendance/LateNoTimeSwitch'
 import JustifyDialog, { type JustifyTarget } from '@/components/attendance/JustifyDialog'
+import SharedDocumentDialog, { type SharedStudentStatus } from '@/components/attendance/SharedDocumentDialog'
+import { readSharedParam, takeSharedFiles } from '@/lib/sharedFiles'
 import PermissionDialog from '@/components/attendance/PermissionDialog'
 import EarlyExitDialog from '@/components/attendance/EarlyExitDialog'
 import MarkAbsenceDialog from '@/components/attendance/MarkAbsenceDialog'
@@ -187,6 +189,9 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const [waTemplatesShared, setWaTemplatesShared] = useState(true)
   const [dayStatus, setDayStatus] = useState<DayStatusData>(EMPTY_DAY_STATUS)
   const [justifyTarget, setJustifyTarget] = useState<JustifyTarget | null>(null)
+  // Documento recibido desde el menú Compartir del teléfono, a la espera de elegir alumno.
+  const [sharedFile, setSharedFile] = useState<File | null>(null)
+  const [sharedForJustify, setSharedForJustify] = useState<File | null>(null)
   const [permissionStudent, setPermissionStudent] = useState<Student | null>(null)
   const [earlyExitStudent, setEarlyExitStudent] = useState<Student | null>(null)
   /** Diálogo de faltas: un alumno (preseleccionado) o el aula (lista para elegir). */
@@ -400,7 +405,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   useBackClose(historyStudent !== null, () => setHistoryStudent(null))
   useBackClose(whatsAppStudent !== null, () => setWhatsAppStudent(null))
   useBackClose(editingAttendance !== null, () => setEditingAttendance(null))
-  useBackClose(justifyTarget !== null, () => setJustifyTarget(null))
+  useBackClose(justifyTarget !== null, () => { setJustifyTarget(null); setSharedForJustify(null) })
+  useBackClose(sharedFile !== null, () => setSharedFile(null))
   useBackClose(permissionStudent !== null, () => setPermissionStudent(null))
   useBackClose(earlyExitStudent !== null, () => setEarlyExitStudent(null))
   useBackClose(absenceDialog !== null, () => setAbsenceDialog(null))
@@ -444,6 +450,40 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   const studentMap = useMemo(() => new Map(students.map((item) => [item.id, item])), [students])
   const absenceByStudent = useMemo(() => new Map(dayStatus.absences.filter((a) => a.date === today).map((a) => [a.studentId, a])), [dayStatus.absences, today])
   const earlyExitByStudent = useMemo(() => new Map(dayStatus.earlyExits.filter((e) => e.date === today).map((e) => [e.studentId, e])), [dayStatus.earlyExits, today])
+
+  // ---- Documento recibido desde el menú Compartir del teléfono (manifest share_target) ----
+  useEffect(() => {
+    if (readSharedParam() === null) return
+    void takeSharedFiles().then((files) => {
+      if (files.length === 0) { toast.info('No se recibió ningún documento.'); return }
+      setSharedFile(files[0])
+      if (files.length > 1) toast.info('Se recibieron varios documentos: se usará el primero.')
+    }).catch((error) => reportError('Attendance', error))
+  // Solo al abrir la app desde Compartir.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function sharedStudentStatus(student: Student): SharedStudentStatus {
+    const record = recordByStudent.get(student.id)
+    const absence = absenceByStudent.get(student.id)
+    if (record?.status === 'LATE' && !record.justified) return { label: 'Tardanza sin justificar', canJustify: true }
+    if (absence?.status === 'UNJUSTIFIED') return { label: 'Falta sin justificar', canJustify: true }
+    if (record?.justified || absence?.status === 'JUSTIFIED') return { label: 'Ya justificada', canJustify: false }
+    return { label: 'Nada que justificar hoy', canJustify: false }
+  }
+
+  // El documento se adjunta al justificar la tardanza o falta de hoy, con el mismo diálogo de siempre.
+  function pickSharedStudent(student: Student) {
+    if (!sharedFile) return
+    if (!dayStatus.available) { toast.info('La justificación de faltas y tardanzas no está disponible.'); return }
+    const record = recordByStudent.get(student.id)
+    const absence = absenceByStudent.get(student.id)
+    if (record?.status === 'LATE' && !record.justified) setJustifyTarget({ kind: 'LATE', student, record })
+    else if (absence?.status === 'UNJUSTIFIED') setJustifyTarget({ kind: 'ABSENCE', student, absence })
+    else { toast.info(`${student.firstName} no tiene una tardanza ni una falta sin justificar hoy.`); return }
+    setSharedForJustify(sharedFile)
+    setSharedFile(null)
+  }
   const todayPermissions = useMemo(() => dayStatus.permissions.filter((item) => item.dateFrom <= today && item.dateTo >= today), [dayStatus.permissions, today])
   const calendarToday = dayStatus.calendar.find((day) => day.date === today)
   // Horario efectivo del aula actual (propio del nivel o el general del colegio).
@@ -1598,10 +1638,20 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         notifications={notifications}
       />
 
+      <SharedDocumentDialog
+        file={sharedFile}
+        students={activeStudents}
+        classroomLabel={(student) => { const room = classroomMap.get(student.classroomId); return room ? `${room.grade} ${room.section} · ${room.level}` : '' }}
+        statusOf={sharedStudentStatus}
+        onPick={pickSharedStudent}
+        onClose={() => setSharedFile(null)}
+      />
+
       <JustifyDialog
         target={justifyTarget}
+        initialFile={sharedForJustify}
         userName={userName}
-        onClose={() => setJustifyTarget(null)}
+        onClose={() => { setJustifyTarget(null); setSharedForJustify(null) }}
         onLateSaved={(rec) => {
           setRecords((curr) => curr.map((r) => (r.id === rec.id ? rec : r)))
           if (rec.justified) setNotifications((curr) => curr.filter((item) => !(item.attendanceId === rec.id && item.notificationType === 'LATE_ENTRY' && !item.presentationControlId)))

@@ -1,4 +1,6 @@
-const CACHE_NAME = 'tesla-control-v0.7.11'
+const CACHE_NAME = 'tesla-control-v0.7.12'
+// Archivos que llegan desde el menú Compartir del teléfono (manifest share_target). La app los lee y los borra.
+const SHARE_CACHE = 'tesla-shared-v1'
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -71,7 +73,7 @@ self.addEventListener('activate', (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => key !== CACHE_NAME)
+            .filter((key) => key !== CACHE_NAME && key !== SHARE_CACHE)
             .map((key) => caches.delete(key))
         )
       )
@@ -79,12 +81,33 @@ self.addEventListener('activate', (event) => {
   )
 })
 
+// Guarda los archivos compartidos y abre la app; ella los toma de la caché (src/lib/sharedFiles.ts).
+async function receiveSharedFiles(request) {
+  try {
+    const form = await request.formData()
+    const files = form.getAll('files').filter((file) => typeof file !== 'string' && file.size > 0)
+    const cache = await caches.open(SHARE_CACHE)
+    for (const key of await cache.keys()) await cache.delete(key)
+    let index = 0
+    for (const file of files) {
+      await cache.put('/shared/' + index++, new Response(file, { headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name || 'documento') } }))
+    }
+    return Response.redirect('/?shared=' + files.length, 303)
+  } catch {
+    return Response.redirect('/?shared=0', 303)
+  }
+}
+
 self.addEventListener('fetch', (event) => {
   const request = event.request
+  const url = new URL(request.url)
+
+  if (request.method === 'POST' && url.origin === self.location.origin && url.pathname === '/share-target') {
+    event.respondWith(receiveSharedFiles(request))
+    return
+  }
 
   if (request.method !== 'GET') return
-
-  const url = new URL(request.url)
   if (url.origin !== self.location.origin) return
 
   // Navegación: red primero; si no hay conexión, usamos el shell cacheado.
