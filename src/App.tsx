@@ -150,7 +150,14 @@ export default function App() {
   }
 
   if (booting) {
-    return <main className="grid min-h-screen place-items-center bg-slate-950 text-white"><div className="text-center"><p className="text-sm font-bold uppercase tracking-widest text-slate-400">Tesla</p><h1 className="mt-2 text-2xl font-black">Cargando...</h1></div></main>
+    // Mismo aspecto que la pantalla de carga de index.html: al montar React no hay salto visual.
+    return (
+      <main role="status" aria-label="Cargando Tesla Control Escolar" className="fixed inset-0 grid place-content-center justify-items-center gap-[18px] bg-slate-950 text-white">
+        <img src="/icons/icon-192.png" alt="" width={96} height={96} className="h-24 w-24 rounded-3xl" />
+        <p className="text-[13px] font-extrabold uppercase tracking-[.2em] text-slate-400">Tesla Control Escolar</p>
+        <div className="relative h-[3px] w-[120px] overflow-hidden rounded-full bg-slate-800"><div className="absolute inset-y-0 left-0 w-[45%] rounded-full bg-amber-400" style={{ animation: 'boot-bar 1.1s ease-in-out infinite' }} /></div>
+      </main>
+    )
   }
 
   if (!userName || !classroom) {
