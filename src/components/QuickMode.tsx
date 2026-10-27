@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useVirtualList } from '@/lib/useVirtualList'
 import PullToRefresh from '@/components/ui/PullToRefresh'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Check, Clock3, LogOut, Search, TriangleAlert, Users, X, Zap } from 'lucide-react'
@@ -39,6 +40,9 @@ const statusFilters: Array<{ id: StatusFilter; label: string }> = [
   { id: 'MARKED', label: 'Ya marcados' },
   { id: 'LATE', label: 'Tardanzas' },
 ]
+
+/** Desde esta cantidad de filas la lista se virtualiza (solo se montan las visibles). */
+const VIRTUALIZE_FROM = 80
 
 const byName = (a: Student, b: Student) => a.lastName.localeCompare(b.lastName, 'es') || a.firstName.localeCompare(b.firstName, 'es')
 
@@ -156,6 +160,11 @@ export default function QuickMode({ open, onClose, classrooms, students, records
     }
   }
 
+  // Con muchos alumnos (todo el colegio) solo se montan las filas visibles.
+  const listRef = useRef<HTMLDivElement | null>(null)
+  const rowKey = useCallback((index: number) => filtered[index].student.id, [filtered])
+  const virtual = useVirtualList({ count: filtered.length, getKey: rowKey, estimate: 76, enabled: filtered.length > VIRTUALIZE_FROM, containerRef: listRef })
+
   const progress = counts.total ? Math.round((counts.marked / counts.total) * 100) : 0
 
   return (
@@ -215,15 +224,17 @@ export default function QuickMode({ open, onClose, classrooms, students, records
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:p-4 short:flex-none short:overflow-visible">
-          <div className="space-y-2">
+          <div>
             <PullToRefresh onRefresh={() => onRefresh?.()} disabled={!onRefresh} />
-            {filtered.map(({ student, record }, index) => {
+            <div ref={listRef} style={virtual.spacers}>
+            {filtered.slice(virtual.range.start, virtual.range.end).map(({ student, record }, offset) => {
+              const index = virtual.range.start + offset
               const classroom = classroomMap.get(student.classroomId)
               const classroomLabel = classroom ? `${classroom.grade} ${classroom.section} · ${classroom.level}` : 'Aula no encontrada'
               const showHeader = groupByClassroom && (index === 0 || filtered[index - 1].student.classroomId !== student.classroomId)
               const pendingInRoom = showHeader ? filtered.filter((row) => row.student.classroomId === student.classroomId).length : 0
               return (
-                <Fragment key={student.id}>
+                <div key={student.id} ref={virtual.measure(student.id)} className="pb-2">
                   {showHeader && (
                     <p className="sticky top-0 z-[1] -mx-1 bg-white/95 px-1 pb-1 pt-3 text-xs font-black uppercase tracking-wider text-slate-500 backdrop-blur dark:bg-slate-950/95 dark:text-slate-400">
                       {classroomLabel} · faltan {pendingInRoom}
@@ -263,9 +274,10 @@ export default function QuickMode({ open, onClose, classrooms, students, records
                       </span>
                     </button>
                   )}
-                </Fragment>
+                </div>
               )
             })}
+            </div>
             {filtered.length===0 && (
               <div className="py-12 text-center text-sm text-slate-500">
                 {statusFilter === 'PENDING' && counts.total > 0 ? '¡Todos ingresaron! No falta nadie en esta vista.' : 'No hay alumnos para este filtro.'}
