@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import PullToRefresh from '@/components/ui/PullToRefresh'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Activity, ChevronDown, RefreshCw, Trash2, Users, WifiOff, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -113,6 +114,7 @@ export default function ErrorMonitor({ open, onClose, onSeen }: Props) {
             </header>
 
             <div className="p-5 sm:p-7">
+<PullToRefresh onRefresh={load} />
               {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">{error}</div>}
 
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">

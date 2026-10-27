@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import PullToRefresh from '@/components/ui/PullToRefresh'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Copy, KeyRound, Plus, RefreshCw, Search, ShieldCheck, UserCheck, UserCog, UserX, Users, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -222,6 +223,7 @@ export default function UserManager({ open, onClose }: Props) {
             </header>
 
             <div className="p-5 sm:p-7">
+<PullToRefresh onRefresh={load} />
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <div className="relative flex-1">
                   <Search className="absolute left-4 top-3.5 text-slate-400" size={19} />

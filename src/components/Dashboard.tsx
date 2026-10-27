@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import PullToRefresh from '@/components/ui/PullToRefresh'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ArrowLeft, BarChart3, ChevronDown, Clock3, Shirt, Users, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -17,6 +18,8 @@ type Props = {
   presentationRecords: PresentationRecord[]
   today: string
   now: Date
+  /** Tirar para actualizar. */
+  onRefresh?: () => Promise<void>
 }
 
 type DonutItem = { label: string; value: number; color: string }
@@ -86,6 +89,7 @@ export default function Dashboard({
   presentationRecords,
   today,
   now,
+  onRefresh,
 }: Props) {
   const [period, setPeriod] = useState<'TODAY' | 'MONTH'>('TODAY')
   type DrillCategory = 'ALL' | 'ON_TIME' | 'LATE' | 'ATTENDANCE_PENDING' | 'NON_COMPLIANT' | 'PRESENTATION_PENDING'
@@ -242,6 +246,7 @@ export default function Dashboard({
         </div>
 
         <div className="p-5 sm:p-7">
+<PullToRefresh onRefresh={() => onRefresh?.()} disabled={!onRefresh} />
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
             <button type="button" onClick={() => setDrill('ALL')} className="text-left"><Card className="p-4 transition-colors hover:border-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/30"><p className="text-xs text-slate-500 dark:text-slate-400">Alumnos</p><p className="mt-1 text-2xl font-black">{classroomStudents.length}</p></Card></button>
             <button type="button" onClick={() => setDrill('ON_TIME')} className="text-left"><Card className="p-4 transition-colors hover:border-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/30"><p className="text-xs text-slate-500 dark:text-slate-400">A tiempo</p><p className="mt-1 text-2xl font-black text-emerald-700 dark:text-emerald-400">{onTime}</p></Card></button>

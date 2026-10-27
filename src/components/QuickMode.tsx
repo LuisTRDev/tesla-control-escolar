@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import PullToRefresh from '@/components/ui/PullToRefresh'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Check, Clock3, LogOut, Search, TriangleAlert, Users, X, Zap } from 'lucide-react'
 import BulkMarkDialog from '@/components/BulkMarkDialog'
@@ -26,6 +27,8 @@ type Props = {
   absentIds: Set<string>
   lateNoTime: boolean
   onLateNoTimeChange: (value: boolean) => void
+  /** Tirar para actualizar. */
+  onRefresh?: () => Promise<void>
 }
 
 type StatusFilter = 'ALL' | 'PENDING' | 'MARKED' | 'LATE'
@@ -39,7 +42,7 @@ const statusFilters: Array<{ id: StatusFilter; label: string }> = [
 
 const byName = (a: Student, b: Student) => a.lastName.localeCompare(b.lastName, 'es') || a.firstName.localeCompare(b.firstName, 'es')
 
-export default function QuickMode({ open, onClose, classrooms, students, records, onMark, onExit, online, entryLimit, onBulkMark, absentIds, lateNoTime, onLateNoTimeChange }: Props) {
+export default function QuickMode({ open, onClose, classrooms, students, records, onMark, onExit, online, entryLimit, onBulkMark, absentIds, lateNoTime, onLateNoTimeChange, onRefresh }: Props) {
   const [query, setQuery] = useState('')
   // Pantalla siempre encendida mientras se usa (hora de ingreso, pantalla del patio).
   useWakeLock(open)
@@ -213,6 +216,7 @@ export default function QuickMode({ open, onClose, classrooms, students, records
 
         <div className="flex-1 overflow-y-auto p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:p-4 short:flex-none short:overflow-visible">
           <div className="space-y-2">
+            <PullToRefresh onRefresh={() => onRefresh?.()} disabled={!onRefresh} />
             {filtered.map(({ student, record }, index) => {
               const classroom = classroomMap.get(student.classroomId)
               const classroomLabel = classroom ? `${classroom.grade} ${classroom.section} · ${classroom.level}` : 'Aula no encontrada'

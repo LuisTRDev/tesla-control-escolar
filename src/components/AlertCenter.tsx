@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import PullToRefresh from '@/components/ui/PullToRefresh'
 import { reportError } from '@/lib/security'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useToast } from '@/lib/toast'
@@ -107,6 +108,7 @@ export default function AlertCenter({ open, onClose, classrooms, currentClassroo
         </header>
 
         <div className="p-5 sm:p-7">
+<PullToRefresh onRefresh={load} />
           <div className="grid gap-3 sm:grid-cols-3">
             <Card className="p-4"><p className="text-xs text-slate-500">Alertas mostradas</p><p className="mt-1 text-2xl font-black">{counts.total}</p></Card>
             <Card className="p-4"><p className="text-xs text-slate-500">Prioridad alta</p><p className="mt-1 text-2xl font-black text-red-600 dark:text-red-400">{counts.urgent}</p></Card>

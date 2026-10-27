@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import PullToRefresh from '@/components/ui/PullToRefresh'
 import { reportError } from '@/lib/security'
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -122,6 +123,7 @@ export default function DailySummary({ open, onClose, classrooms, currentClassro
           </div>
         </header>
         <div className="p-5 sm:p-7">
+<PullToRefresh onRefresh={() => load(true)} />
           {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">{error}</div>}
           {loading && <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Calculando resumen...</div>}
           {summary && <>

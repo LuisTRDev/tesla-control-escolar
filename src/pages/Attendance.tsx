@@ -1,4 +1,5 @@
 import { lazy, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import PullToRefresh from '@/components/ui/PullToRefresh'
 import { supabase } from '@/lib/supabase'
 import { reportError } from '@/lib/security'
 import { useToast } from '@/lib/toast'
@@ -236,6 +237,11 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
     void reloadData(false)
   }, [today, reloadData])
   const syncState = useNetworkSync(pullInBackground)
+  // Tirar para actualizar: con conexión sincroniza y trae lo nuevo; sin ella relee lo guardado en el teléfono.
+  const refreshFromPull = useCallback(async () => {
+    if (navigator.onLine) await syncState.syncNow()
+    else await reloadData(false)
+  }, [syncState, reloadData])
   const realtimeState = useSchoolRealtime(pullInBackground)
   const { installAvailable, install } = usePwaInstall()
 
@@ -1162,6 +1168,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         </header>
 
         <section className="mx-auto w-full max-w-7xl px-4 pb-[calc(var(--tabbar-h)+env(safe-area-inset-bottom)+1.5rem)] pt-3 sm:px-6 sm:pt-5 lg:px-8 lg:py-7">
+          <PullToRefresh onRefresh={refreshFromPull} />
         {dataError && (
           <div role="alert" className="mb-4 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
             <span className="flex-1">{dataError}</span>
@@ -1464,6 +1471,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
       />
 
       <QuickMode
+        onRefresh={refreshFromPull}
         open={quickModeOpen}
         onClose={() => setQuickModeOpen(false)}
         classrooms={classrooms}
@@ -1689,6 +1697,7 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
 
       <Deferred when={dashboardOpen}>
         <Dashboard
+          onRefresh={pullInBackground}
           open={dashboardOpen}
           classroom={classroom}
           onClose={() => setDashboardOpen(false)}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import PullToRefresh from '@/components/ui/PullToRefresh'
 import { AnimatePresence, motion } from 'framer-motion'
 import { AlertTriangle, Banknote, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, Clock3, MessageCircle, Search, TriangleAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -226,6 +227,17 @@ export default function Cobranza({ open, onClose, isAdmin, templates, templatesS
       .finally(() => setLoading(false))
   }, [open, year, month])
 
+  // Tirar para actualizar: vuelve a pedir el mes visible y los meses vencidos.
+  async function refreshData() {
+    try {
+      const [current, late] = await Promise.all([getPensionStatusForMonth(year, month), getOverduePensions()])
+      setGuardians(current)
+      setOverdue(late)
+    } catch (err) {
+      setError(friendlyError(err, 'No se pudo cargar la cobranza.'))
+    }
+  }
+
   function changeMonth(delta: number) {
     let newMonth = month + delta
     let newYear = year
@@ -331,6 +343,7 @@ export default function Cobranza({ open, onClose, isAdmin, templates, templatesS
           </header>
 
           <div className="p-5 sm:p-7">
+<PullToRefresh onRefresh={refreshData} />
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <button type="button" onClick={() => setStatusFilter('ALL')} className="text-left">
                 <Card className={`p-4 transition-colors hover:border-sky-400 ${statusFilter === 'ALL' ? 'border-sky-500 bg-sky-50 dark:bg-sky-950/40' : ''}`}>

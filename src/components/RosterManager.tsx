@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import PullToRefresh from '@/components/ui/PullToRefresh'
 import AuthorizedPickupsSection from '@/components/AuthorizedPickupsSection'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ArrowRightLeft, Ban, CheckSquare, FileSpreadsheet, Link2, Pencil, Plus, RotateCcw, Search, Square, Star, Trash2, Unlink, UserPlus, Users, X } from 'lucide-react'
@@ -584,6 +585,7 @@ export default function RosterManager({ open, onClose, classrooms, students, def
           </header>
 
           <div className="p-5 sm:p-7">
+<PullToRefresh onRefresh={refreshAll} />
             <div className="flex flex-col gap-3 sm:flex-row">
               <div className="relative flex-1">
                 <Search className="absolute left-4 top-3.5 text-slate-500 dark:text-slate-400" size={20} />

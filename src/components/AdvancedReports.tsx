@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import PullToRefresh from '@/components/ui/PullToRefresh'
 import { reportError } from '@/lib/security'
 import { AnimatePresence, motion } from 'framer-motion'
 import { BarChart3, CalendarDays, Check, Download, FileSpreadsheet, FileText, RefreshCw, TriangleAlert, Users, X } from 'lucide-react'
@@ -144,6 +145,7 @@ export default function AdvancedReports({ open, onClose, classrooms, refreshKey 
         </header>
 
         <div className="p-5 sm:p-7">
+<PullToRefresh onRefresh={() => loadReport(true)} />
           <Card className="p-4 sm:p-5">
             <div className="flex flex-wrap gap-2">
               {([['TODAY', 'Hoy'], ['WEEK', 'Esta semana'], ['MONTH', 'Este mes'], ['CUSTOM', 'Personalizado']] as const).map(([id, label]) => (
