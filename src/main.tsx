@@ -4,11 +4,13 @@ import App from './App'
 import PwaUpdateNotice from '@/components/PwaUpdateNotice'
 import AppErrorBoundary from '@/components/AppErrorBoundary'
 import { installGlobalErrorLogging } from '@/services/errorLogger'
+import { captureInstallPrompt } from '@/lib/installPrompt'
 import { installProductionConsoleGuards, reportError } from '@/lib/security'
 import './index.css'
 
 installProductionConsoleGuards()
 installGlobalErrorLogging()
+captureInstallPrompt()
 
 const UPDATE_EVENT = 'tesla-pwa-update-available'
 

@@ -1,97 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useSyncExternalStore } from 'react'
+import { getInstallSnapshot, runInstallPrompt, subscribeInstall } from '@/lib/installPrompt'
 
-type InstallPromptEvent = Event & {
-  prompt: () => Promise<void>
-  userChoice: Promise<{
-    outcome: 'accepted' | 'dismissed'
-    platform?: string
-  }>
-}
-
+/** Estado de instalación de la PWA. El aviso del navegador se captura al arrancar la app (ver lib/installPrompt). */
 export function usePwaInstall() {
-  const [promptEvent, setPromptEvent] =
-    useState<InstallPromptEvent | null>(null)
-
-  const [installed, setInstalled] = useState(false)
-
-  useEffect(() => {
-    const checkInstalled = () => {
-      const standalone =
-        window.matchMedia('(display-mode: standalone)').matches
-
-      const iosStandalone =
-        (window.navigator as Navigator & {
-          standalone?: boolean
-        }).standalone === true
-
-      setInstalled(standalone || iosStandalone)
-    }
-
-    checkInstalled()
-
-    const handleBeforeInstallPrompt = (event: Event) => {
-      event.preventDefault()
-
-      console.log('PWA lista para instalar')
-
-      setPromptEvent(event as InstallPromptEvent)
-    }
-
-    const handleInstalled = () => {
-      console.log('PWA instalada')
-
-      setInstalled(true)
-      setPromptEvent(null)
-    }
-
-    window.addEventListener(
-      'beforeinstallprompt',
-      handleBeforeInstallPrompt
-    )
-
-    window.addEventListener(
-      'appinstalled',
-      handleInstalled
-    )
-
-    return () => {
-      window.removeEventListener(
-        'beforeinstallprompt',
-        handleBeforeInstallPrompt
-      )
-
-      window.removeEventListener(
-        'appinstalled',
-        handleInstalled
-      )
-    }
-  }, [])
-
-  async function install() {
-    if (!promptEvent) {
-      console.warn(
-        'El navegador no entregó el prompt de instalación.'
-      )
-
-      return false
-    }
-
-    await promptEvent.prompt()
-
-    const result = await promptEvent.userChoice
-
-    if (result.outcome === 'accepted') {
-      setInstalled(true)
-    }
-
-    setPromptEvent(null)
-
-    return result.outcome === 'accepted'
-  }
-
+  const { prompt, installed } = useSyncExternalStore(subscribeInstall, getInstallSnapshot)
   return {
-    installAvailable: Boolean(promptEvent) && !installed,
+    installAvailable: Boolean(prompt) && !installed,
     installed,
-    install,
+    install: runInstallPrompt,
   }
 }

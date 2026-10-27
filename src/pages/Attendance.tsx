@@ -43,6 +43,7 @@ import type { WhatsAppQueueItem } from '@/components/WhatsAppQueue'
 import { useNetworkSync } from '@/hooks/useNetworkSync'
 import { useSchoolRealtime } from '@/hooks/useSchoolRealtime'
 import { usePwaInstall } from '@/hooks/usePwaInstall'
+import InstallInvite from '@/components/InstallInvite'
 import { Input } from '@/components/ui/Input'
 import { MAX_NOTIFICATIONS_PER_PAGE, type NotificationPrintData } from '@/lib/notificationTypes'
 import { emptyPresentationDraft, getPresentationViolationLabels, getViolationCount, type PresentationDraft } from '@/lib/presentation'
@@ -1637,6 +1638,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
         permissions={dayStatus.permissions}
         notifications={notifications}
       />
+
+      <InstallInvite />
 
       <SharedDocumentDialog
         file={sharedFile}
