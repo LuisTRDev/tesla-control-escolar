@@ -356,7 +356,8 @@ export default function Attendance({ userName, userRole, classrooms, classroom, 
   useEffect(() => { document.documentElement.classList.toggle('low-power', preferences.lowPowerMode) }, [preferences.lowPowerMode])
   useEffect(() => { document.documentElement.classList.toggle('dark', darkMode); return () => document.documentElement.classList.remove('dark') }, [darkMode])
   // Barra del sistema (Android) del mismo color que la cabecera, como en una app nativa.
-  useEffect(() => { document.querySelector('meta[name="theme-color"]')?.setAttribute('content', darkMode ? '#020617' : '#ffffff') }, [darkMode])
+  // Hay una etiqueta por esquema del sistema (index.html): se actualizan todas para respetar el tema elegido en la app.
+  useEffect(() => { document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => meta.setAttribute('content', darkMode ? '#020617' : '#ffffff')) }, [darkMode])
   useOverlayScrollLock()
   // Botón "atrás" de Android: cierra lo último que se abrió en vez de salir de la app.
   useBackClose(sidebarOpen, () => setSidebarOpen(false))

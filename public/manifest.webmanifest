@@ -13,7 +13,7 @@
   ],
   "background_color": "#020817",
   "theme_color": "#020817",
-  "orientation": "portrait-primary",
+  "orientation": "any",
   "categories": [
     "education",
     "productivity"
@@ -43,6 +43,12 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    },
+    {
+      "src": "/icons/monochrome-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "monochrome"
     }
   ],
   "shortcuts": [
@@ -102,5 +108,11 @@
         }
       ]
     }
-  ]
+  ],
+  "launch_handler": {
+    "client_mode": [
+      "navigate-existing",
+      "auto"
+    ]
+  }
 }
