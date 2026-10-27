@@ -181,3 +181,24 @@ html.low-power *, html.low-power *::before, html.low-power *::after {
   [data-sheet-overlay] [data-sheet] { animation: sheet-rise 240ms cubic-bezier(0.2, 0.8, 0.25, 1) backwards; }
 }
 html.low-power [data-screen], html.low-power [data-sheet] { animation: none !important; }
+
+/* Zonas táctiles de 44 px: en pantallas táctiles los botones pequeños (iconos de 32-40 px,
+   chips de 36 px) reciben un área de toque invisible más grande, sin cambiar el diseño.
+   Se hace con ::after porque no hay que tocar cada botón; los que ya tienen posición propia
+   (absolute, fixed, sticky) la conservan, y data-no-hit-area lo desactiva en un botón concreto. */
+@media (pointer: coarse) {
+  button:is([class*="h-8"], [class*="h-9"], [class*="h-10"], [class*="min-h-8"], [class*="min-h-9"], [class*="min-h-10"]):not(.absolute, .fixed, .sticky, .relative, [data-no-hit-area]),
+  button:is([class*="h-6 w-6"], [class*="h-7 w-7"]):not(.absolute, .fixed, .sticky, .relative, [data-no-hit-area]) {
+    position: relative;
+  }
+  button:is([class*="h-8"], [class*="h-9"], [class*="h-10"], [class*="min-h-8"], [class*="min-h-9"], [class*="min-h-10"]):not([data-no-hit-area])::after {
+    content: '';
+    position: absolute;
+    inset: -6px;
+  }
+  button:is([class*="h-6 w-6"], [class*="h-7 w-7"]):not([data-no-hit-area])::after {
+    content: '';
+    position: absolute;
+    inset: -11px;
+  }
+}
